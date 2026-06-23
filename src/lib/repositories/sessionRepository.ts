@@ -115,7 +115,7 @@ export const sessionRepository = {
     const row = [
       session.table_id,
       session.game_type,
-      session.start_time,
+      `'${session.start_time}`, // Force text to prevent Sheets from mangling the timezone
       '', // end_time
       session.session_type,
       session.rate_per_hour.toString(),
@@ -142,8 +142,8 @@ export const sessionRepository = {
     const row = [
       updatedSession.table_id,
       updatedSession.game_type,
-      updatedSession.start_time,
-      updatedSession.end_time || '',
+      `'${updatedSession.start_time}`,
+      updatedSession.end_time ? `'${updatedSession.end_time}` : '',
       updatedSession.session_type,
       updatedSession.rate_per_hour.toString(),
       updatedSession.duration || '',

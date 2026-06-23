@@ -7,9 +7,9 @@ function toReadableIST(date: Date): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Kolkata',
     day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    hour: '2-digit', minute: '2-digit', hour12: true
   });
-  return formatter.format(date).replace(' am', ' AM').replace(' pm', ' PM') + ' +0530';
+  return formatter.format(date).replace(' am', ' AM').replace(' pm', ' PM');
 }
 
 export class ApiError extends Error {

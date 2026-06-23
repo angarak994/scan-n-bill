@@ -1,6 +1,15 @@
 export const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 export const SLOT_DURATION_MS = 15 * 60 * 1000;
 
+export function parseDateString(dateStr: string): number {
+  if (!dateStr) return NaN;
+  let cleanStr = dateStr.replace(/^'/, '').trim();
+  if (!cleanStr.includes('+') && !cleanStr.includes('Z') && !cleanStr.includes('GMT')) {
+    cleanStr = `${cleanStr} +0530`;
+  }
+  return new Date(cleanStr).getTime();
+}
+
 export function calculateCost(startMs: number, endMs: number, gameType: string): number {
   if (endMs <= startMs) return 0;
   
@@ -27,14 +36,14 @@ export function calculateCost(startMs: number, endMs: number, gameType: string):
 
 /**
  * Pure function for billing calculation.
- * @param startIso 
- * @param endIso 
+ * @param startString 
+ * @param endString 
  * @param gameType 
  * @returns { duration_hours: number, duration: string, cost: number }
  */
-export function calculateBilling(startIso: string, endIso: string, gameType: string) {
-  const startMs = new Date(startIso).getTime();
-  const endMs = new Date(endIso).getTime();
+export function calculateBilling(startString: string, endString: string, gameType: string) {
+  const startMs = parseDateString(startString);
+  const endMs = parseDateString(endString);
 
   if (isNaN(startMs) || isNaN(endMs)) {
     throw new Error('Invalid timestamp supplied to billing engine');
