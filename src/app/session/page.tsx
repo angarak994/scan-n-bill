@@ -32,6 +32,23 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       }
       if (data.status === 'idle') {
         setSession({ status: 'idle', table_id, game_type: game_type || 'unknown' });
+      } else if (data.status === 'active') {
+        // Automatically end the session when the QR code is scanned again
+        try {
+          const endRes = await fetch('/api/end-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table_id }),
+          });
+          const endData = await endRes.json();
+          if (endRes.ok) {
+            setSession({ status: 'completed', duration: endData.duration, cost: endData.cost, end_time: endData.end_time });
+          } else {
+            setSession({ status: 'error', message: endData.error || 'Failed to end session automatically' });
+          }
+        } catch {
+          setSession({ status: 'error', message: 'Network error while ending session' });
+        }
       } else {
         setSession(data);
       }
@@ -168,12 +185,9 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               </div>
             </div>
             <p className="text-gray-500 dark:text-gray-400 font-medium">Rate: ₹{session.rate_per_hour}/hour</p>
-            <button
-              onClick={handleEnd}
-              className="w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-semibold text-lg shadow-lg shadow-red-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              End Session
-            </button>
+            <div className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
+              To end this session, please scan the table's QR code again.
+            </div>
           </>
         )}
 
