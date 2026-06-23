@@ -24,14 +24,19 @@ const getSheetsClient = () => {
   return google.sheets({ version: 'v4', auth });
 };
 
-const SHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+const getSheetId = () => {
+  const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (!id) throw new Error("GOOGLE_SHEETS_SPREADSHEET_ID is not defined in the environment.");
+  return id;
+};
+
 const RANGE = 'Sheet1!A:I';
 
 export const sessionRepository = {
   findActiveByTable: async (table_id: string): Promise<Session | null> => {
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: getSheetId(),
       range: RANGE,
     });
     
@@ -63,7 +68,7 @@ export const sessionRepository = {
   findActiveCount: async (): Promise<number> => {
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: getSheetId(),
       range: RANGE,
     });
     
@@ -83,7 +88,7 @@ export const sessionRepository = {
     // id is the row number
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: getSheetId(),
       range: `Sheet1!A${id}:I${id}`,
     });
     
@@ -120,7 +125,7 @@ export const sessionRepository = {
     ];
     
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: getSheetId(),
       range: 'Sheet1!A:I',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
@@ -148,7 +153,7 @@ export const sessionRepository = {
     
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: getSheetId(),
       range: `Sheet1!A${id}:I${id}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
