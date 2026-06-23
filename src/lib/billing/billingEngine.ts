@@ -21,7 +21,10 @@ export function calculateBill(startTimeIso: string, endTimeIso: string, hourlyRa
   // Round UP to the next full minute
   const durationMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
 
-  const durationHours = durationMinutes / 60;
+  // Bill in 15-minute chunks
+  const billedMinutes = Math.ceil(durationMinutes / 15) * 15;
+
+  const durationHours = billedMinutes / 60;
   const rawCost = durationHours * hourlyRate;
   const cost = Math.round(rawCost * 100) / 100; // 2 decimal places
 

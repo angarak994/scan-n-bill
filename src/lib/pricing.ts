@@ -8,7 +8,7 @@ interface PricingInfo {
 
 const RATES = {
   AM: { snooker: 200, pool: 100 },
-  PM: { snooker: 300, pool: 150 },
+  PM: { snooker: 200, pool: 100 },
 };
 
 /**

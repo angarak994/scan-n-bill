@@ -47,7 +47,7 @@ export async function startSession(table_id: string, game_type: GameType) {
 
 export async function endSession(table_id: string) {
   const session = await sessionRepository.findActiveByTable(table_id);
-  if (!session) {
+  if (!session || !session.id) {
     throw new ApiError(404, 'No active session found for this table');
   }
 

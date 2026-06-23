@@ -12,7 +12,8 @@ export async function GET(request: Request) {
 
     const status = await getTableStatus(table_id);
     return NextResponse.json(status);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: err.statusCode ?? 500 });
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    return NextResponse.json({ error: error.message }, { status: error.statusCode ?? 500 });
   }
 }

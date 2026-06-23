@@ -19,7 +19,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) {
-      setSession({ status: 'error', message: 'Table ID is missing from URL' });
+      Promise.resolve().then(() => setSession({ status: 'error', message: 'Table ID is missing from URL' }));
       return;
     }
     
@@ -35,12 +35,13 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       } else {
         setSession(data);
       }
-    } catch (err) {
+    } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
     }
   }, [table_id, game_type]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTableState();
   }, [fetchTableState]);
 
@@ -79,7 +80,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       } else {
         alert(`Error: ${data.error}`);
       }
-    } catch (err) {
+    } catch {
       alert('Failed to start session');
     }
   };
@@ -98,7 +99,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       } else {
         alert(`Error: ${data.error}`);
       }
-    } catch (err) {
+    } catch {
       alert('Failed to end session');
     }
   };

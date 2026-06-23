@@ -9,7 +9,8 @@ export async function POST(request: Request) {
     }
     const result = await endSession(table_id);
     return NextResponse.json(result, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: err.statusCode ?? 500 });
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    return NextResponse.json({ error: error.message }, { status: error.statusCode ?? 500 });
   }
 }
