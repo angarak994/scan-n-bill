@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+require('dotenv').config({ path: '.env.local' });
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
