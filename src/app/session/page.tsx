@@ -74,12 +74,12 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       setElapsedSeconds(Math.floor((now - startMs) / 1000));
       
       const cost = calculateCost(startMs, now, session.game_type);
-      setCurrentCost(Math.round(cost / 10) * 10);
+      setCurrentCost(cost);
       
       const dateIst = new Date(now + IST_OFFSET);
       const isBefore4PM = dateIst.getUTCHours() < 16;
-      const rateBefore4 = session.game_type.toLowerCase() === 'snooker' ? 200 : 100;
-      const rateAfter4 = session.game_type.toLowerCase() === 'snooker' ? 300 : 150;
+      const rateBefore4 = session.game_type.toLowerCase() === 'snooker' ? 50 : 25;
+      const rateAfter4 = session.game_type.toLowerCase() === 'snooker' ? 75 : 40;
       setCurrentActiveRate(isBefore4PM ? rateBefore4 : rateAfter4);
     };
     tick();
@@ -202,7 +202,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
                 </p>
               </div>
             </div>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">Active Rate: ₹{currentActiveRate}/hour</p>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">Active Rate: ₹{currentActiveRate} / 15 min</p>
             <div className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
               To end this session, please scan the table's QR code again.
             </div>

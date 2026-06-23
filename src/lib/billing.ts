@@ -1,32 +1,25 @@
 export const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+export const SLOT_DURATION_MS = 15 * 60 * 1000;
 
 export function calculateCost(startMs: number, endMs: number, gameType: string): number {
+  if (endMs <= startMs) return 0;
+  
   let totalCost = 0;
   const game = gameType.toLowerCase();
-  const rateBefore4 = game === 'snooker' ? 200 : 100;
-  const rateAfter4 = game === 'snooker' ? 300 : 150;
+  
+  const rateBefore4 = game === 'snooker' ? 50 : 25;
+  const rateAfter4 = game === 'snooker' ? 75 : 40;
 
-  let currentMs = startMs;
-  while (currentMs < endMs) {
-    const dateIst = new Date(currentMs + IST_OFFSET);
-    const currentHourIst = dateIst.getUTCHours();
+  let currentSlotStartMs = startMs;
+  
+  while (currentSlotStartMs < endMs) {
+    const slotStartIst = new Date(currentSlotStartMs + IST_OFFSET);
+    const isBefore4PM = slotStartIst.getUTCHours() < 16;
     
-    let isBefore4PM = currentHourIst < 16;
+    const slotRate = isBefore4PM ? rateBefore4 : rateAfter4;
+    totalCost += slotRate;
     
-    let nextBoundaryIstMs: number;
-    if (isBefore4PM) {
-      nextBoundaryIstMs = Date.UTC(dateIst.getUTCFullYear(), dateIst.getUTCMonth(), dateIst.getUTCDate(), 16, 0, 0, 0);
-    } else {
-      nextBoundaryIstMs = Date.UTC(dateIst.getUTCFullYear(), dateIst.getUTCMonth(), dateIst.getUTCDate() + 1, 0, 0, 0, 0);
-    }
-    
-    const nextBoundaryMs = nextBoundaryIstMs - IST_OFFSET;
-    const chunkEndMs = Math.min(endMs, nextBoundaryMs);
-    const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
-    const rate = isBefore4PM ? rateBefore4 : rateAfter4;
-
-    totalCost += durationHours * rate;
-    currentMs = chunkEndMs;
+    currentSlotStartMs += SLOT_DURATION_MS;
   }
   
   return totalCost;
@@ -50,8 +43,7 @@ export function calculateBilling(startIso: string, endIso: string, gameType: str
     throw new Error('endTime cannot be before startTime');
   }
 
-  const rawCost = calculateCost(startMs, endMs, gameType);
-  const cost = Math.round(rawCost / 10) * 10;
+  const cost = calculateCost(startMs, endMs, gameType);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);

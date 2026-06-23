@@ -18,8 +18,7 @@ export function calculateBill(startTimeIso: string, endTimeIso: string, gameType
     throw new Error('endTime cannot be before startTime');
   }
 
-  const rawCost = calculateCost(startMs, endMs, gameType);
-  const cost = Math.round(rawCost / 10) * 10;
+  const cost = calculateCost(startMs, endMs, gameType);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);
