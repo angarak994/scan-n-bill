@@ -3,6 +3,15 @@ import { sessionRepository } from './repositories/sessionRepository';
 import { getPricing, GameType } from './pricing';
 import { calculateBilling } from './billing';
 
+function toReadableIST(date: Date): string {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+  });
+  return formatter.format(date).replace(' am', ' AM').replace(' pm', ' PM') + ' +0530';
+}
+
 export class ApiError extends Error {
   statusCode: number;
   constructor(statusCode: number, message: string) {
@@ -32,7 +41,7 @@ export async function startSession(table_id: string, game_type: GameType) {
     id: uuid(),
     table_id,
     game_type,
-    start_time: new Date().toISOString(),
+    start_time: toReadableIST(new Date()),
     end_time: null,
     session_type,
     rate_per_hour,
@@ -51,7 +60,7 @@ export async function endSession(table_id: string) {
     throw new ApiError(404, 'No active session found for this table');
   }
 
-  const end_time = new Date().toISOString();
+  const end_time = toReadableIST(new Date());
   const { duration, cost } = calculateBilling(session.start_time, end_time, session.game_type);
 
   await sessionRepository.update(session.id, {
