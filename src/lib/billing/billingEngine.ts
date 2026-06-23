@@ -1,11 +1,13 @@
+import { calculateCost } from '../billing';
+
 /**
  * Pure function — no side effects, fully unit-testable.
  * @param {string} startTimeIso
  * @param {string} endTimeIso
- * @param {number} hourlyRate
+ * @param {string} gameType
  * @returns {{ durationMinutes: number, cost: number }}
  */
-export function calculateBill(startTimeIso: string, endTimeIso: string, hourlyRate: number): { durationMinutes: number, cost: number } {
+export function calculateBill(startTimeIso: string, endTimeIso: string, gameType: string): { durationMinutes: number, cost: number } {
   const startMs = new Date(startTimeIso).getTime();
   const endMs = new Date(endTimeIso).getTime();
 
@@ -16,17 +18,11 @@ export function calculateBill(startTimeIso: string, endTimeIso: string, hourlyRa
     throw new Error('endTime cannot be before startTime');
   }
 
+  const rawCost = calculateCost(startMs, endMs, gameType);
+  const cost = Math.round(rawCost / 10) * 10;
+
   const totalSeconds = (endMs - startMs) / 1000;
-
-  // Round UP to the next full minute
-  const durationMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
-
-  // Bill in 15-minute chunks
-  const billedMinutes = Math.ceil(durationMinutes / 15) * 15;
-
-  const durationHours = billedMinutes / 60;
-  const rawCost = durationHours * hourlyRate;
-  const cost = Math.round(rawCost * 100) / 100; // 2 decimal places
+  const durationMinutes = Math.floor(totalSeconds / 60);
 
   return { durationMinutes, cost };
 }

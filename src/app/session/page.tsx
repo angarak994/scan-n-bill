@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
+import { calculateCost, IST_OFFSET } from '../../lib/billing';
 
 type SessionState =
   | { status: 'loading' }
@@ -16,6 +17,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
 
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentCost, setCurrentCost] = useState(0);
+  const [currentActiveRate, setCurrentActiveRate] = useState(0);
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) {
@@ -66,7 +69,19 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     if (session.status !== 'active') return;
     const startMs = new Date(session.start_time).getTime();
 
-    const tick = () => setElapsedSeconds(Math.floor((Date.now() - startMs) / 1000));
+    const tick = () => {
+      const now = Date.now();
+      setElapsedSeconds(Math.floor((now - startMs) / 1000));
+      
+      const cost = calculateCost(startMs, now, session.game_type);
+      setCurrentCost(Math.round(cost / 10) * 10);
+      
+      const dateIst = new Date(now + IST_OFFSET);
+      const isBefore4PM = dateIst.getUTCHours() < 16;
+      const rateBefore4 = session.game_type.toLowerCase() === 'snooker' ? 200 : 100;
+      const rateAfter4 = session.game_type.toLowerCase() === 'snooker' ? 300 : 150;
+      setCurrentActiveRate(isBefore4PM ? rateBefore4 : rateAfter4);
+    };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
@@ -178,13 +193,16 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             <div>
               <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">Table: {session.table_id}</h1>
               <p className="text-gray-500 dark:text-gray-400 font-medium mb-4 capitalize">Game: {session.game_type} | {session.session_type}</p>
-              <div className="bg-gray-100 dark:bg-gray-900 px-8 py-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner">
+              <div className="bg-gray-100 dark:bg-gray-900 px-8 py-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner flex flex-col items-center">
                 <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
                   {formatElapsed(elapsedSeconds)}
                 </p>
+                <p className="text-4xl font-bold tracking-tight text-green-600 dark:text-green-400 mt-4">
+                  ₹{currentCost}
+                </p>
               </div>
             </div>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">Rate: ₹{session.rate_per_hour}/hour</p>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">Active Rate: ₹{currentActiveRate}/hour</p>
             <div className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
               To end this session, please scan the table's QR code again.
             </div>
@@ -206,7 +224,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               </div>
               <div className="mb-2">
                 <span className="text-gray-500 dark:text-gray-400 text-sm font-medium uppercase tracking-wider">Total Amount</span>
-                <p className="text-5xl font-bold text-gray-900 dark:text-white mt-1">₹{session.cost.toFixed(2)}</p>
+                <p className="text-5xl font-bold text-gray-900 dark:text-white mt-1">₹{session.cost}</p>
               </div>
             </div>
             <button

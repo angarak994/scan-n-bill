@@ -52,7 +52,7 @@ export async function endSession(table_id: string) {
   }
 
   const end_time = new Date().toISOString();
-  const { duration, cost } = calculateBilling(session.start_time, end_time, session.rate_per_hour);
+  const { duration, cost } = calculateBilling(session.start_time, end_time, session.game_type);
 
   await sessionRepository.update(session.id, {
     end_time,
