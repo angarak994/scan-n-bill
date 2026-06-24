@@ -3,11 +3,10 @@ import { google } from 'googleapis';
 export interface Session {
   id?: string; // used internally as row index
   table_id: string;
-  game_type: 'snooker' | 'pool';
+  game_type: string;
   start_time: string;
   end_time: string | null;
-  session_type: 'AM' | 'PM';
-  rate_per_hour: number;
+  session_type: string;
   duration: string | null;
   cost: number | null;
   status: 'ACTIVE' | 'COMPLETED';
@@ -30,6 +29,8 @@ const getSheetId = () => {
   return id;
 };
 
+// Reading columns A to I (9 columns) 
+// Table ID(0) | Game Type(1) | Start Time(2) | End Time(3) | AM/PM(4) | Blank(5) | Duration(6) | Cost(7) | Status(8)
 const RANGE = 'Sheet1!A:I';
 
 export const sessionRepository = {
@@ -43,19 +44,16 @@ export const sessionRepository = {
     const rows = response.data.values;
     if (!rows || rows.length === 0) return null;
     
-    // Header is row 1. Data starts at row 2 (index 1).
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      // Format: table_id (0) | game_type (1) | start_time (2) | end_time (3) | session_type (4) | rate_per_hour (5) | duration_hours (6) | cost (7) | status (8)
       if (row[0] === table_id && row[8] === 'ACTIVE') {
         return {
-          id: (i + 1).toString(), // row number
+          id: (i + 1).toString(),
           table_id: row[0],
-          game_type: row[1] as 'snooker' | 'pool',
+          game_type: row[1],
           start_time: row[2],
           end_time: row[3] || null,
-          session_type: row[4] as 'AM' | 'PM',
-          rate_per_hour: parseFloat(row[5]),
+          session_type: row[4],
           duration: row[6] || null,
           cost: row[7] ? parseFloat(row[7]) : null,
           status: row[8] as 'ACTIVE' | 'COMPLETED',
@@ -85,7 +83,6 @@ export const sessionRepository = {
   },
 
   findById: async (id: string): Promise<Session | null> => {
-    // id is the row number
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: getSheetId(),
@@ -99,11 +96,10 @@ export const sessionRepository = {
     return {
       id,
       table_id: row[0],
-      game_type: row[1] as 'snooker' | 'pool',
+      game_type: row[1],
       start_time: row[2],
       end_time: row[3] || null,
-      session_type: row[4] as 'AM' | 'PM',
-      rate_per_hour: parseFloat(row[5]),
+      session_type: row[4],
       duration: row[6] || null,
       cost: row[7] ? parseFloat(row[7]) : null,
       status: row[8] as 'ACTIVE' | 'COMPLETED',
@@ -115,10 +111,10 @@ export const sessionRepository = {
     const row = [
       session.table_id,
       session.game_type,
-      `'${session.start_time}`, // Force text to prevent Sheets from mangling the timezone
+      `'${session.start_time}`,
       '', // end_time
       session.session_type,
-      session.rate_per_hour.toString(),
+      '', // blank column F
       '', // duration
       '', // cost
       session.status,
@@ -145,7 +141,7 @@ export const sessionRepository = {
       `'${updatedSession.start_time}`,
       updatedSession.end_time ? `'${updatedSession.end_time}` : '',
       updatedSession.session_type,
-      updatedSession.rate_per_hour.toString(),
+      '', // blank column F
       updatedSession.duration || '',
       updatedSession.cost?.toString() || '',
       updatedSession.status,

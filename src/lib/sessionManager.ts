@@ -6,10 +6,17 @@ import { calculateBilling } from './billing';
 function toReadableIST(date: Date): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: true
   });
   return formatter.format(date).replace(' am', ' AM').replace(' pm', ' PM');
+}
+
+function toReadableDate(date: Date): string {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+  return formatter.format(date);
 }
 
 export class ApiError extends Error {
@@ -20,38 +27,36 @@ export class ApiError extends Error {
   }
 }
 
-const MAX_CONCURRENT_SESSIONS = 10;
-
 export async function startSession(table_id: string, game_type: GameType) {
-  // Check if this table already has an active session
-  const existingActive = await sessionRepository.findActiveByTable(table_id);
-  if (existingActive) {
-    return { ...existingActive, isExisting: true }; // Prevent duplicates
-  }
-
-  // Check the maximum concurrent sessions limit
   const activeCount = await sessionRepository.findActiveCount();
-  if (activeCount >= MAX_CONCURRENT_SESSIONS) {
-    throw new ApiError(429, `System limit reached: Maximum ${MAX_CONCURRENT_SESSIONS} concurrent sessions allowed.`);
+  if (activeCount >= 4) {
+    throw new ApiError(400, 'Maximum active sessions limit (4) reached.');
   }
 
-  const { session_type, rate_per_hour } = getPricing(game_type);
+  const existingSession = await sessionRepository.findActiveByTable(table_id);
+  if (existingSession) {
+    throw new ApiError(400, 'A session is already active for this table');
+  }
 
+  const now = new Date();
+  const dateStr = toReadableDate(now);
+  const timeStr = toReadableIST(now);
+  const amPm = timeStr.includes('AM') ? 'AM' : 'PM';
+  
   const session = {
     id: uuid(),
     table_id,
     game_type,
-    start_time: toReadableIST(new Date()),
+    start_time: `${dateStr}, ${timeStr}`,
     end_time: null,
-    session_type,
-    rate_per_hour,
+    session_type: amPm,
     duration: null,
     cost: null,
     status: 'ACTIVE' as const,
   };
 
   await sessionRepository.create(session);
-  return { ...session, isExisting: false };
+  return session;
 }
 
 export async function endSession(table_id: string) {
@@ -60,7 +65,11 @@ export async function endSession(table_id: string) {
     throw new ApiError(404, 'No active session found for this table');
   }
 
-  const end_time = toReadableIST(new Date());
+  const now = new Date();
+  const dateStr = toReadableDate(now);
+  const timeStr = toReadableIST(now);
+  const end_time = `${dateStr}, ${timeStr}`;
+  
   const { duration, cost } = calculateBilling(session.start_time, end_time, session.game_type);
 
   await sessionRepository.update(session.id, {
@@ -70,12 +79,7 @@ export async function endSession(table_id: string) {
     cost,
   });
 
-  return { 
-    id: session.id,
-    duration, 
-    cost,
-    end_time
-  };
+  return { duration, cost, end_time };
 }
 
 export async function getTableStatus(table_id: string) {
@@ -88,7 +92,6 @@ export async function getTableStatus(table_id: string) {
       game_type: activeSession.game_type,
       start_time: activeSession.start_time,
       session_type: activeSession.session_type,
-      rate_per_hour: activeSession.rate_per_hour,
     };
   }
 

@@ -6,7 +6,7 @@ import { calculateCost, IST_OFFSET } from '../../lib/billing';
 type SessionState =
   | { status: 'loading' }
   | { status: 'idle'; table_id: string; game_type: string }
-  | { status: 'active'; id: string; table_id: string; game_type: string; start_time: string; rate_per_hour: number; session_type: string }
+  | { status: 'active'; id: string; table_id: string; game_type: string; start_time: string; session_type: string }
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
@@ -36,7 +36,6 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       if (data.status === 'idle') {
         setSession({ status: 'idle', table_id, game_type: game_type || 'unknown' });
       } else if (data.status === 'active') {
-        // Automatically end the session when the QR code is scanned again
         try {
           const endRes = await fetch('/api/end-session', {
             method: 'POST',
@@ -53,7 +52,14 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
           setSession({ status: 'error', message: 'Network error while ending session' });
         }
       } else {
-        setSession(data);
+        setSession({
+          status: 'active',
+          id: data.id,
+          table_id: data.table_id,
+          game_type: data.game_type,
+          start_time: data.start_time,
+          session_type: data.session_type,
+        });
       }
     } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
@@ -61,7 +67,6 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   }, [table_id, game_type]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTableState();
   }, [fetchTableState]);
 
@@ -73,7 +78,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       const now = Date.now();
       setElapsedSeconds(Math.floor((now - startMs) / 1000));
       
-      const cost = calculateCost(startMs, now, session.game_type);
+      const { cost } = calculateCost(startMs, now, session.game_type);
       setCurrentCost(cost);
       
       const dateIst = new Date(now + IST_OFFSET);
@@ -106,7 +111,6 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
           table_id: data.table_id,
           game_type: data.game_type,
           start_time: data.start_time,
-          rate_per_hour: data.rate_per_hour,
           session_type: data.session_type,
         });
       } else {
