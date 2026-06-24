@@ -4,10 +4,13 @@ import QRCode from 'qrcode';
 import { businessManager } from '@/lib/businessManager';
 
 const getSheetsClient = () => {
+  let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+  privateKey = privateKey.replace(/^"|"$|'^|'$/g, '').replace(/\\n/g, '\n');
+
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      private_key: privateKey,
     },
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
@@ -57,9 +60,9 @@ export async function POST(request: Request) {
           },
         });
       }
-    } catch (err: unknown) {
-      console.error(err);
-      return NextResponse.json({ error: 'Invalid Google Sheet ID or missing permissions. Make sure you pasted a valid URL/ID and shared it as an Editor with the service account.' }, { status: 400 });
+    } catch (err: any) {
+      console.error("Google Sheets API Error:", err?.message || err);
+      return NextResponse.json({ error: `Google Sheets Error: ${err?.message || 'Invalid ID or missing permissions. Share it with the service account.'}` }, { status: 400 });
     }
 
     // Register Business in Supabase
