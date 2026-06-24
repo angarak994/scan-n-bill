@@ -9,23 +9,26 @@ export function parseDateString(dateStr: string): number {
   return new Date(cleanStr).getTime();
 }
 
-export function calculateCost(startMs: number, endMs: number, gameType: string): { cost: number, slabsApplied: string } {
-  const totalMs = endMs - startMs;
-  // 10-minute completely free grace period
-  if (totalMs <= 10 * 60 * 1000) return { cost: 0, slabsApplied: 'None (Grace Period)' };
-  
-  // Billing begins AFTER 10 minutes. The first 10 minutes are not charged.
-  const billedStartMs = startMs + 10 * 60 * 1000;
-  
-  let totalCost = 0;
+export function getCurrentRate(tableId: string, gameType: string, nowMs: number): number {
+  const isPlayShireP1 = tableId === 'PlayShire P1';
+  const isPlayShireS1 = tableId === 'PlayShire S1';
   const game = gameType.toLowerCase();
-  
-  const rateBefore4 = game === 'snooker' ? 200 : 100;
-  const rateAfter4 = game === 'snooker' ? 300 : 150;
 
+  if (isPlayShireP1) return 150;
+  if (isPlayShireS1) return 250;
+
+  const dateIst = new Date(nowMs + IST_OFFSET);
+  const isBefore4PM = dateIst.getUTCHours() < 16;
+
+  if (isBefore4PM) return game === 'snooker' ? 200 : 100;
+  return game === 'snooker' ? 300 : 150;
+}
+
+export function calculateCost(startMs: number, endMs: number, gameType: string, tableId: string): { cost: number, slabsApplied: string } {
+  let totalCost = 0;
   const appliedSlabs = new Set<string>();
 
-  let currentMs = billedStartMs;
+  let currentMs = startMs;
   while (currentMs < endMs) {
     const nextMs = currentMs + 60 * 1000;
     const chunkEndMs = Math.min(nextMs, endMs);
@@ -34,27 +37,29 @@ export function calculateCost(startMs: number, endMs: number, gameType: string):
     const slotStartIst = new Date(currentMs + IST_OFFSET);
     const isBefore4PM = slotStartIst.getUTCHours() < 16;
     
-    if (isBefore4PM) appliedSlabs.add('Before 4 PM');
-    else appliedSlabs.add('After 4 PM');
+    const isPlayShireP1 = tableId === 'PlayShire P1';
+    const isPlayShireS1 = tableId === 'PlayShire S1';
 
-    const rate = isBefore4PM ? rateBefore4 : rateAfter4;
-    totalCost += durationHours * rate;
-    
+    if (isPlayShireP1 || isPlayShireS1) {
+      appliedSlabs.add(isPlayShireP1 ? 'Flat ₹150/hr' : 'Flat ₹250/hr');
+    } else {
+      if (isBefore4PM) appliedSlabs.add('Before 4 PM');
+      else appliedSlabs.add('After 4 PM');
+    }
+
+    totalCost += durationHours * getCurrentRate(tableId, gameType, currentMs);
     currentMs = nextMs;
   }
   
-  const finalCost = Math.round(totalCost / 10) * 10;
-  return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') };
+  // Strict proportional billing without forced rounding up/down inconsistencies
+  const finalCost = Math.round(totalCost * 100) / 100; // Keep up to 2 decimal places internally, though UI might format differently
+  return { cost: Math.round(finalCost), slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
 /**
  * Pure function for billing calculation.
- * @param startString 
- * @param endString 
- * @param gameType 
- * @returns { duration_hours: number, duration: string, cost: number, slabs_applied: string }
  */
-export function calculateBilling(startString: string, endString: string, gameType: string) {
+export function calculateBilling(startString: string, endString: string, gameType: string, tableId: string) {
   const startMs = parseDateString(startString);
   const endMs = parseDateString(endString);
 
@@ -65,12 +70,10 @@ export function calculateBilling(startString: string, endString: string, gameTyp
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType);
+  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, tableId);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);
-
-  const duration_hours = durationMinutes / 60;
 
   const hours = Math.floor(durationMinutes / 60);
   const mins = durationMinutes % 60;
@@ -78,5 +81,5 @@ export function calculateBilling(startString: string, endString: string, gameTyp
   if (hours > 0) duration += `${hours} hr `;
   duration += `${mins} min`;
 
-  return { duration_hours, duration: duration.trim() || '0 min', cost, slabs_applied: slabsApplied };
+  return { duration: duration.trim() || '0 min', cost, slabs_applied: slabsApplied };
 }

@@ -55,6 +55,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
     start_time: timeStr,
     end_time: null,
     duration: null,
+    applied_pricing: null,
     cost: null,
     status: 'ACTIVE' as const,
   };
@@ -76,12 +77,13 @@ export async function endSession(table_id: string) {
   const startFull = `${session.date}, ${session.start_time}`;
   const endFull = `${toReadableDate(now)}, ${end_time}`;
   
-  const { duration, cost } = calculateBilling(startFull, endFull, session.game_type);
+  const { duration, cost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, session.table_id);
 
   await sessionRepository.update(session.id, {
     end_time,
     status: 'COMPLETED',
     duration,
+    applied_pricing: slabs_applied,
     cost,
   });
 

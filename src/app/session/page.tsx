@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
-import { calculateCost, IST_OFFSET } from '../../lib/billing';
+import { calculateCost, getCurrentRate } from '../../lib/billing';
 
 type SessionState =
   | { status: 'loading' }
@@ -20,6 +20,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentCost, setCurrentCost] = useState(0);
   const [currentActiveRate, setCurrentActiveRate] = useState(0);
+  const [notifiedOneHour, setNotifiedOneHour] = useState(false);
+  const [showHourNotification, setShowHourNotification] = useState(false);
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) {
@@ -76,6 +78,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     if (session.status !== 'active') {
       setElapsedSeconds(0);
       setCurrentCost(0);
+      setNotifiedOneHour(false);
+      setShowHourNotification(false);
       return;
     }
     
@@ -86,14 +90,14 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       const diffSecs = Math.max(0, Math.floor((now - startMs) / 1000));
       setElapsedSeconds(diffSecs);
       
-      const { cost } = calculateCost(startMs, now, session.game_type);
+      const { cost } = calculateCost(startMs, now, session.game_type, session.table_id);
       setCurrentCost(cost);
-      
-      const dateIst = new Date(now + IST_OFFSET);
-      const isBefore4PM = dateIst.getUTCHours() < 16;
-      const rateBefore4 = session.game_type.toLowerCase() === 'snooker' ? 200 : 100;
-      const rateAfter4 = session.game_type.toLowerCase() === 'snooker' ? 300 : 150;
-      setCurrentActiveRate(isBefore4PM ? rateBefore4 : rateAfter4);
+      setCurrentActiveRate(getCurrentRate(session.table_id, session.game_type, now));
+
+      if (diffSecs >= 3600 && !notifiedOneHour) {
+        setNotifiedOneHour(true);
+        setShowHourNotification(true);
+      }
     };
     tick();
     const interval = setInterval(tick, 1000);
@@ -210,6 +214,19 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
 
         {session.status === 'active' && (
           <>
+            {showHourNotification && (
+              <div className="w-full bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded shadow-md relative mb-4 animate-bounce">
+                <p className="font-bold">1 Hour Completed</p>
+                <p>Continue Playing?</p>
+                <button 
+                  onClick={() => setShowHourNotification(false)}
+                  className="absolute top-2 right-2 text-blue-500 hover:text-blue-700 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             <div className="relative">
               <div className="absolute inset-0 rounded-full blur-md bg-green-400/50 animate-pulse"></div>
               <div className="relative bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-4 py-1 rounded-full text-sm font-bold tracking-wider flex items-center gap-2 border border-green-200 dark:border-green-800">

@@ -9,6 +9,7 @@ export interface Session {
   start_time: string;
   end_time: string | null;
   duration: string | null;
+  applied_pricing: string | null;
   cost: number | null;
   status: 'ACTIVE' | 'COMPLETED';
 }
@@ -30,9 +31,9 @@ const getSheetId = () => {
   return id;
 };
 
-// Reading columns A to I (9 columns)
-// Date(0) | Customer Name(1) | Table No(2) | Game Type(3) | Start Time(4) | End Time(5) | Duration(6) | Amount(7) | Status(8)
-const RANGE = 'Sheet1!A:I';
+// Reading columns A to J (10 columns)
+// Date(0) | Customer Name(1) | Table No(2) | Game Type(3) | Start Time(4) | End Time(5) | Duration(6) | Applied Pricing(7) | Amount(8) | Status(9)
+const RANGE = 'Sheet1!A:J';
 
 export const sessionRepository = {
   findActiveByTable: async (table_id: string): Promise<Session | null> => {
@@ -47,7 +48,7 @@ export const sessionRepository = {
     
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      if (row[2] === table_id && row[8] === 'ACTIVE') {
+      if (row[2] === table_id && row[9] === 'ACTIVE') {
         return {
           id: (i + 1).toString(),
           date: row[0],
@@ -57,8 +58,9 @@ export const sessionRepository = {
           start_time: row[4],
           end_time: row[5] || null,
           duration: row[6] || null,
-          cost: row[7] ? parseFloat(row[7]) : null,
-          status: row[8] as 'ACTIVE' | 'COMPLETED',
+          applied_pricing: row[7] || null,
+          cost: row[8] ? parseFloat(row[8]) : null,
+          status: row[9] as 'ACTIVE' | 'COMPLETED',
         };
       }
     }
@@ -77,18 +79,50 @@ export const sessionRepository = {
     
     let count = 0;
     for (let i = 1; i < rows.length; i++) {
-      if (rows[i][8] === 'ACTIVE') {
+      if (rows[i][9] === 'ACTIVE') {
         count++;
       }
     }
     return count;
   },
 
+  findAllToday: async (dateStr: string): Promise<Session[]> => {
+    const sheets = getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: getSheetId(),
+      range: RANGE,
+    });
+    
+    const rows = response.data.values;
+    if (!rows || rows.length === 0) return [];
+    
+    const sessions: Session[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (row[0] === dateStr || row[9] === 'ACTIVE') {
+        sessions.push({
+          id: (i + 1).toString(),
+          date: row[0],
+          customer_name: row[1],
+          table_id: row[2],
+          game_type: row[3],
+          start_time: row[4],
+          end_time: row[5] || null,
+          duration: row[6] || null,
+          applied_pricing: row[7] || null,
+          cost: row[8] ? parseFloat(row[8]) : null,
+          status: row[9] as 'ACTIVE' | 'COMPLETED',
+        });
+      }
+    }
+    return sessions;
+  },
+
   findById: async (id: string): Promise<Session | null> => {
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: getSheetId(),
-      range: `Sheet1!A${id}:I${id}`,
+      range: `Sheet1!A${id}:J${id}`,
     });
     
     const rows = response.data.values;
@@ -104,8 +138,9 @@ export const sessionRepository = {
       start_time: row[4],
       end_time: row[5] || null,
       duration: row[6] || null,
-      cost: row[7] ? parseFloat(row[7]) : null,
-      status: row[8] as 'ACTIVE' | 'COMPLETED',
+      applied_pricing: row[7] || null,
+      cost: row[8] ? parseFloat(row[8]) : null,
+      status: row[9] as 'ACTIVE' | 'COMPLETED',
     };
   },
 
@@ -146,6 +181,7 @@ export const sessionRepository = {
       `'${session.start_time}`,
       '', // end_time
       '', // duration
+      '', // applied_pricing
       '', // cost
       session.status,
     ];
@@ -153,7 +189,7 @@ export const sessionRepository = {
     // Update the newly inserted Row 2
     await sheets.spreadsheets.values.update({
       spreadsheetId: getSheetId(),
-      range: 'Sheet1!A2:I2',
+      range: 'Sheet1!A2:J2',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [row],
@@ -174,6 +210,7 @@ export const sessionRepository = {
       `'${updatedSession.start_time}`,
       updatedSession.end_time ? `'${updatedSession.end_time}` : '',
       updatedSession.duration || '',
+      updatedSession.applied_pricing || '',
       updatedSession.cost?.toString() || '',
       updatedSession.status,
     ];
@@ -181,7 +218,7 @@ export const sessionRepository = {
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
       spreadsheetId: getSheetId(),
-      range: `Sheet1!A${id}:I${id}`,
+      range: `Sheet1!A${id}:J${id}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [row],
