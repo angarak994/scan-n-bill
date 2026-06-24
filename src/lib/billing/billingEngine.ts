@@ -7,7 +7,7 @@ import { calculateCost } from '../billing';
  * @param {string} gameType
  * @returns {{ durationMinutes: number, cost: number }}
  */
-export function calculateBill(startTimeIso: string, endTimeIso: string, gameType: string, tableId: string = ''): { durationMinutes: number, cost: number } {
+export function calculateBill(startTimeIso: string, endTimeIso: string, gameType: string, pricingRules?: any): { durationMinutes: number, cost: number } {
   const startMs = new Date(startTimeIso).getTime();
   const endMs = new Date(endTimeIso).getTime();
 
@@ -18,7 +18,7 @@ export function calculateBill(startTimeIso: string, endTimeIso: string, gameType
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost } = calculateCost(startMs, endMs, gameType, tableId);
+  const { cost } = calculateCost(startMs, endMs, gameType, pricingRules);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);
