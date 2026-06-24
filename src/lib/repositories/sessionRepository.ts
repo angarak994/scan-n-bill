@@ -1,7 +1,10 @@
 import { google } from 'googleapis';
+import { businessManager } from '../businessManager';
+import { supabase } from '../supabaseClient';
 
 export interface Session {
-  id?: string; // used internally as row index
+  id?: string;
+  business_id?: string;
   date: string;
   customer_name: string;
   table_id: string;
@@ -25,204 +28,204 @@ const getSheetsClient = () => {
   return google.sheets({ version: 'v4', auth });
 };
 
-const getSheetId = () => {
-  const id = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  if (!id) throw new Error("GOOGLE_SHEETS_SPREADSHEET_ID is not defined in the environment.");
-  return id;
+const getSheetConfig = async (sheetsClient: any, businessId?: string) => {
+  let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    if (business && business.google_sheet_id) {
+      spreadsheetId = business.google_sheet_id;
+    }
+  }
+  if (!spreadsheetId) throw new Error("Spreadsheet ID is not defined.");
+
+  const spreadsheet = await sheetsClient.spreadsheets.get({ spreadsheetId });
+  const firstSheet = spreadsheet.data.sheets?.[0]?.properties;
+  
+  return {
+    spreadsheetId,
+    sheetTitle: firstSheet?.title || 'Sheet1',
+    sheetId: firstSheet?.sheetId || 0
+  };
 };
 
-// Reading columns A to J (10 columns)
-// Date(0) | Customer Name(1) | Table No(2) | Game Type(3) | Start Time(4) | End Time(5) | Duration(6) | Applied Pricing(7) | Amount(8) | Status(9)
-const RANGE = 'Sheet1!A:J';
-
 export const sessionRepository = {
-  findActiveByTable: async (table_id: string): Promise<Session | null> => {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSheetId(),
-      range: RANGE,
-    });
-    
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return null;
-    
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row[2] === table_id && row[9] === 'ACTIVE') {
-        return {
-          id: (i + 1).toString(),
-          date: row[0],
-          customer_name: row[1],
-          table_id: row[2],
-          game_type: row[3],
-          start_time: row[4],
-          end_time: row[5] || null,
-          duration: row[6] || null,
-          applied_pricing: row[7] || null,
-          cost: row[8] ? parseFloat(row[8]) : null,
-          status: row[9] as 'ACTIVE' | 'COMPLETED',
-        };
-      }
-    }
-    return null;
+  findActiveByTable: async (table_id: string, businessId?: string): Promise<Session | null> => {
+    if (!businessId) return null;
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('table_id', table_id)
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as Session;
   },
 
-  findActiveCount: async (): Promise<number> => {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSheetId(),
-      range: RANGE,
-    });
-    
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return 0;
-    
-    let count = 0;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][9] === 'ACTIVE') {
-        count++;
-      }
-    }
-    return count;
+  findActiveCount: async (businessId?: string): Promise<number> => {
+    if (!businessId) return 0;
+    const { count, error } = await supabase
+      .from('sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('business_id', businessId)
+      .eq('status', 'ACTIVE');
+
+    if (error) return 0;
+    return count || 0;
   },
 
-  findAllToday: async (dateStr: string): Promise<Session[]> => {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSheetId(),
-      range: RANGE,
-    });
+  findAllToday: async (dateStr: string, businessId?: string): Promise<Session[]> => {
+    if (!businessId) return [];
     
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return [];
-    
-    const sessions: Session[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row[0] === dateStr || row[9] === 'ACTIVE') {
-        sessions.push({
-          id: (i + 1).toString(),
-          date: row[0],
-          customer_name: row[1],
-          table_id: row[2],
-          game_type: row[3],
-          start_time: row[4],
-          end_time: row[5] || null,
-          duration: row[6] || null,
-          applied_pricing: row[7] || null,
-          cost: row[8] ? parseFloat(row[8]) : null,
-          status: row[9] as 'ACTIVE' | 'COMPLETED',
+    // Fetch all active sessions (could cross over midnight) OR sessions completed today
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('business_id', businessId)
+      .or(`date.eq.${dateStr},status.eq.ACTIVE`);
+
+    if (error || !data) return [];
+    return data as Session[];
+  },
+
+  findById: async (id: string, businessId?: string): Promise<Session | null> => {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as Session;
+  },
+
+  create: async (session: Session, businessId?: string): Promise<void> => {
+    if (!businessId) throw new Error("businessId required for Supabase DB");
+
+    // 1. Insert into Supabase (Source of Truth)
+    const { data: insertedData, error } = await supabase
+      .from('sessions')
+      .insert([{
+        id: session.id,
+        business_id: businessId,
+        date: session.date,
+        customer_name: session.customer_name,
+        table_id: session.table_id,
+        game_type: session.game_type,
+        start_time: session.start_time,
+        status: session.status,
+      }])
+      .select('id')
+      .single();
+
+    if (error || !insertedData) {
+      throw new Error("Failed to create session in Database: " + error?.message);
+    }
+
+    // 2. Async append to Google Sheets
+    try {
+      const sheets = getSheetsClient();
+      const config = await getSheetConfig(sheets, businessId);
+
+      const row = [
+        session.date,
+        session.customer_name,
+        session.table_id,
+        session.game_type,
+        `'${session.start_time}`,
+        '', // end_time
+        '', // duration
+        '', // applied_pricing
+        '', // cost
+        session.status,
+        insertedData.id // Append the DB ID at the end of the sheet for reference
+      ];
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: config.spreadsheetId,
+        range: `'${config.sheetTitle}'!A:K`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [row] },
+      });
+
+      // Mark synced in DB (Optional enhancement)
+      await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', insertedData.id);
+    } catch (sheetError) {
+      console.error("Google Sheets Sync Error on Create:", sheetError);
+      await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', insertedData.id);
+    }
+  },
+
+  update: async (id: string, updates: Partial<Session>, businessId?: string): Promise<void> => {
+    // 1. Update Supabase
+    const { data: updatedData, error } = await supabase
+      .from('sessions')
+      .update({
+        end_time: updates.end_time,
+        duration: updates.duration,
+        applied_pricing: updates.applied_pricing,
+        cost: updates.cost,
+        status: updates.status,
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error || !updatedData) {
+      throw new Error("Failed to update session in Database: " + error?.message);
+    }
+
+    // 2. Async update to Google Sheets
+    try {
+      const sheets = getSheetsClient();
+      const config = await getSheetConfig(sheets, businessId);
+
+      // To update the row in Google sheets, we need to find which row has this UUID in column K
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: config.spreadsheetId,
+        range: `'${config.sheetTitle}'!A:K`,
+      });
+      
+      const rows = response.data.values;
+      if (!rows || rows.length === 0) return;
+      
+      let rowIndex = -1;
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][10] === id) { // Column K is index 10
+          rowIndex = i + 1; // 1-based index
+          break;
+        }
+      }
+
+      if (rowIndex !== -1) {
+        const row = [
+          updatedData.date,
+          updatedData.customer_name,
+          updatedData.table_id,
+          updatedData.game_type,
+          `'${updatedData.start_time}`,
+          updatedData.end_time ? `'${updatedData.end_time}` : '',
+          updatedData.duration || '',
+          updatedData.applied_pricing || '',
+          updatedData.cost?.toString() || '',
+          updatedData.status,
+          id
+        ];
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: config.spreadsheetId,
+          range: `'${config.sheetTitle}'!A${rowIndex}:K${rowIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [row] },
         });
+
+        await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', id);
       }
+    } catch (sheetError) {
+      console.error("Google Sheets Sync Error on Update:", sheetError);
+      await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', id);
     }
-    return sessions;
-  },
-
-  findById: async (id: string): Promise<Session | null> => {
-    const sheets = getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: getSheetId(),
-      range: `Sheet1!A${id}:J${id}`,
-    });
-    
-    const rows = response.data.values;
-    if (!rows || rows.length === 0) return null;
-    
-    const row = rows[0];
-    return {
-      id,
-      date: row[0],
-      customer_name: row[1],
-      table_id: row[2],
-      game_type: row[3],
-      start_time: row[4],
-      end_time: row[5] || null,
-      duration: row[6] || null,
-      applied_pricing: row[7] || null,
-      cost: row[8] ? parseFloat(row[8]) : null,
-      status: row[9] as 'ACTIVE' | 'COMPLETED',
-    };
-  },
-
-  create: async (session: Session): Promise<void> => {
-    const sheets = getSheetsClient();
-    
-    // First, dynamically find the sheetId of the first sheet to insert a row
-    const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId: getSheetId(),
-    });
-    const sheetId = spreadsheet.data.sheets?.[0]?.properties?.sheetId || 0;
-
-    // Insert a new blank row at Row 2 (index 1)
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: getSheetId(),
-      requestBody: {
-        requests: [
-          {
-            insertDimension: {
-              range: {
-                sheetId: sheetId,
-                dimension: "ROWS",
-                startIndex: 1,
-                endIndex: 2
-              },
-              inheritFromBefore: false
-            }
-          }
-        ]
-      }
-    });
-
-    const row = [
-      session.date,
-      session.customer_name,
-      session.table_id,
-      session.game_type,
-      `'${session.start_time}`,
-      '', // end_time
-      '', // duration
-      '', // applied_pricing
-      '', // cost
-      session.status,
-    ];
-    
-    // Update the newly inserted Row 2
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: getSheetId(),
-      range: 'Sheet1!A2:J2',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
-  },
-
-  update: async (id: string, updates: Partial<Session>): Promise<void> => {
-    const session = await sessionRepository.findById(id);
-    if (!session) return;
-    
-    const updatedSession = { ...session, ...updates };
-    const row = [
-      updatedSession.date,
-      updatedSession.customer_name,
-      updatedSession.table_id,
-      updatedSession.game_type,
-      `'${updatedSession.start_time}`,
-      updatedSession.end_time ? `'${updatedSession.end_time}` : '',
-      updatedSession.duration || '',
-      updatedSession.applied_pricing || '',
-      updatedSession.cost?.toString() || '',
-      updatedSession.status,
-    ];
-    
-    const sheets = getSheetsClient();
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: getSheetId(),
-      range: `Sheet1!A${id}:J${id}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [row],
-      },
-    });
   }
 };

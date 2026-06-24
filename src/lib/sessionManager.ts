@@ -1,7 +1,8 @@
 import { v4 as uuid } from 'uuid';
 import { sessionRepository, Session } from './repositories/sessionRepository';
-import { getPricing, GameType } from './pricing';
+import { GameType } from './pricing';
 import { calculateBilling } from './billing';
+import { businessManager } from './businessManager';
 
 function toReadableIST(date: Date): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -27,13 +28,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function startSession(table_id: string, game_type: GameType, customer_name: string) {
-  const activeCount = await sessionRepository.findActiveCount();
-  if (activeCount >= 4) {
-    throw new ApiError(400, 'Maximum active sessions limit (4) reached.');
-  }
-
-  const existingSession = await sessionRepository.findActiveByTable(table_id);
+export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string) {
+  const existingSession = await sessionRepository.findActiveByTable(table_id, businessId);
   if (existingSession) {
     throw new ApiError(400, 'A session is already active for this table');
   }
@@ -60,12 +56,12 @@ export async function startSession(table_id: string, game_type: GameType, custom
     status: 'ACTIVE' as const,
   };
 
-  await sessionRepository.create(session);
+  await sessionRepository.create(session, businessId);
   return session;
 }
 
-export async function endSession(table_id: string) {
-  const session = await sessionRepository.findActiveByTable(table_id);
+export async function endSession(table_id: string, businessId?: string) {
+  const session = await sessionRepository.findActiveByTable(table_id, businessId);
   if (!session || !session.id) {
     throw new ApiError(404, 'No active session found for this table');
   }
@@ -77,7 +73,13 @@ export async function endSession(table_id: string) {
   const startFull = `${session.date}, ${session.start_time}`;
   const endFull = `${toReadableDate(now)}, ${end_time}`;
   
-  const { duration, cost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, session.table_id);
+  let pricingRules;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    pricingRules = business?.pricing_rules;
+  }
+  
+  const { duration, cost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules);
 
   await sessionRepository.update(session.id, {
     end_time,
@@ -85,14 +87,20 @@ export async function endSession(table_id: string) {
     duration,
     applied_pricing: slabs_applied,
     cost,
-  });
+  }, businessId);
 
   return { duration, cost, end_time };
 }
 
-export async function getTableStatus(table_id: string) {
-  const activeSession = await sessionRepository.findActiveByTable(table_id);
+export async function getTableStatus(table_id: string, businessId?: string) {
+  const activeSession = await sessionRepository.findActiveByTable(table_id, businessId);
   if (activeSession) {
+    let pricingRules;
+    if (businessId) {
+      const business = await businessManager.getBusiness(businessId);
+      pricingRules = business?.pricing_rules;
+    }
+
     return {
       status: 'active',
       id: activeSession.id,
@@ -101,11 +109,19 @@ export async function getTableStatus(table_id: string) {
       table_id: activeSession.table_id,
       game_type: activeSession.game_type,
       start_time: activeSession.start_time,
+      pricingRules,
     };
+  }
+
+  let pricingRules;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    pricingRules = business?.pricing_rules;
   }
 
   return {
     status: 'idle',
     table_id,
+    pricingRules,
   };
 }

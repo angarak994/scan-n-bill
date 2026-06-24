@@ -4,7 +4,7 @@ import { GameType } from '@/lib/pricing';
 
 export async function POST(request: Request) {
   try {
-    const { table_id, game_type, customer_name } = await request.json();
+    const { table_id, game_type, customer_name, business_id } = await request.json();
     
     if (!table_id || !game_type || !customer_name) {
       return NextResponse.json({ error: 'table_id, game_type, and customer_name are required' }, { status: 400 });
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'game_type must be snooker or pool' }, { status: 400 });
     }
 
-    const result = await startSession(table_id, game_type as GameType, customer_name);
+    const result = await startSession(table_id, game_type as GameType, customer_name, business_id);
     return NextResponse.json(result, { status: 201 });
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };

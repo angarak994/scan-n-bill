@@ -5,15 +5,16 @@ import { calculateCost, getCurrentRate } from '../../lib/billing';
 
 type SessionState =
   | { status: 'loading' }
-  | { status: 'idle'; table_id: string; game_type: string }
-  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string }
+  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any }
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
-export default function SessionPage({ searchParams }: { searchParams: Promise<{ table?: string; type?: string }> }) {
+export default function SessionPage({ searchParams }: { searchParams: Promise<{ table?: string; type?: string; b?: string }> }) {
   const params = use(searchParams);
   const table_id = params.table;
   const game_type = params.type;
+  const business_id = params.b;
 
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
   const [customerName, setCustomerName] = useState('');
@@ -30,20 +31,20 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     }
     
     try {
-      const res = await fetch(`/api/station-status?table_id=${table_id}`);
+      const res = await fetch(`/api/station-status?table_id=${table_id}${business_id ? `&b=${business_id}` : ''}`);
       const data = await res.json();
       if (!res.ok) {
         setSession({ status: 'error', message: data.error || 'Failed to load table status' });
         return;
       }
       if (data.status === 'idle') {
-        setSession({ status: 'idle', table_id, game_type: game_type || 'unknown' });
+        setSession({ status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules });
       } else if (data.status === 'active') {
         try {
           const endRes = await fetch('/api/end-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ table_id }),
+            body: JSON.stringify({ table_id, business_id }),
           });
           const endData = await endRes.json();
           if (endRes.ok) {
@@ -63,12 +64,13 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
           game_type: data.game_type,
           date: data.date,
           start_time: data.start_time,
+          pricingRules: data.pricingRules,
         });
       }
     } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
     }
-  }, [table_id, game_type]);
+  }, [table_id, game_type, business_id]);
 
   useEffect(() => {
     fetchTableState();
@@ -90,9 +92,9 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       const diffSecs = Math.max(0, Math.floor((now - startMs) / 1000));
       setElapsedSeconds(diffSecs);
       
-      const { cost } = calculateCost(startMs, now, session.game_type, session.table_id);
+      const { cost } = calculateCost(startMs, now, session.game_type, session.pricingRules);
       setCurrentCost(cost);
-      setCurrentActiveRate(getCurrentRate(session.table_id, session.game_type, now));
+      setCurrentActiveRate(getCurrentRate(session.game_type, now, session.pricingRules).rate);
 
       if (diffSecs >= 3600 && !notifiedOneHour) {
         setNotifiedOneHour(true);
@@ -118,19 +120,20 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id, game_type, customer_name: customerName }),
+        body: JSON.stringify({ table_id, game_type, customer_name: customerName, business_id }),
       });
       const data = await res.json();
       if (res.ok) {
-        setSession({
-          status: 'active',
-          id: data.id,
-          customer_name: data.customer_name,
-          table_id: data.table_id,
-          game_type: data.game_type,
-          date: data.date,
-          start_time: data.start_time,
-        });
+          setSession((prev: any) => ({
+            status: 'active',
+            id: data.id,
+            customer_name: data.customer_name,
+            table_id: data.table_id,
+            game_type: data.game_type,
+            date: data.date,
+            start_time: data.start_time,
+            pricingRules: prev.pricingRules,
+          }));
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -145,7 +148,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       const res = await fetch('/api/end-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id: session.table_id }),
+        body: JSON.stringify({ table_id: session.table_id, business_id }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -166,18 +169,29 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   };
 
   if (session.status === 'loading') {
-    return <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="animate-pulse text-lg">Loading table status...</div>
-    </main>;
+    return (
+      <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4">
+        <div className="flex flex-col items-center gap-4 bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 dark:border-gray-700 animate-pulse">
+          <div className="w-20 h-20 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+          <div className="h-6 bg-gray-200 dark:bg-gray-700 w-3/4 rounded mt-2"></div>
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 w-1/2 rounded"></div>
+        </div>
+      </main>
+    );
   }
 
   if (session.status === 'error') {
-    return <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="text-red-500 text-center">
-        <h1 className="text-2xl font-bold mb-2">Error</h1>
-        <p>{session.message}</p>
-      </div>
-    </main>;
+    return (
+      <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-red-200 dark:border-red-800/30 text-center w-full max-w-md">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+          <h1 className="text-2xl font-bold mb-2 text-gray-800 dark:text-gray-100">Oops!</h1>
+          <p className="text-gray-600 dark:text-gray-400">{session.message}</p>
+        </div>
+      </main>
+    );
   }
 
   return (
