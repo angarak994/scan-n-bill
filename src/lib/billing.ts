@@ -10,13 +10,7 @@ export function parseDateString(dateStr: string): number {
 }
 
 export function getCurrentRate(tableId: string, gameType: string, nowMs: number): number {
-  const isPlayShireP1 = tableId === 'PlayShire P1';
-  const isPlayShireS1 = tableId === 'PlayShire S1';
   const game = gameType.toLowerCase();
-
-  if (isPlayShireP1) return 150;
-  if (isPlayShireS1) return 250;
-
   const dateIst = new Date(nowMs + IST_OFFSET);
   const isBefore4PM = dateIst.getUTCHours() < 16;
 
@@ -37,15 +31,8 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     const slotStartIst = new Date(currentMs + IST_OFFSET);
     const isBefore4PM = slotStartIst.getUTCHours() < 16;
     
-    const isPlayShireP1 = tableId === 'PlayShire P1';
-    const isPlayShireS1 = tableId === 'PlayShire S1';
-
-    if (isPlayShireP1 || isPlayShireS1) {
-      appliedSlabs.add(isPlayShireP1 ? 'Flat ₹150/hr' : 'Flat ₹250/hr');
-    } else {
-      if (isBefore4PM) appliedSlabs.add('Before 4 PM');
-      else appliedSlabs.add('After 4 PM');
-    }
+    if (isBefore4PM) appliedSlabs.add('Before 4 PM');
+    else appliedSlabs.add('After 4 PM');
 
     totalCost += durationHours * getCurrentRate(tableId, gameType, currentMs);
     currentMs = nextMs;
