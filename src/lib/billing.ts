@@ -10,7 +10,13 @@ export function parseDateString(dateStr: string): number {
 }
 
 export function getCurrentRate(tableId: string, gameType: string, nowMs: number): number {
+  const isPlayShireP1 = tableId === 'PlayShire P1';
+  const isPlayShireS1 = tableId === 'PlayShire S1';
   const game = gameType.toLowerCase();
+
+  if (isPlayShireP1) return 150;
+  if (isPlayShireS1) return 250;
+
   const dateIst = new Date(nowMs + IST_OFFSET);
   const isBefore4PM = dateIst.getUTCHours() < 16;
 
@@ -19,8 +25,18 @@ export function getCurrentRate(tableId: string, gameType: string, nowMs: number)
 }
 
 export function calculateCost(startMs: number, endMs: number, gameType: string, tableId: string): { cost: number, slabsApplied: string } {
+  const totalMs = endMs - startMs;
+  const durationMinutes = Math.floor(totalMs / 60000);
+
+  // First 10 minutes are completely free (Grace Period logic)
+  if (durationMinutes <= 10) {
+    return { cost: 0, slabsApplied: 'None (Grace Period)' };
+  }
+
   let totalCost = 0;
   const appliedSlabs = new Set<string>();
+  const isPlayShireP1 = tableId === 'PlayShire P1';
+  const isPlayShireS1 = tableId === 'PlayShire S1';
 
   let currentMs = startMs;
   while (currentMs < endMs) {
@@ -28,19 +44,22 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     const chunkEndMs = Math.min(nextMs, endMs);
     const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
 
-    const slotStartIst = new Date(currentMs + IST_OFFSET);
-    const isBefore4PM = slotStartIst.getUTCHours() < 16;
-    
-    if (isBefore4PM) appliedSlabs.add('Before 4 PM');
-    else appliedSlabs.add('After 4 PM');
+    if (isPlayShireP1 || isPlayShireS1) {
+      appliedSlabs.add(isPlayShireP1 ? 'PlayShire Flat ₹150/hr' : 'PlayShire Flat ₹250/hr');
+    } else {
+      const slotStartIst = new Date(currentMs + IST_OFFSET);
+      const isBefore4PM = slotStartIst.getUTCHours() < 16;
+      if (isBefore4PM) appliedSlabs.add('BigShot Before 4 PM');
+      else appliedSlabs.add('BigShot After 4 PM');
+    }
 
     totalCost += durationHours * getCurrentRate(tableId, gameType, currentMs);
     currentMs = nextMs;
   }
   
-  // Strict proportional billing without forced rounding up/down inconsistencies
-  const finalCost = Math.round(totalCost * 100) / 100; // Keep up to 2 decimal places internally, though UI might format differently
-  return { cost: Math.round(finalCost), slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
+  // Strict nearest 10 rounding logic
+  const finalCost = Math.round(totalCost / 10) * 10;
+  return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
 /**
