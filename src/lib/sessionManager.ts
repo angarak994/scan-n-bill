@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { sessionRepository } from './repositories/sessionRepository';
+import { sessionRepository, Session } from './repositories/sessionRepository';
 import { getPricing, GameType } from './pricing';
 import { calculateBilling } from './billing';
 
@@ -27,7 +27,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function startSession(table_id: string, game_type: GameType) {
+export async function startSession(table_id: string, game_type: GameType, customer_name: string) {
   const activeCount = await sessionRepository.findActiveCount();
   if (activeCount >= 4) {
     throw new ApiError(400, 'Maximum active sessions limit (4) reached.');
@@ -38,18 +38,22 @@ export async function startSession(table_id: string, game_type: GameType) {
     throw new ApiError(400, 'A session is already active for this table');
   }
 
+  if (!customer_name || customer_name.trim() === '') {
+    throw new ApiError(400, 'Customer Name is mandatory');
+  }
+
   const now = new Date();
   const dateStr = toReadableDate(now);
   const timeStr = toReadableIST(now);
-  const amPm = timeStr.includes('AM') ? 'AM' : 'PM';
   
-  const session = {
+  const session: Session = {
     id: uuid(),
+    date: dateStr,
+    customer_name: customer_name.trim(),
     table_id,
     game_type,
-    start_time: `${dateStr}, ${timeStr}`,
+    start_time: timeStr,
     end_time: null,
-    session_type: amPm,
     duration: null,
     cost: null,
     status: 'ACTIVE' as const,
@@ -66,11 +70,13 @@ export async function endSession(table_id: string) {
   }
 
   const now = new Date();
-  const dateStr = toReadableDate(now);
   const timeStr = toReadableIST(now);
-  const end_time = `${dateStr}, ${timeStr}`;
+  const end_time = timeStr;
   
-  const { duration, cost } = calculateBilling(session.start_time, end_time, session.game_type);
+  const startFull = `${session.date}, ${session.start_time}`;
+  const endFull = `${toReadableDate(now)}, ${end_time}`;
+  
+  const { duration, cost } = calculateBilling(startFull, endFull, session.game_type);
 
   await sessionRepository.update(session.id, {
     end_time,
@@ -88,10 +94,11 @@ export async function getTableStatus(table_id: string) {
     return {
       status: 'active',
       id: activeSession.id,
+      date: activeSession.date,
+      customer_name: activeSession.customer_name,
       table_id: activeSession.table_id,
       game_type: activeSession.game_type,
       start_time: activeSession.start_time,
-      session_type: activeSession.session_type,
     };
   }
 

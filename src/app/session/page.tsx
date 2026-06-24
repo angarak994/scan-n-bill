@@ -6,7 +6,7 @@ import { calculateCost, IST_OFFSET } from '../../lib/billing';
 type SessionState =
   | { status: 'loading' }
   | { status: 'idle'; table_id: string; game_type: string }
-  | { status: 'active'; id: string; table_id: string; game_type: string; start_time: string; session_type: string }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string }
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
@@ -16,6 +16,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   const game_type = params.type;
 
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
+  const [customerName, setCustomerName] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentCost, setCurrentCost] = useState(0);
   const [currentActiveRate, setCurrentActiveRate] = useState(0);
@@ -55,10 +56,11 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
         setSession({
           status: 'active',
           id: data.id,
+          customer_name: data.customer_name,
           table_id: data.table_id,
           game_type: data.game_type,
+          date: data.date,
           start_time: data.start_time,
-          session_type: data.session_type,
         });
       }
     } catch {
@@ -71,12 +73,18 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   }, [fetchTableState]);
 
   useEffect(() => {
-    if (session.status !== 'active') return;
-    const startMs = new Date(session.start_time).getTime();
+    if (session.status !== 'active') {
+      setElapsedSeconds(0);
+      setCurrentCost(0);
+      return;
+    }
+    
+    const startMs = new Date(`${session.date}, ${session.start_time}`).getTime();
 
     const tick = () => {
       const now = Date.now();
-      setElapsedSeconds(Math.floor((now - startMs) / 1000));
+      const diffSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+      setElapsedSeconds(diffSecs);
       
       const { cost } = calculateCost(startMs, now, session.game_type);
       setCurrentCost(cost);
@@ -97,21 +105,27 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       alert('Missing table or game type in URL');
       return;
     }
+    if (!customerName || customerName.trim() === '') {
+      alert('Please enter a Customer Name to start the session.');
+      return;
+    }
+    
     try {
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id, game_type }),
+        body: JSON.stringify({ table_id, game_type, customer_name: customerName }),
       });
       const data = await res.json();
       if (res.ok) {
         setSession({
           status: 'active',
           id: data.id,
+          customer_name: data.customer_name,
           table_id: data.table_id,
           game_type: data.game_type,
+          date: data.date,
           start_time: data.start_time,
-          session_type: data.session_type,
         });
       } else {
         alert(`Error: ${data.error}`);
@@ -175,9 +189,19 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Table: {session.table_id}</h1>
               <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Game: {session.game_type}</p>
             </div>
+            <div className="w-full mt-4 text-left">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Customer Name</label>
+              <input 
+                type="text" 
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Enter name to start..."
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
+            </div>
             <button
               onClick={handleStart}
-              className="w-full mt-4 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
             >
               Start Session
             </button>
@@ -195,8 +219,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             </div>
             
             <div>
-              <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">Table: {session.table_id}</h1>
-              <p className="text-gray-500 dark:text-gray-400 font-medium mb-4 capitalize">Game: {session.game_type} | {session.session_type}</p>
+              <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
+              <p className="text-gray-500 dark:text-gray-400 font-medium mb-4 capitalize">Game: {session.game_type} • {session.customer_name}</p>
               <div className="bg-gray-100 dark:bg-gray-900 px-8 py-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner flex flex-col items-center">
                 <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
                   {formatElapsed(elapsedSeconds)}

@@ -2,11 +2,12 @@ import { google } from 'googleapis';
 
 export interface Session {
   id?: string; // used internally as row index
+  date: string;
+  customer_name: string;
   table_id: string;
   game_type: string;
   start_time: string;
   end_time: string | null;
-  session_type: string;
   duration: string | null;
   cost: number | null;
   status: 'ACTIVE' | 'COMPLETED';
@@ -29,8 +30,8 @@ const getSheetId = () => {
   return id;
 };
 
-// Reading columns A to I (9 columns) 
-// Table ID(0) | Game Type(1) | Start Time(2) | End Time(3) | AM/PM(4) | Blank(5) | Duration(6) | Cost(7) | Status(8)
+// Reading columns A to I (9 columns)
+// Date(0) | Customer Name(1) | Table No(2) | Game Type(3) | Start Time(4) | End Time(5) | Duration(6) | Amount(7) | Status(8)
 const RANGE = 'Sheet1!A:I';
 
 export const sessionRepository = {
@@ -46,14 +47,15 @@ export const sessionRepository = {
     
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      if (row[0] === table_id && row[8] === 'ACTIVE') {
+      if (row[2] === table_id && row[8] === 'ACTIVE') {
         return {
           id: (i + 1).toString(),
-          table_id: row[0],
-          game_type: row[1],
-          start_time: row[2],
-          end_time: row[3] || null,
-          session_type: row[4],
+          date: row[0],
+          customer_name: row[1],
+          table_id: row[2],
+          game_type: row[3],
+          start_time: row[4],
+          end_time: row[5] || null,
           duration: row[6] || null,
           cost: row[7] ? parseFloat(row[7]) : null,
           status: row[8] as 'ACTIVE' | 'COMPLETED',
@@ -95,11 +97,12 @@ export const sessionRepository = {
     const row = rows[0];
     return {
       id,
-      table_id: row[0],
-      game_type: row[1],
-      start_time: row[2],
-      end_time: row[3] || null,
-      session_type: row[4],
+      date: row[0],
+      customer_name: row[1],
+      table_id: row[2],
+      game_type: row[3],
+      start_time: row[4],
+      end_time: row[5] || null,
       duration: row[6] || null,
       cost: row[7] ? parseFloat(row[7]) : null,
       status: row[8] as 'ACTIVE' | 'COMPLETED',
@@ -108,21 +111,49 @@ export const sessionRepository = {
 
   create: async (session: Session): Promise<void> => {
     const sheets = getSheetsClient();
+    
+    // First, dynamically find the sheetId of the first sheet to insert a row
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: getSheetId(),
+    });
+    const sheetId = spreadsheet.data.sheets?.[0]?.properties?.sheetId || 0;
+
+    // Insert a new blank row at Row 2 (index 1)
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: getSheetId(),
+      requestBody: {
+        requests: [
+          {
+            insertDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: "ROWS",
+                startIndex: 1,
+                endIndex: 2
+              },
+              inheritFromBefore: false
+            }
+          }
+        ]
+      }
+    });
+
     const row = [
+      session.date,
+      session.customer_name,
       session.table_id,
       session.game_type,
       `'${session.start_time}`,
       '', // end_time
-      session.session_type,
-      '', // blank column F
       '', // duration
       '', // cost
       session.status,
     ];
     
-    await sheets.spreadsheets.values.append({
+    // Update the newly inserted Row 2
+    await sheets.spreadsheets.values.update({
       spreadsheetId: getSheetId(),
-      range: 'Sheet1!A:I',
+      range: 'Sheet1!A2:I2',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [row],
@@ -136,12 +167,12 @@ export const sessionRepository = {
     
     const updatedSession = { ...session, ...updates };
     const row = [
+      updatedSession.date,
+      updatedSession.customer_name,
       updatedSession.table_id,
       updatedSession.game_type,
       `'${updatedSession.start_time}`,
       updatedSession.end_time ? `'${updatedSession.end_time}` : '',
-      updatedSession.session_type,
-      '', // blank column F
       updatedSession.duration || '',
       updatedSession.cost?.toString() || '',
       updatedSession.status,
