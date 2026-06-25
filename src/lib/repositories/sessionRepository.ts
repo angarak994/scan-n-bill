@@ -162,11 +162,11 @@ export const sessionRepository = {
       const config = await getSheetConfig(sheets, businessId);
 
       const row = [
-        toSheetsDate(session.start_time),
+        `'${toSheetsDate(session.start_time)}`,
         session.customer_name,
         session.table_id,
         session.game_type,
-        toSheetsTime(session.start_time),
+        `'${toSheetsTime(session.start_time)}`,
         '', // end_time
         '', // duration
         '', // applied_pricing
@@ -233,12 +233,12 @@ export const sessionRepository = {
 
       if (rowIndex !== -1) {
         const row = [
-          toSheetsDate(updatedData.start_time),
+          `'${toSheetsDate(updatedData.start_time)}`,
           updatedData.customer_name,
           updatedData.table_id,
           updatedData.game_type,
-          toSheetsTime(updatedData.start_time),
-          toSheetsTime(updatedData.end_time),
+          `'${toSheetsTime(updatedData.start_time)}`,
+          `'${toSheetsTime(updatedData.end_time)}`,
           updatedData.duration || '',
           updatedData.applied_pricing || '',
           updatedData.cost?.toString() || '',
