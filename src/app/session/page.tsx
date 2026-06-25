@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, use } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { calculateCost, getCurrentRate } from '../../lib/billing';
 
 type SessionState =
@@ -10,11 +11,15 @@ type SessionState =
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
-export default function SessionPage({ searchParams }: { searchParams: Promise<{ table?: string; type?: string; b?: string }> }) {
+export default function SessionPage({ searchParams }: { searchParams: Promise<{ table?: string; type?: string; b?: string; _scan?: string }> }) {
   const params = use(searchParams);
+  const router = useRouter();
+  const pathname = usePathname();
+  
   const table_id = params.table;
   const game_type = params.type;
   const business_id = params.b;
+  const scan_nonce = params._scan;
 
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
   const [customerName, setCustomerName] = useState('');
@@ -43,6 +48,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
         const localSessionStr = localStorage.getItem('qr_billing_active_session');
         const localSession = localSessionStr ? JSON.parse(localSessionStr) : null;
 
+        // Condition 1: They scanned a DIFFERENT table. Invalidate the old one.
         if (localSession && localSession.table_id !== table_id) {
           try {
             await fetch('/api/end-session', {
@@ -53,6 +59,26 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             localStorage.removeItem('qr_billing_active_session');
           } catch (err) {
             console.error('Failed to invalidate previous session', err);
+          }
+        }
+
+        // Condition 2: They scanned the SAME table's QR code again (URL is clean, no _scan parameter).
+        // If localSession matches data.id, but there's no _scan param, they just scanned the physical QR code to end it!
+        if (localSession && localSession.id === data.id && !scan_nonce) {
+          try {
+            const endRes = await fetch('/api/end-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ table_id, business_id }),
+            });
+            const endData = await endRes.json();
+            if (endRes.ok) {
+              localStorage.removeItem('qr_billing_active_session');
+              setSession({ status: 'completed', duration: endData.duration, cost: endData.cost, end_time: endData.end_time });
+              return;
+            }
+          } catch (err) {
+            console.error('Failed to end session via QR scan', err);
           }
         }
 
@@ -72,7 +98,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
     }
-  }, [table_id, game_type, business_id]);
+  }, [table_id, game_type, business_id, scan_nonce]);
 
   useEffect(() => {
     fetchTableState();
@@ -126,7 +152,15 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       });
       const data = await res.json();
       if (res.ok) {
+          const nonce = Math.random().toString(36).substring(2, 10);
           localStorage.setItem('qr_billing_active_session', JSON.stringify({ id: data.id, table_id: data.table_id, business_id }));
+          
+          // Inject the _scan nonce into the URL without reloading the page
+          // This way, if they refresh, the nonce is preserved. If they scan the raw QR again, the nonce is missing.
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.set('_scan', nonce);
+          router.replace(newUrl.pathname + newUrl.search);
+
           setSession((prev: any) => ({
             status: 'active',
             id: data.id,
@@ -146,6 +180,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   };
 
   const handleEnd = async () => {
+    // Only used for debugging or API failsafes now, no UI button exposed.
     if (session.status !== 'active') return;
     try {
       const res = await fetch('/api/end-session', {
@@ -266,12 +301,9 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               </div>
             </div>
             <p className="text-gray-500 dark:text-gray-400 font-medium">Active Rate: ₹{currentActiveRate} / hour</p>
-            <button
-              onClick={handleEnd}
-              className="w-full mt-4 px-6 py-4 rounded-xl bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/50 text-red-700 dark:text-red-400 font-bold text-lg transition-all border border-red-200 dark:border-red-800"
-            >
-              End Session
-            </button>
+            <div className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
+              To end this session, please scan the table's QR code again.
+            </div>
           </>
         )}
 
