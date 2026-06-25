@@ -40,22 +40,22 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       if (data.status === 'idle') {
         setSession({ status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules });
       } else if (data.status === 'active') {
-        try {
-          const endRes = await fetch('/api/end-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ table_id, business_id }),
-          });
-          const endData = await endRes.json();
-          if (endRes.ok) {
-            setSession({ status: 'completed', duration: endData.duration, cost: endData.cost, end_time: endData.end_time });
-          } else {
-            setSession({ status: 'error', message: endData.error || 'Failed to end session automatically' });
+        const localSessionStr = localStorage.getItem('qr_billing_active_session');
+        const localSession = localSessionStr ? JSON.parse(localSessionStr) : null;
+
+        if (localSession && localSession.table_id !== table_id) {
+          try {
+            await fetch('/api/end-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ table_id: localSession.table_id, business_id: localSession.business_id || business_id }),
+            });
+            localStorage.removeItem('qr_billing_active_session');
+          } catch (err) {
+            console.error('Failed to invalidate previous session', err);
           }
-        } catch {
-          setSession({ status: 'error', message: 'Network error while ending session' });
         }
-      } else {
+
         setSession({
           status: 'active',
           id: data.id,
@@ -66,6 +66,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
           start_time: data.start_time,
           pricingRules: data.pricingRules,
         });
+      } else {
+        setSession({ status: 'error', message: 'Unknown status received' });
       }
     } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
@@ -124,6 +126,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       });
       const data = await res.json();
       if (res.ok) {
+          localStorage.setItem('qr_billing_active_session', JSON.stringify({ id: data.id, table_id: data.table_id, business_id }));
           setSession((prev: any) => ({
             status: 'active',
             id: data.id,
@@ -152,6 +155,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       });
       const data = await res.json();
       if (res.ok) {
+        localStorage.removeItem('qr_billing_active_session');
         setSession({ status: 'completed', duration: data.duration, cost: data.cost, end_time: data.end_time });
       } else {
         alert(`Error: ${data.error}`);
@@ -262,9 +266,12 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               </div>
             </div>
             <p className="text-gray-500 dark:text-gray-400 font-medium">Active Rate: ₹{currentActiveRate} / hour</p>
-            <div className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
-              To end this session, please scan the table's QR code again.
-            </div>
+            <button
+              onClick={handleEnd}
+              className="w-full mt-4 px-6 py-4 rounded-xl bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-800/50 text-red-700 dark:text-red-400 font-bold text-lg transition-all border border-red-200 dark:border-red-800"
+            >
+              End Session
+            </button>
           </>
         )}
 
