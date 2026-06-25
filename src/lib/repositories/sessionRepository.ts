@@ -169,7 +169,7 @@ export const sessionRepository = {
       const headers = headerResponse.data.values?.[0]?.map(h => String(h).trim().toLowerCase()) || [];
       
       const getIdx = (name: string) => headers.indexOf(name);
-      const rowLength = Math.max(headers.length, 10); // Ensure at least 10 columns if headers missing
+      const rowLength = Math.max(headers.length, 11); // Ensure enough columns
       const row = new Array(rowLength).fill('');
       
       const setVal = (colName: string, val: string) => {
@@ -179,15 +179,19 @@ export const sessionRepository = {
         }
       };
 
+      const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+
       // If headers are somehow missing or non-standard, fallback to default indices
       if (getIdx('date') === -1) {
-        row[0] = `'${toSheetsDate(session.start_time)}`;
-        row[1] = session.customer_name;
-        row[2] = session.table_id;
-        row[3] = session.game_type;
-        row[4] = `'${toSheetsTime(session.start_time)}`;
-        row[9] = session.status;
+        row[0] = shortId;
+        row[1] = `'${toSheetsDate(session.start_time)}`;
+        row[2] = session.customer_name;
+        row[3] = session.table_id;
+        row[4] = session.game_type;
+        row[5] = `'${toSheetsTime(session.start_time)}`;
+        row[10] = session.status;
       } else {
+        setVal('session id', shortId);
         setVal('date', `'${toSheetsDate(session.start_time)}`);
         setVal('customer name', session.customer_name);
         setVal('table no', session.table_id);
@@ -250,8 +254,8 @@ export const sessionRepository = {
       const statusIdx = headers.indexOf('status');
       
       // Fallback indices if headers are missing
-      const searchTableIdx = tableIdx !== -1 ? tableIdx : 2;
-      const searchStatusIdx = statusIdx !== -1 ? statusIdx : 9;
+      const searchTableIdx = tableIdx !== -1 ? tableIdx : 3;
+      const searchStatusIdx = statusIdx !== -1 ? statusIdx : 10;
       
       let rowIndex = -1;
       for (let i = 1; i < rows.length; i++) {
@@ -281,16 +285,19 @@ export const sessionRepository = {
           }
         };
 
-        setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 0);
-        setVal('customer name', updatedData.customer_name, 1);
-        setVal('table no', updatedData.table_id, 2);
-        setVal('game type', updatedData.game_type, 3);
-        setVal('start time', `'${toSheetsTime(updatedData.start_time)}`, 4);
-        setVal('end time', `'${toSheetsTime(updatedData.end_time)}`, 5);
-        setVal('duration', updatedData.duration || '', 6);
-        setVal('applied pricing', updatedData.applied_pricing || '', 7);
-        setVal('amount', updatedData.cost?.toString() || '', 8);
-        setVal('status', updatedData.status, 9);
+        const shortId = updatedData.id ? updatedData.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+
+        setVal('session id', shortId, 0);
+        setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 1);
+        setVal('customer name', updatedData.customer_name, 2);
+        setVal('table no', updatedData.table_id, 3);
+        setVal('game type', updatedData.game_type, 4);
+        setVal('start time', `'${toSheetsTime(updatedData.start_time)}`, 5);
+        setVal('end time', `'${toSheetsTime(updatedData.end_time)}`, 6);
+        setVal('duration', updatedData.duration || '', 7);
+        setVal('applied pricing', updatedData.applied_pricing || '', 8);
+        setVal('amount', updatedData.cost?.toString() || '', 9);
+        setVal('status', updatedData.status, 10);
 
         // Update just the exact row, across the required number of columns
         const endColLetter = String.fromCharCode(65 + row.length - 1); // 65 = 'A'

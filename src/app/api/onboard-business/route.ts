@@ -50,10 +50,10 @@ export async function POST(request: Request) {
       const rows = response.data.values;
       if (!rows || rows.length === 0 || !rows[0] || rows[0].length === 0 || rows[0][0] === '') {
         // Inject headers
-        const headers = ['Date', 'Customer Name', 'Table No', 'Game Type', 'Start Time', 'End Time', 'Duration', 'Applied Pricing', 'Amount', 'Status'];
+        const headers = ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Start Time', 'End Time', 'Duration', 'Applied Pricing', 'Amount', 'Status'];
         await sheets.spreadsheets.values.update({
           spreadsheetId: finalSheetId,
-          range: `'${firstSheetTitle}'!A1:J1`,
+          range: `'${firstSheetTitle}'!A1:K1`,
           valueInputOption: 'USER_ENTERED',
           requestBody: {
             values: [headers],

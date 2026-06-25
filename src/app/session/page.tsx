@@ -199,6 +199,8 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     return `${h}:${m}:${s}`;
   };
 
+  const shortId = session.status === 'active' && session.id ? session.id.split('-')[0].toUpperCase() : '';
+
   if (session.status === 'loading') {
     return (
       <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4">
@@ -275,9 +277,16 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
 
             <div className="relative">
               <div className="absolute inset-0 rounded-full blur-md bg-green-400/50 animate-pulse"></div>
-              <div className="relative bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-4 py-1 rounded-full text-sm font-bold tracking-wider flex items-center gap-2 border border-green-200 dark:border-green-800">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-ping"></span>
-                ACTIVE
+              <div className="text-center mb-6">
+                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-500/10 text-green-500 border border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+                  <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></div>
+                  ACTIVE
+                </span>
+                {shortId && (
+                  <div className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Session ID: <span className="text-gray-700 dark:text-gray-300 font-mono">#{shortId}</span>
+                  </div>
+                )}
               </div>
             </div>
             
