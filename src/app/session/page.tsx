@@ -27,6 +27,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   const [currentActiveRate, setCurrentActiveRate] = useState(0);
   const [notifiedOneHour, setNotifiedOneHour] = useState(false);
   const [showHourNotification, setShowHourNotification] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) {
@@ -124,6 +125,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   }, [session]);
 
   const handleStart = async () => {
+    if (isStarting) return;
     if (!table_id || !game_type) {
       alert('Missing table or game type in URL');
       return;
@@ -133,6 +135,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       return;
     }
     
+    setIsStarting(true);
     try {
       const res = await fetch('/api/start-session', {
         method: 'POST',
@@ -160,10 +163,12 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             pricingRules: prev.pricingRules,
           }));
       } else {
-        alert(`Error: ${data.error}`);
+        setSession({ status: 'error', message: data.error || 'Failed to start session' });
       }
     } catch {
-      alert('Failed to start session');
+      setSession({ status: 'error', message: 'Network error occurred' });
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -245,9 +250,10 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             </div>
             <button
               onClick={handleStart}
-              className="w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+              disabled={isStarting}
+              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              Start Session
+              {isStarting ? 'Starting...' : 'Start Session'}
             </button>
           </>
         )}
