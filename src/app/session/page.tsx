@@ -19,7 +19,6 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
   const table_id = params.table;
   const game_type = params.type;
   const business_id = params.b;
-  const scan_nonce = params._scan;
 
   const [session, setSession] = useState<SessionState>({ status: 'loading' });
   const [customerName, setCustomerName] = useState('');
@@ -46,7 +45,9 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
         setSession({ status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules });
       } else if (data.status === 'active') {
         // If the URL has NO _scan parameter, they just scanned the physical QR code!
-        if (!scan_nonce) {
+        // We strictly check the live window URL to prevent stale React closures.
+        const currentNonce = new URLSearchParams(window.location.search).get('_scan');
+        if (!currentNonce) {
           try {
             const endRes = await fetch('/api/end-session', {
               method: 'POST',
@@ -79,7 +80,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
     } catch {
       setSession({ status: 'error', message: 'Network error occurred' });
     }
-  }, [table_id, game_type, business_id, scan_nonce]);
+  }, [table_id, game_type, business_id]);
 
   useEffect(() => {
     fetchTableState();
