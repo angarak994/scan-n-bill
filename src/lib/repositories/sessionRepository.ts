@@ -171,8 +171,7 @@ export const sessionRepository = {
         '', // duration
         '', // applied_pricing
         '', // cost
-        session.status,
-        insertedData.id // Append the DB ID at the end of the sheet for reference
+        session.status
       ];
       
       await sheets.spreadsheets.values.append({
@@ -243,7 +242,6 @@ export const sessionRepository = {
           updatedData.duration || '',
           updatedData.applied_pricing || '',
           updatedData.cost?.toString() || '',
-          updatedData.status,
           id
         ];
 
