@@ -17,21 +17,31 @@ export interface Session {
   status: 'ACTIVE' | 'COMPLETED';
 }
 
-function toSheetsDateTime(isoString: string | null | undefined): string {
+function toSheetsDate(isoString: string | null | undefined): string {
   if (!isoString) return '';
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return isoString;
     const formatter = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Kolkata',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false
+      day: '2-digit', month: 'short', year: 'numeric'
     });
-    const parts = formatter.formatToParts(d);
-    const p: Record<string, string> = {};
-    parts.forEach(part => p[part.type] = part.value);
-    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+    return formatter.format(d);
+  } catch {
+    return isoString;
+  }
+}
+
+function toSheetsTime(isoString: string | null | undefined): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+    return formatter.format(d).replace(' am', ' AM').replace(' pm', ' PM');
   } catch {
     return isoString;
   }
@@ -152,11 +162,11 @@ export const sessionRepository = {
       const config = await getSheetConfig(sheets, businessId);
 
       const row = [
-        session.date,
+        toSheetsDate(session.start_time),
         session.customer_name,
         session.table_id,
         session.game_type,
-        toSheetsDateTime(session.start_time),
+        toSheetsTime(session.start_time),
         '', // end_time
         '', // duration
         '', // applied_pricing
@@ -224,12 +234,12 @@ export const sessionRepository = {
 
       if (rowIndex !== -1) {
         const row = [
-          updatedData.date,
+          toSheetsDate(updatedData.start_time),
           updatedData.customer_name,
           updatedData.table_id,
           updatedData.game_type,
-          toSheetsDateTime(updatedData.start_time),
-          toSheetsDateTime(updatedData.end_time),
+          toSheetsTime(updatedData.start_time),
+          toSheetsTime(updatedData.end_time),
           updatedData.duration || '',
           updatedData.applied_pricing || '',
           updatedData.cost?.toString() || '',
