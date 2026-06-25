@@ -214,10 +214,10 @@ export const sessionRepository = {
       const sheets = getSheetsClient();
       const config = await getSheetConfig(sheets, businessId);
 
-      // To update the row in Google sheets, we need to find which row has this UUID in column K
+      // To update the row in Google sheets, we search columns A:J
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'!A:K`,
+        range: `'${config.sheetTitle}'!A:J`,
       });
       
       const rows = response.data.values;
@@ -225,7 +225,9 @@ export const sessionRepository = {
       
       let rowIndex = -1;
       for (let i = 1; i < rows.length; i++) {
-        if (rows[i][10] === id) { // Column K is index 10
+        const sheetTable = String(rows[i][2] || '').trim();
+        const sheetStatus = String(rows[i][9] || '').trim().toUpperCase();
+        if (sheetTable === updatedData.table_id.trim() && sheetStatus === 'ACTIVE') {
           rowIndex = i + 1; // 1-based index
           break;
         }
@@ -242,12 +244,12 @@ export const sessionRepository = {
           updatedData.duration || '',
           updatedData.applied_pricing || '',
           updatedData.cost?.toString() || '',
-          id
+          updatedData.status
         ];
 
         await sheets.spreadsheets.values.update({
           spreadsheetId: config.spreadsheetId,
-          range: `'${config.sheetTitle}'!A${rowIndex}:K${rowIndex}`,
+          range: `'${config.sheetTitle}'!A${rowIndex}:J${rowIndex}`,
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [row] },
         });

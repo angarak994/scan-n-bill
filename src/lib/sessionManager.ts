@@ -56,7 +56,8 @@ export async function endSession(table_id: string, businessId?: string) {
   const timeStr = now.toISOString();
   const end_time = timeStr;
   
-  const startFull = session.start_time;
+  // Backward compatibility: If it's an old session, start_time is just "07:35 PM". We need to combine it with the date.
+  const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
   const endFull = end_time;
   
   let pricingRules;
