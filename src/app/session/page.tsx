@@ -8,6 +8,7 @@ type SessionState =
   | { status: 'loading' }
   | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any }
   | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any }
+  | { status: 'prompt_end'; id: string; table_id: string; game_type: string }
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
@@ -49,20 +50,14 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
         // We strictly check the live window URL to prevent stale React closures.
         const currentNonce = new URLSearchParams(window.location.search).get('_scan');
         if (!currentNonce) {
-          try {
-            const endRes = await fetch('/api/end-session', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ table_id, business_id }),
-            });
-            const endData = await endRes.json();
-            if (endRes.ok) {
-              setSession({ status: 'completed', duration: endData.duration, cost: endData.cost, end_time: endData.end_time });
-              return;
-            }
-          } catch (err) {
-            console.error('Failed to end session via QR scan', err);
-          }
+          // SECOND SCAN! Prompt the user to end the session instead of doing it automatically.
+          setSession({
+            status: 'prompt_end',
+            id: data.id,
+            table_id: data.table_id,
+            game_type: data.game_type,
+          });
+          return;
         }
 
         setSession({
@@ -174,7 +169,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
 
   const handleEnd = async () => {
     // Only used for debugging or API failsafes now, no UI button exposed.
-    if (session.status !== 'active') return;
+    if (session.status !== 'active' && session.status !== 'prompt_end') return;
     try {
       const res = await fetch('/api/end-session', {
         method: 'POST',
@@ -256,6 +251,42 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
               className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isStarting ? 'Starting...' : 'Start Session'}
+            </button>
+          </>
+        )}
+
+        {session.status === 'prompt_end' && (
+          <>
+            <div className="w-20 h-20 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-full flex items-center justify-center mb-2 shadow-inner">
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Session is Active</h1>
+              <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Table: {session.table_id}</p>
+            </div>
+            <div className="w-full mt-4 text-left bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
+              <p className="mb-2">This table currently has an active session.</p>
+              <p>If you are done playing, please click <strong>End Session</strong> below to generate your final bill.</p>
+            </div>
+            <button
+              onClick={handleEnd}
+              className="w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-semibold text-lg shadow-lg shadow-red-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              End Session & Generate Bill
+            </button>
+            <button
+              onClick={() => {
+                const nonce = Math.random().toString(36).substring(2, 10);
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.set('_scan', nonce);
+                router.replace(newUrl.pathname + newUrl.search);
+                fetchTableState();
+              }}
+              className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-semibold text-lg transition-all"
+            >
+              Return to Live View
             </button>
           </>
         )}
