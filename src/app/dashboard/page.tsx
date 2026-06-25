@@ -71,7 +71,7 @@ function DashboardContent() {
   useEffect(() => {
     if (isAuthorized) {
       fetchData();
-      const interval = setInterval(() => fetchData(), 30000);
+      const interval = setInterval(() => fetchData(), 5000);
       return () => clearInterval(interval);
     }
   }, [isAuthorized]);
@@ -199,8 +199,8 @@ function DashboardContent() {
                   </tr>
                 ) : (
                   data.activeSessions.map(session => {
-                    const startFull = `${session.date}, ${session.start_time}`;
-                    const endFull = `${data.todayStr}, ${toReadableIST(now)}`;
+                    const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+                    const endFull = now.toISOString();
                     let liveDuration = '0 min';
                     let liveCost = 0;
                     let liveSlab = 'None';
@@ -213,10 +213,20 @@ function DashboardContent() {
 
                     return (
                       <tr key={session.id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                        <td className="p-4 font-semibold whitespace-nowrap">{session.table_id}</td>
+                        <td className="p-4 font-semibold whitespace-nowrap">
+                          <div className="flex items-center">
+                            <span className="relative flex h-2.5 w-2.5 mr-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                            </span>
+                            {session.table_id}
+                          </div>
+                        </td>
                         <td className="p-4 whitespace-nowrap">{session.customer_name}</td>
                         <td className="p-4 capitalize whitespace-nowrap">{session.game_type}</td>
-                        <td className="p-4 whitespace-nowrap">{session.start_time}</td>
+                        <td className="p-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                          {session.start_time.includes('T') ? toReadableIST(new Date(session.start_time)) : session.start_time}
+                        </td>
                         <td className="p-4 font-mono font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">{liveDuration}</td>
                         <td className="p-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{liveSlab}</td>
                         <td className="p-4 font-bold text-green-600 dark:text-green-400 whitespace-nowrap">₹{liveCost}</td>
@@ -256,8 +266,12 @@ function DashboardContent() {
                       <td className="p-4 font-semibold whitespace-nowrap">{session.table_id}</td>
                       <td className="p-4 whitespace-nowrap">{session.customer_name}</td>
                       <td className="p-4 capitalize whitespace-nowrap">{session.game_type}</td>
-                      <td className="p-4 whitespace-nowrap">{session.start_time}</td>
-                      <td className="p-4 whitespace-nowrap">{session.end_time}</td>
+                      <td className="p-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                        {session.start_time.includes('T') ? toReadableIST(new Date(session.start_time)) : session.start_time}
+                      </td>
+                      <td className="p-4 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                        {session.end_time?.includes('T') ? toReadableIST(new Date(session.end_time)) : session.end_time || '-'}
+                      </td>
                       <td className="p-4 font-mono whitespace-nowrap">{session.duration}</td>
                       <td className="p-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{session.applied_pricing}</td>
                       <td className="p-4 font-bold text-green-600 dark:text-green-400 whitespace-nowrap">₹{session.cost}</td>

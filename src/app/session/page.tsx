@@ -276,10 +276,12 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
             )}
 
             <div className="relative">
-              <div className="absolute inset-0 rounded-full blur-md bg-green-400/50 animate-pulse"></div>
               <div className="text-center mb-6">
-                <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-500/10 text-green-500 border border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
-                  <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></div>
+                <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-500/20 shadow-sm">
+                  <span className="relative flex h-2.5 w-2.5 mr-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                  </span>
                   ACTIVE
                 </span>
                 {shortId && (
