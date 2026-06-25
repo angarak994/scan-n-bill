@@ -102,7 +102,7 @@ export default function SessionPage({ searchParams }: { searchParams: Promise<{ 
       return;
     }
     
-    const startMs = new Date(`${session.date}, ${session.start_time}`).getTime();
+    const startMs = new Date(session.start_time).getTime();
 
     const tick = () => {
       const now = Date.now();

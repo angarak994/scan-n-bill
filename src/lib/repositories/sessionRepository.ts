@@ -17,6 +17,26 @@ export interface Session {
   status: 'ACTIVE' | 'COMPLETED';
 }
 
+function toSheetsDateTime(isoString: string | null | undefined): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    const p: Record<string, string> = {};
+    parts.forEach(part => p[part.type] = part.value);
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+  } catch {
+    return isoString;
+  }
+}
+
 const getSheetsClient = () => {
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
   privateKey = privateKey.replace(/^"|"$|'^|'$/g, '').replace(/\\n/g, '\n');
@@ -136,7 +156,7 @@ export const sessionRepository = {
         session.customer_name,
         session.table_id,
         session.game_type,
-        `'${session.start_time}`,
+        toSheetsDateTime(session.start_time),
         '', // end_time
         '', // duration
         '', // applied_pricing
@@ -208,8 +228,8 @@ export const sessionRepository = {
           updatedData.customer_name,
           updatedData.table_id,
           updatedData.game_type,
-          `'${updatedData.start_time}`,
-          updatedData.end_time ? `'${updatedData.end_time}` : '',
+          toSheetsDateTime(updatedData.start_time),
+          toSheetsDateTime(updatedData.end_time),
           updatedData.duration || '',
           updatedData.applied_pricing || '',
           updatedData.cost?.toString() || '',

@@ -4,21 +4,7 @@ import { GameType } from './pricing';
 import { calculateBilling } from './billing';
 import { businessManager } from './businessManager';
 
-function toReadableIST(date: Date): string {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit', minute: '2-digit', hour12: true
-  });
-  return formatter.format(date).replace(' am', ' AM').replace(' pm', ' PM');
-}
-
-function toReadableDate(date: Date): string {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit', month: 'short', year: 'numeric'
-  });
-  return formatter.format(date);
-}
+// Use ISO strings for robust time storage
 
 export class ApiError extends Error {
   statusCode: number;
@@ -39,8 +25,8 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 
   const now = new Date();
-  const dateStr = toReadableDate(now);
-  const timeStr = toReadableIST(now);
+  const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const timeStr = now.toISOString(); // Full ISO timestamp
   
   const session: Session = {
     id: uuid(),
@@ -67,11 +53,11 @@ export async function endSession(table_id: string, businessId?: string) {
   }
 
   const now = new Date();
-  const timeStr = toReadableIST(now);
+  const timeStr = now.toISOString();
   const end_time = timeStr;
   
-  const startFull = `${session.date}, ${session.start_time}`;
-  const endFull = `${toReadableDate(now)}, ${end_time}`;
+  const startFull = session.start_time;
+  const endFull = end_time;
   
   let pricingRules;
   if (businessId) {
