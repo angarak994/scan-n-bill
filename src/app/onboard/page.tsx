@@ -249,7 +249,7 @@ export default function OnboardPage() {
                 <h3 className="font-semibold mb-4 text-gray-800 dark:text-gray-200">Add New Game Pricing</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Game / Sport Type (e.g. pool, snooker)</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Game / Sport Type (e.g. PS5, Bowling, Pool)</label>
                     <input type="text" value={newGameType} onChange={e => setNewGameType(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none" />
                   </div>
                   <div>

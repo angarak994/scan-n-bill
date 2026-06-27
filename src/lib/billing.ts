@@ -14,12 +14,11 @@ export function parseDateString(dateStr: string): number {
 export function getCurrentRate(gameType: string, nowMs: number, pricingRules?: PricingRules): { rate: number, slabName: string } {
   const game = gameType.toLowerCase();
   
-  // Default fallback if no pricing rules are defined
+  // Default fallback if no pricing rules are defined for this specific game
   if (!pricingRules || !pricingRules[game]) {
-    const dateIst = new Date(nowMs + IST_OFFSET);
-    const isBefore4PM = dateIst.getUTCHours() < 16;
-    if (isBefore4PM) return { rate: game === 'snooker' ? 200 : 100, slabName: 'Default Before 4 PM' };
-    return { rate: game === 'snooker' ? 300 : 150, slabName: 'Default After 4 PM' };
+    // Return a flat generic fallback rate to ensure the app doesn't crash 
+    // if a business forgets to add a pricing rule for a new game type.
+    return { rate: 150, slabName: `Standard Rate (Fallback for ${game})` };
   }
 
   const rule = pricingRules[game];

@@ -83,8 +83,7 @@ export async function POST(request: Request) {
     
     // Use dynamic tables or fallback if none provided
     const dynamicTables = (tables && tables.length > 0) ? tables : [
-      { name: 'Pool Table 1', id: 'Pool 1', type: 'pool' },
-      { name: 'Snooker Table 1', id: 'Snooker 1', type: 'snooker' },
+      { name: 'Table 1', id: 'Table 1', type: 'general' }
     ];
 
     const qrs = await Promise.all(dynamicTables.map(async (t: any) => {
