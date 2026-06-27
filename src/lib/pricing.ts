@@ -6,6 +6,7 @@ export interface PricingRule {
   rate?: number; // for fixed
   day_rate?: number; // for time_based
   evening_rate?: number; // for time_based
+  opening_hour?: number; // When day_rate starts (e.g. 11 for 11:00 AM)
   cutoff_hour?: number; // for time_based (0-23, when evening_rate starts)
   am_rate?: number; // legacy
   pm_rate?: number; // legacy

@@ -25,6 +25,7 @@ export default function OnboardPage() {
   const [newFixedRate, setNewFixedRate] = useState('');
   const [newDayRate, setNewDayRate] = useState('');
   const [newEveningRate, setNewEveningRate] = useState('');
+  const [newOpeningHour, setNewOpeningHour] = useState('11'); // Default to 11 AM
   const [newCutoffHour, setNewCutoffHour] = useState('16');
 
   // Temp states for tables
@@ -51,6 +52,7 @@ export default function OnboardPage() {
           type: 'time_based', 
           day_rate: Number(newDayRate), 
           evening_rate: Number(newEveningRate),
+          opening_hour: Number(newOpeningHour),
           cutoff_hour: Number(newCutoffHour)
         } 
       }));
@@ -59,6 +61,7 @@ export default function OnboardPage() {
     setNewFixedRate('');
     setNewDayRate('');
     setNewEveningRate('');
+    setNewOpeningHour('11');
     setNewCutoffHour('16');
   };
 
@@ -296,15 +299,27 @@ export default function OnboardPage() {
                       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Evening Rate (₹)</label>
                       <input type="number" value={newEveningRate} onChange={e => setNewEveningRate(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100" />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Rate Change Time</label>
-                      <select value={newCutoffHour} onChange={e => setNewCutoffHour(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100">
-                        {Array.from({ length: 24 }).map((_, i) => {
-                          const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
-                          const ampm = i >= 12 ? 'PM' : 'AM';
-                          return <option key={i} value={i}>{hour}:00 {ampm}</option>;
-                        })}
-                      </select>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Day Rate Starts At (Opening)</label>
+                        <select value={newOpeningHour} onChange={e => setNewOpeningHour(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100">
+                          {Array.from({ length: 24 }).map((_, i) => {
+                            const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
+                            const ampm = i >= 12 ? 'PM' : 'AM';
+                            return <option key={i} value={i}>{hour}:00 {ampm}</option>;
+                          })}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Evening Rate Starts At (Cutoff)</label>
+                        <select value={newCutoffHour} onChange={e => setNewCutoffHour(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100">
+                          {Array.from({ length: 24 }).map((_, i) => {
+                            const hour = i === 0 ? 12 : i > 12 ? i - 12 : i;
+                            const ampm = i >= 12 ? 'PM' : 'AM';
+                            return <option key={i} value={i}>{hour}:00 {ampm}</option>;
+                          })}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}

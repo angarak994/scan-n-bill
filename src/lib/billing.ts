@@ -32,18 +32,23 @@ export function getCurrentRate(gameType: string, nowMs: number, pricing?: Busine
   
   // Custom cutoff hour, default to 16 (4:00 PM) if not specified
   const cutoffHour = rule.cutoff_hour !== undefined ? rule.cutoff_hour : 16;
-  const isDay = currentHour < cutoffHour;
+  const openingHour = rule.opening_hour !== undefined ? rule.opening_hour : 6; // Default day starts at 6:00 AM
+  
+  // Day rate is active strictly between openingHour and cutoffHour.
+  // Any time outside this window (including spanning across midnight) falls to the Evening rate.
+  const isDay = currentHour >= openingHour && currentHour < cutoffHour;
   
   // Support both new names (day/evening) and legacy names (am/pm)
   const dayRate = rule.day_rate ?? rule.am_rate ?? 0;
   const eveningRate = rule.evening_rate ?? rule.pm_rate ?? 0;
 
   const displayCutoff = `${cutoffHour > 12 ? cutoffHour - 12 : cutoffHour === 0 ? 12 : cutoffHour} ${cutoffHour >= 12 ? 'PM' : 'AM'}`;
+  const displayOpening = `${openingHour > 12 ? openingHour - 12 : openingHour === 0 ? 12 : openingHour} ${openingHour >= 12 ? 'PM' : 'AM'}`;
 
   if (isDay) {
-    return { rate: dayRate, slabName: `${game} Before ${displayCutoff}` };
+    return { rate: dayRate, slabName: `${game} (${displayOpening} to ${displayCutoff})` };
   }
-  return { rate: eveningRate, slabName: `${game} After ${displayCutoff}` };
+  return { rate: eveningRate, slabName: `${game} (${displayCutoff} Onwards)` };
 }
 
 export function calculateCost(startMs: number, endMs: number, gameType: string, pricing?: BusinessPricing): { cost: number, slabsApplied: string } {
