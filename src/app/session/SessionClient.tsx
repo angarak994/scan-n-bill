@@ -45,26 +45,21 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       if (data.status === 'idle') {
         setSession({ status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules });
       } else if (data.status === 'active') {
-        const currentNonce = new URLSearchParams(window.location.search).get('_scan');
-        if (!currentNonce) {
-          setSession({
-            status: 'prompt_end',
+        setSession((prev) => {
+          // If we are already on the "prompt end" screen, stay there.
+          if (prev.status === 'prompt_end') return prev;
+
+          // Otherwise, sync smoothly to the live timer (whether we were idle, loading, or already active).
+          return {
+            status: 'active',
             id: data.id,
+            customer_name: data.customer_name,
             table_id: data.table_id,
             game_type: data.game_type,
-          });
-          return;
-        }
-
-        setSession({
-          status: 'active',
-          id: data.id,
-          customer_name: data.customer_name,
-          table_id: data.table_id,
-          game_type: data.game_type,
-          date: data.date,
-          start_time: data.start_time,
-          pricingRules: data.pricingRules,
+            date: data.date,
+            start_time: data.start_time,
+            pricingRules: data.pricingRules,
+          };
         });
       }
     } catch {
