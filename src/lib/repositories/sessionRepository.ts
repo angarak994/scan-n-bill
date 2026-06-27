@@ -156,64 +156,66 @@ export const sessionRepository = {
       throw new Error("Failed to create session in Database: " + error?.message);
     }
 
-    // 2. Async append to Google Sheets
-    try {
-      const sheets = getSheetsClient();
-      const config = await getSheetConfig(sheets, businessId);
+    // 2. Async append to Google Sheets (Fire and forget to unblock response)
+    Promise.resolve().then(async () => {
+      try {
+        const sheets = getSheetsClient();
+        const config = await getSheetConfig(sheets, businessId);
 
-      // Dynamically fetch headers to prevent column mismatch if user rearranges sheet
-      const headerResponse = await sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'!1:1`,
-      });
-      const headers = headerResponse.data.values?.[0]?.map(h => String(h).trim().toLowerCase()) || [];
-      
-      const getIdx = (name: string) => headers.indexOf(name);
-      const rowLength = Math.max(headers.length, 11); // Ensure enough columns
-      const row = new Array(rowLength).fill('');
-      
-      const setVal = (colName: string, val: string) => {
-        const idx = getIdx(colName);
-        if (idx !== -1) {
-          row[idx] = val;
+        // Dynamically fetch headers to prevent column mismatch if user rearranges sheet
+        const headerResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId: config.spreadsheetId,
+          range: `'${config.sheetTitle}'!1:1`,
+        });
+        const headers = headerResponse.data.values?.[0]?.map(h => String(h).trim().toLowerCase()) || [];
+        
+        const getIdx = (name: string) => headers.indexOf(name);
+        const rowLength = Math.max(headers.length, 11); // Ensure enough columns
+        const row = new Array(rowLength).fill('');
+        
+        const setVal = (colName: string, val: string) => {
+          const idx = getIdx(colName);
+          if (idx !== -1) {
+            row[idx] = val;
+          }
+        };
+
+        const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+
+        // If headers are somehow missing or non-standard, fallback to default indices
+        if (getIdx('date') === -1) {
+          row[0] = shortId;
+          row[1] = `'${toSheetsDate(session.start_time)}`;
+          row[2] = session.customer_name;
+          row[3] = session.table_id;
+          row[4] = session.game_type;
+          row[5] = `'${toSheetsTime(session.start_time)}`;
+          row[10] = session.status;
+        } else {
+          setVal('session id', shortId);
+          setVal('date', `'${toSheetsDate(session.start_time)}`);
+          setVal('customer name', session.customer_name);
+          setVal('table no', session.table_id);
+          setVal('game type', session.game_type);
+          setVal('start time', `'${toSheetsTime(session.start_time)}`);
+          setVal('status', session.status);
         }
-      };
+        
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: config.spreadsheetId,
+          range: `'${config.sheetTitle}'!A:K`,
+          valueInputOption: 'USER_ENTERED',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [row] },
+        });
 
-      const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
-
-      // If headers are somehow missing or non-standard, fallback to default indices
-      if (getIdx('date') === -1) {
-        row[0] = shortId;
-        row[1] = `'${toSheetsDate(session.start_time)}`;
-        row[2] = session.customer_name;
-        row[3] = session.table_id;
-        row[4] = session.game_type;
-        row[5] = `'${toSheetsTime(session.start_time)}`;
-        row[10] = session.status;
-      } else {
-        setVal('session id', shortId);
-        setVal('date', `'${toSheetsDate(session.start_time)}`);
-        setVal('customer name', session.customer_name);
-        setVal('table no', session.table_id);
-        setVal('game type', session.game_type);
-        setVal('start time', `'${toSheetsTime(session.start_time)}`);
-        setVal('status', session.status);
+        // Mark synced in DB (Optional enhancement)
+        await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', insertedData.id);
+      } catch (sheetError) {
+        console.error("Google Sheets Sync Error on Create:", sheetError);
+        await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', insertedData.id);
       }
-      
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'!A:K`,
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [row] },
-      });
-
-      // Mark synced in DB (Optional enhancement)
-      await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', insertedData.id);
-    } catch (sheetError) {
-      console.error("Google Sheets Sync Error on Create:", sheetError);
-      await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', insertedData.id);
-    }
+    }).catch(console.error);
   },
 
   update: async (id: string, updates: Partial<Session>, businessId?: string): Promise<void> => {
@@ -235,84 +237,86 @@ export const sessionRepository = {
       throw new Error("Failed to update session in Database: " + error?.message);
     }
 
-    // 2. Async update to Google Sheets
-    try {
-      const sheets = getSheetsClient();
-      const config = await getSheetConfig(sheets, businessId);
+    // 2. Async update to Google Sheets (Fire and forget to unblock response)
+    Promise.resolve().then(async () => {
+      try {
+        const sheets = getSheetsClient();
+        const config = await getSheetConfig(sheets, businessId);
 
-      // To update the row in Google sheets, we dynamically map headers
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'`, // Get entire sheet to find the row
-      });
-      
-      const rows = response.data.values;
-      if (!rows || rows.length === 0) return;
-      
-      const headers = rows[0].map(h => String(h).trim().toLowerCase());
-      const tableIdx = headers.indexOf('table no');
-      const statusIdx = headers.indexOf('status');
-      
-      // Fallback indices if headers are missing
-      const searchTableIdx = tableIdx !== -1 ? tableIdx : 3;
-      const searchStatusIdx = statusIdx !== -1 ? statusIdx : 10;
-      
-      let rowIndex = -1;
-      for (let i = 1; i < rows.length; i++) {
-        const sheetTable = String(rows[i][searchTableIdx] || '').trim();
-        const sheetStatus = String(rows[i][searchStatusIdx] || '').trim().toUpperCase();
-        if (sheetTable === updatedData.table_id.trim() && sheetStatus === 'ACTIVE') {
-          rowIndex = i + 1; // 1-based index
-          break;
-        }
-      }
-
-      if (rowIndex !== -1) {
-        const row = new Array(headers.length).fill('');
-        
-        // Preserve existing data in the row for columns we aren't updating, in case user added custom columns
-        const existingRow = rows[rowIndex - 1];
-        for (let j = 0; j < row.length; j++) {
-          row[j] = existingRow[j] || '';
-        }
-
-        const setVal = (colName: string, val: string, fallbackIdx: number) => {
-          const idx = headers.indexOf(colName);
-          if (idx !== -1) {
-            row[idx] = val;
-          } else if (fallbackIdx < row.length) {
-            row[fallbackIdx] = val; // Fallback
-          }
-        };
-
-        const shortId = updatedData.id ? updatedData.id.split('-')[0].toUpperCase() : 'UNKNOWN';
-
-        setVal('session id', shortId, 0);
-        setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 1);
-        setVal('customer name', updatedData.customer_name, 2);
-        setVal('table no', updatedData.table_id, 3);
-        setVal('game type', updatedData.game_type, 4);
-        setVal('start time', `'${toSheetsTime(updatedData.start_time)}`, 5);
-        setVal('end time', `'${toSheetsTime(updatedData.end_time)}`, 6);
-        setVal('duration', updatedData.duration || '', 7);
-        setVal('applied pricing', updatedData.applied_pricing || '', 8);
-        setVal('amount', updatedData.cost?.toString() || '', 9);
-        setVal('status', updatedData.status, 10);
-
-        // Update just the exact row, across the required number of columns
-        const endColLetter = String.fromCharCode(65 + row.length - 1); // 65 = 'A'
-        await sheets.spreadsheets.values.update({
+        // To update the row in Google sheets, we dynamically map headers
+        const response = await sheets.spreadsheets.values.get({
           spreadsheetId: config.spreadsheetId,
-          range: `'${config.sheetTitle}'!A${rowIndex}:${endColLetter}${rowIndex}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [row] },
+          range: `'${config.sheetTitle}'`, // Get entire sheet to find the row
         });
+        
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) return;
+        
+        const headers = rows[0].map(h => String(h).trim().toLowerCase());
+        const tableIdx = headers.indexOf('table no');
+        const statusIdx = headers.indexOf('status');
+        
+        // Fallback indices if headers are missing
+        const searchTableIdx = tableIdx !== -1 ? tableIdx : 3;
+        const searchStatusIdx = statusIdx !== -1 ? statusIdx : 10;
+        
+        let rowIndex = -1;
+        for (let i = 1; i < rows.length; i++) {
+          const sheetTable = String(rows[i][searchTableIdx] || '').trim();
+          const sheetStatus = String(rows[i][searchStatusIdx] || '').trim().toUpperCase();
+          if (sheetTable === updatedData.table_id.trim() && sheetStatus === 'ACTIVE') {
+            rowIndex = i + 1; // 1-based index
+            break;
+          }
+        }
 
-        await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', id);
+        if (rowIndex !== -1) {
+          const row = new Array(headers.length).fill('');
+          
+          // Preserve existing data in the row for columns we aren't updating, in case user added custom columns
+          const existingRow = rows[rowIndex - 1];
+          for (let j = 0; j < row.length; j++) {
+            row[j] = existingRow[j] || '';
+          }
+
+          const setVal = (colName: string, val: string, fallbackIdx: number) => {
+            const idx = headers.indexOf(colName);
+            if (idx !== -1) {
+              row[idx] = val;
+            } else if (fallbackIdx < row.length) {
+              row[fallbackIdx] = val; // Fallback
+            }
+          };
+
+          const shortId = updatedData.id ? updatedData.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+
+          setVal('session id', shortId, 0);
+          setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 1);
+          setVal('customer name', updatedData.customer_name, 2);
+          setVal('table no', updatedData.table_id, 3);
+          setVal('game type', updatedData.game_type, 4);
+          setVal('start time', `'${toSheetsTime(updatedData.start_time)}`, 5);
+          setVal('end time', `'${toSheetsTime(updatedData.end_time)}`, 6);
+          setVal('duration', updatedData.duration || '', 7);
+          setVal('applied pricing', updatedData.applied_pricing || '', 8);
+          setVal('amount', updatedData.cost?.toString() || '', 9);
+          setVal('status', updatedData.status, 10);
+
+          // Update just the exact row, across the required number of columns
+          const endColLetter = String.fromCharCode(65 + row.length - 1); // 65 = 'A'
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: config.spreadsheetId,
+            range: `'${config.sheetTitle}'!A${rowIndex}:${endColLetter}${rowIndex}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [row] },
+          });
+
+          await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', id);
+        }
+      } catch (sheetError) {
+        console.error("Google Sheets Sync Error on Update:", sheetError);
+        await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', id);
       }
-    } catch (sheetError) {
-      console.error("Google Sheets Sync Error on Update:", sheetError);
-      await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', id);
-    }
+    }).catch(console.error);
   }
 };

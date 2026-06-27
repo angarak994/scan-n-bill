@@ -51,8 +51,8 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
   const totalMs = endMs - startMs;
   const durationMinutes = Math.floor(totalMs / 60000);
 
-  // First 10 minutes are completely free (Grace Period logic)
-  if (durationMinutes <= 10) {
+  // First 5 minutes are completely free (Grace Period logic)
+  if (durationMinutes <= 5) {
     return { cost: 0, slabsApplied: 'None (Grace Period)' };
   }
 
@@ -72,8 +72,8 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     currentMs = nextMs;
   }
   
-  // Strict nearest 10 rounding logic
-  const finalCost = Math.round(totalCost / 10) * 10;
+  // Round to nearest integer to provide clean totals (e.g., ₹125, ₹175) without unnecessary decimals
+  const finalCost = Math.round(totalCost);
   return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
