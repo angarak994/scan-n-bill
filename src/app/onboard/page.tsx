@@ -15,7 +15,9 @@ export default function OnboardPage() {
     dashboard_pin: '',
   });
 
-  const [pricingRules, setPricingRules] = useState<PricingRules>({});
+  const [pricingRules, setPricingRules] = useState<PricingRules>({
+    _global: { rounding_mode: 'nearest_5' }
+  });
   const [tables, setTables] = useState<TableConfig[]>([]);
 
   // Temp states for pricing
@@ -62,6 +64,7 @@ export default function OnboardPage() {
   };
 
   const removePricingRule = (key: string) => {
+    if (key === '_global') return;
     const updated = { ...pricingRules };
     delete updated[key];
     setPricingRules(updated);
@@ -91,7 +94,8 @@ export default function OnboardPage() {
       }
     }
     if (step === 2) {
-      if (Object.keys(pricingRules).length === 0) {
+      const ruleCount = Object.keys(pricingRules).filter(k => k !== '_global').length;
+      if (ruleCount === 0) {
         setError('Please define at least one pricing rule.');
         return;
       }
@@ -244,6 +248,24 @@ export default function OnboardPage() {
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Pricing Rules</h2>
                 <button onClick={() => setStep(1)} className="text-sm font-medium text-blue-600 hover:underline">← Back</button>
               </div>
+
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600 mb-2">
+                <h3 className="font-semibold mb-4 text-gray-800 dark:text-gray-200">Global Billing Settings</h3>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Rounding Mode</label>
+                  <select 
+                    value={pricingRules._global?.rounding_mode || 'nearest_5'}
+                    onChange={(e) => setPricingRules({ ...pricingRules, _global: { rounding_mode: e.target.value as any } })}
+                    className="w-full md:w-1/2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
+                  >
+                    <option value="nearest_5">Nearest ₹5 (e.g. ₹122 → ₹120, ₹123 → ₹125) - Default</option>
+                    <option value="up_5">Round Up to ₹5 (e.g. ₹121 → ₹125)</option>
+                    <option value="down_5">Round Down to ₹5 (e.g. ₹124 → ₹120)</option>
+                    <option value="none">No Rounding (Exact Amount)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">Applies automatically to all active sessions to ensure clean bills (divisible by 5).</p>
+                </div>
+              </div>
               
               <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600">
                 <h3 className="font-semibold mb-4 text-gray-800 dark:text-gray-200">Add New Game Pricing</h3>
@@ -294,7 +316,7 @@ export default function OnboardPage() {
               </div>
 
               <div className="space-y-3">
-                {Object.entries(pricingRules).map(([game, rule]) => (
+                {Object.entries(pricingRules).filter(([game]) => game !== '_global').map(([game, rule]) => (
                   <div key={game} className="flex justify-between items-center p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                     <div>
                       <h4 className="font-bold text-gray-800 dark:text-white capitalize text-lg">{game}</h4>
@@ -309,7 +331,7 @@ export default function OnboardPage() {
                     </button>
                   </div>
                 ))}
-                {Object.keys(pricingRules).length === 0 && (
+                {Object.keys(pricingRules).filter(k => k !== '_global').length === 0 && (
                   <div className="text-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
                     No pricing rules added yet.
                   </div>
@@ -339,7 +361,7 @@ export default function OnboardPage() {
                     <label className="block text-xs font-medium text-gray-500 mb-1">Game Type (Linked to Pricing)</label>
                     <select value={newTableGameType} onChange={e => setNewTableGameType(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none">
                       <option value="">Select a game type...</option>
-                      {Object.keys(pricingRules).map(game => (
+                      {Object.keys(pricingRules).filter(k => k !== '_global').map(game => (
                         <option key={game} value={game} className="capitalize">{game}</option>
                       ))}
                     </select>

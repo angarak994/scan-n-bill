@@ -71,8 +71,20 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     currentMs = nextMs;
   }
   
-  // Round to nearest integer to provide clean totals (e.g., ₹125, ₹175) without unnecessary decimals
-  const finalCost = Math.round(totalCost);
+  // Apply rounding rules
+  const roundingMode = pricingRules?._global?.rounding_mode || 'nearest_5';
+  let finalCost = totalCost;
+
+  if (roundingMode === 'nearest_5') {
+    finalCost = Math.round(totalCost / 5) * 5;
+  } else if (roundingMode === 'up_5') {
+    finalCost = Math.ceil(totalCost / 5) * 5;
+  } else if (roundingMode === 'down_5') {
+    finalCost = Math.floor(totalCost / 5) * 5;
+  } else if (roundingMode === 'none') {
+    finalCost = Math.round(totalCost); // Round to nearest ₹1 to avoid weird decimals
+  }
+
   return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
