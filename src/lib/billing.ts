@@ -58,10 +58,15 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
   let totalCost = 0;
   const appliedSlabs = new Set<string>();
 
+  // Truncate endMs to the exact elapsed minute. This eliminates millisecond-level price jumps
+  // and completely resolves client vs server race conditions during "End Session" by ensuring
+  // 59 seconds of complete stability per minute.
+  const effectiveEndMs = startMs + (durationMinutes * 60000);
+
   let currentMs = startMs;
-  while (currentMs < endMs) {
+  while (currentMs < effectiveEndMs) {
     const nextMs = currentMs + 60 * 1000;
-    const chunkEndMs = Math.min(nextMs, endMs);
+    const chunkEndMs = Math.min(nextMs, effectiveEndMs);
     const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
 
     const { rate, slabName } = getCurrentRate(gameType, currentMs, pricingRules);
