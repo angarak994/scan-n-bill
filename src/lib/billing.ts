@@ -1,4 +1,4 @@
-import { PricingRules, PricingRule } from './pricing';
+import { BusinessPricing, PricingRule } from './pricing';
 
 export const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 
@@ -11,17 +11,17 @@ export function parseDateString(dateStr: string): number {
   return new Date(cleanStr).getTime();
 }
 
-export function getCurrentRate(gameType: string, nowMs: number, pricingRules?: PricingRules): { rate: number, slabName: string } {
+export function getCurrentRate(gameType: string, nowMs: number, pricing?: BusinessPricing): { rate: number, slabName: string } {
   const game = gameType.toLowerCase();
   
   // Default fallback if no pricing rules are defined for this specific game
-  if (!pricingRules || !pricingRules[game]) {
+  if (!pricing || !pricing.rules || !pricing.rules[game]) {
     // Return a flat generic fallback rate to ensure the app doesn't crash 
     // if a business forgets to add a pricing rule for a new game type.
     return { rate: 150, slabName: `Standard Rate (Fallback for ${game})` };
   }
 
-  const rule = pricingRules[game];
+  const rule = pricing.rules[game];
   if (rule.type === 'fixed') {
     return { rate: rule.rate || 0, slabName: `${game} Flat ₹${rule.rate}/hr` };
   }
@@ -46,7 +46,7 @@ export function getCurrentRate(gameType: string, nowMs: number, pricingRules?: P
   return { rate: eveningRate, slabName: `${game} After ${displayCutoff}` };
 }
 
-export function calculateCost(startMs: number, endMs: number, gameType: string, pricingRules?: PricingRules): { cost: number, slabsApplied: string } {
+export function calculateCost(startMs: number, endMs: number, gameType: string, pricing?: BusinessPricing): { cost: number, slabsApplied: string } {
   const totalMs = endMs - startMs;
   const durationMinutes = Math.floor(totalMs / 60000);
 
@@ -69,7 +69,7 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     const chunkEndMs = Math.min(nextMs, effectiveEndMs);
     const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
 
-    const { rate, slabName } = getCurrentRate(gameType, currentMs, pricingRules);
+    const { rate, slabName } = getCurrentRate(gameType, currentMs, pricing);
     appliedSlabs.add(slabName);
     
     totalCost += durationHours * rate;
@@ -77,7 +77,7 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
   }
   
   // Apply rounding rules
-  const roundingMode = pricingRules?._global?.rounding_mode || 'nearest_5';
+  const roundingMode = pricing?.globalSettings?.rounding_mode || 'nearest_5';
   let finalCost = totalCost;
 
   if (roundingMode === 'nearest_5') {
@@ -96,7 +96,7 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
 /**
  * Pure function for billing calculation.
  */
-export function calculateBilling(startString: string, endString: string, gameType: string, pricingRules?: PricingRules) {
+export function calculateBilling(startString: string, endString: string, gameType: string, pricing?: BusinessPricing) {
   const startMs = parseDateString(startString);
   const endMs = parseDateString(endString);
 
@@ -107,7 +107,7 @@ export function calculateBilling(startString: string, endString: string, gameTyp
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricingRules);
+  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);

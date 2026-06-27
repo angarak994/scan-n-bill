@@ -10,12 +10,16 @@ export interface PricingRule {
   am_rate?: number; // legacy
   pm_rate?: number; // legacy
 }
-
 export interface GlobalSettings {
   rounding_mode?: 'nearest_5' | 'up_5' | 'down_5' | 'none';
 }
 
-export type PricingRules = Record<string, PricingRule> & { _global?: GlobalSettings };
+export type PricingRules = Record<string, PricingRule>;
+
+export interface BusinessPricing {
+  rules: PricingRules;
+  globalSettings?: GlobalSettings;
+}
 
 export interface TableConfig {
   id: string;

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { PricingRules, TableConfig } from './pricing';
+import { BusinessPricing, TableConfig } from './pricing';
 
 export interface BusinessData {
   id?: string;
@@ -10,7 +10,7 @@ export interface BusinessData {
   google_sheet_id: string;
   business_type?: string;
   status?: string;
-  pricing_rules?: PricingRules;
+  pricing_rules?: BusinessPricing;
   tables?: TableConfig[];
   dashboard_pin?: string;
 }
@@ -49,6 +49,22 @@ export const businessManager = {
 
     if (error || !data) {
       return null;
+    }
+
+    // Seamlessly handle DB legacy formats
+    let parsedPricing = data.pricing_rules;
+    if (parsedPricing) {
+      if (parsedPricing.rules) {
+        // Modern BusinessPricing format
+        data.pricing_rules = parsedPricing;
+      } else if (parsedPricing._global) {
+        // Semi-legacy format
+        const { _global, ...rules } = parsedPricing;
+        data.pricing_rules = { rules, globalSettings: _global };
+      } else {
+        // Full legacy format (just rules)
+        data.pricing_rules = { rules: parsedPricing, globalSettings: { rounding_mode: 'nearest_5' } };
+      }
     }
 
     return data;
