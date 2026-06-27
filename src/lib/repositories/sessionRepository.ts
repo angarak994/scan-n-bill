@@ -252,28 +252,27 @@ export const sessionRepository = {
       if (!rows || rows.length === 0) return;
       
       const headers = rows[0].map(h => String(h).trim().toLowerCase());
-      const tableIdx = headers.indexOf('table no');
-      const statusIdx = headers.indexOf('status');
+      const idIdx = headers.indexOf('session id');
       
-      // Fallback indices if headers are missing
-      const searchTableIdx = tableIdx !== -1 ? tableIdx : 3;
-      const searchStatusIdx = statusIdx !== -1 ? statusIdx : 10;
+      // Fallback index if headers are missing
+      const searchIdIdx = idIdx !== -1 ? idIdx : 0;
+      const shortId = updatedData.id ? updatedData.id.split('-')[0].toUpperCase() : 'UNKNOWN';
       
       let rowIndex = -1;
       for (let i = 1; i < rows.length; i++) {
-        const sheetTable = String(rows[i][searchTableIdx] || '').trim();
-        const sheetStatus = String(rows[i][searchStatusIdx] || '').trim().toUpperCase();
-        if (sheetTable === updatedData.table_id.trim() && sheetStatus === 'ACTIVE') {
+        const sheetIdVal = String(rows[i][searchIdIdx] || '').trim().toUpperCase();
+        if (sheetIdVal === shortId) {
           rowIndex = i + 1; // 1-based index
           break;
         }
       }
 
       if (rowIndex !== -1) {
-        const row = new Array(headers.length).fill('');
+        const rowLength = Math.max(headers.length, 11); // Ensure we have enough columns to K
+        const row = new Array(rowLength).fill('');
         
         // Preserve existing data in the row for columns we aren't updating, in case user added custom columns
-        const existingRow = rows[rowIndex - 1];
+        const existingRow = rows[rowIndex - 1] || [];
         for (let j = 0; j < row.length; j++) {
           row[j] = existingRow[j] || '';
         }
