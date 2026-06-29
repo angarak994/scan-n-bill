@@ -34,6 +34,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
   const [isEnding, setIsEnding] = useState(false);
   const [cart, setCart] = useState<{ [key: string]: number }>({});
   const [isOrdering, setIsOrdering] = useState(false);
+  const [billModalData, setBillModalData] = useState<{ duration: string; cost: number; end_time: string } | null>(null);
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) return;
@@ -47,13 +48,13 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       }
       if (data.status === 'idle') {
         setSession((prev) => {
-          if (prev.status === 'completed') return prev;
+          if (prev.status === 'completed' || billModalData !== null) return prev;
           return { status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules, menuItems: data.menuItems };
         });
       } else if (data.status === 'active') {
         setSession((prev) => {
           // If we are already on the "prompt end" or "completed" screen, stay there.
-          if (prev.status === 'prompt_end' || prev.status === 'completed') return prev;
+          if (prev.status === 'prompt_end' || prev.status === 'completed' || billModalData !== null) return prev;
 
           // Otherwise, sync smoothly to the live timer (whether we were idle, loading, or already active).
           return {
@@ -166,8 +167,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
 
     const optimisticDuration = formatElapsed(elapsedSeconds);
     const optimisticCost = currentCost;
-    setSession({ 
-      status: 'completed', 
+    setBillModalData({ 
       duration: optimisticDuration, 
       cost: optimisticCost, 
       end_time: new Date().toISOString() 
@@ -181,7 +181,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       });
       const data = await res.json();
       if (res.ok) {
-        setSession({ status: 'completed', duration: data.duration, cost: data.cost, end_time: data.end_time });
+        setBillModalData({ duration: data.duration, cost: data.cost, end_time: data.end_time });
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -502,38 +502,62 @@ export default function SessionClient({ initialState, business_id, table_id, gam
           </>
         )}
 
-        {session.status === 'completed' && (
-          <>
-            <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-2 shadow-inner">
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Session Complete</h1>
-              <div className="flex justify-center gap-4 text-sm font-medium text-gray-500 dark:text-gray-400 mb-6">
-                <div className="bg-gray-100 dark:bg-gray-700/50 px-4 py-2 rounded-lg">
-                  <span className="block text-xs uppercase tracking-wider mb-1">Duration</span>
-                  <span className="text-gray-800 dark:text-gray-200">{session.duration}</span>
-                </div>
-              </div>
-              <div className="mb-2">
-                <span className="text-gray-500 dark:text-gray-400 text-sm font-medium uppercase tracking-wider">Total Amount</span>
-                <p className="text-5xl font-bold text-gray-900 dark:text-white mt-1">₹{session.cost}</p>
-              </div>
-            </div>
+        {session.status === 'completed' && !billModalData && (
+          <div className="text-center">
+            <h1 className="text-2xl font-bold mb-4">Session Completed</h1>
+            <p>Your session has ended successfully.</p>
             <button
               onClick={() => {
-                // Clear the scan nonce and force a reload to start fresh
                 const newUrl = new URL(window.location.href);
                 newUrl.searchParams.delete('_scan');
                 window.location.href = newUrl.pathname + newUrl.search;
               }}
-              className="w-full mt-4 px-6 py-4 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-semibold text-lg transition-all"
+              className="w-full mt-6 px-6 py-4 rounded-xl bg-gray-100 font-semibold"
             >
               Start New Session
             </button>
-          </>
+          </div>
         )}
       </div>
+
+      {/* Pop-up Bill Modal */}
+      {billModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 p-8 w-full max-w-md transform scale-100 animate-in zoom-in-95 duration-300 flex flex-col items-center text-center">
+            <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4 shadow-inner ring-4 ring-emerald-50 dark:ring-emerald-900/20">
+              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Bill Generated</h1>
+            <p className="text-gray-500 dark:text-gray-400 mb-8 font-medium">Please proceed to the counter to pay.</p>
+            
+            <div className="w-full bg-gray-50 dark:bg-gray-750/50 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-gray-700">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm">Duration</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100 font-mono text-lg">{billModalData.duration}</span>
+              </div>
+              <div className="w-full h-px bg-gray-200 dark:bg-gray-700 my-4 border-dashed border-t"></div>
+              <div className="flex justify-between items-end">
+                <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm mb-1">Total Amount</span>
+                <span className="text-5xl font-black text-green-600 dark:text-green-400">₹{billModalData.cost}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setBillModalData(null);
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.delete('_scan');
+                window.location.href = newUrl.pathname + newUrl.search;
+              }}
+              className="w-full px-6 py-4 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 font-bold text-lg shadow-xl shadow-gray-900/20 transition-all active:scale-[0.98]"
+            >
+              Close & Start New Session
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
