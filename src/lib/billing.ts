@@ -105,16 +105,12 @@ export function calculateCost(
     // Check if start hour is within peak window
     const isPeak = startHour >= peakStart && startHour < peakEnd;
     
-    if (isPeak) {
-      if (billedDurationMinutes <= 60) {
-        billedDurationMinutes = 60;
-      }
-    } else {
-      // Off-Peak Promo Logic
-      if (billedDurationMinutes > 60) {
-        // Give up to 15 mins free, but don't drop below 60
-        billedDurationMinutes = Math.max(60, billedDurationMinutes - 15);
-      }
+    // The 45-Minute Trap: If they play between 45 and 60 minutes, bump them to exactly 60.
+    if (billedDurationMinutes >= 45 && billedDurationMinutes <= 60) {
+      billedDurationMinutes = 60;
+    } else if (!isPeak && billedDurationMinutes > 60) {
+      // Off-Peak Promo Logic: If they play > 60 mins off-peak, give up to 15 mins free (min 60)
+      billedDurationMinutes = Math.max(60, billedDurationMinutes - 15);
     }
   }
 
