@@ -87,13 +87,39 @@ export function calculateCost(
     return { cost: 0, slabsApplied: 'None (Grace Period)' };
   }
 
+  let billedDurationMinutes = durationMinutes;
+  
+  const enablePeakRules = pricing?.globalSettings?.enable_peak_rules ?? true; // Default to true based on user request
+  const peakStart = pricing?.globalSettings?.peak_start_hour ?? 17; // 5 PM
+  const peakEnd = pricing?.globalSettings?.peak_end_hour ?? 23; // 11 PM
+
+  if (enablePeakRules) {
+    const startIst = new Date(startMs + IST_OFFSET);
+    const startHour = startIst.getUTCHours();
+    
+    // Check if start hour is within peak window
+    const isPeak = startHour >= peakStart && startHour < peakEnd;
+    
+    if (isPeak) {
+      if (billedDurationMinutes <= 60) {
+        billedDurationMinutes = 60;
+      }
+    } else {
+      // Off-Peak Promo Logic
+      if (billedDurationMinutes > 60) {
+        // Give up to 15 mins free, but don't drop below 60
+        billedDurationMinutes = Math.max(60, billedDurationMinutes - 15);
+      }
+    }
+  }
+
   let totalCost = 0;
   const appliedSlabs = new Set<string>();
 
   // Truncate endMs to the exact elapsed minute. This eliminates millisecond-level price jumps
   // and completely resolves client vs server race conditions during "End Session" by ensuring
   // 59 seconds of complete stability per minute.
-  const effectiveEndMs = startMs + (durationMinutes * 60000);
+  const effectiveEndMs = startMs + (billedDurationMinutes * 60000);
 
   let currentMs = startMs;
   while (currentMs < effectiveEndMs) {

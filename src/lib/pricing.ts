@@ -16,6 +16,9 @@ export interface PricingRule {
 }
 export interface GlobalSettings {
   rounding_mode?: 'nearest_5' | 'up_5' | 'down_5' | 'none';
+  enable_peak_rules?: boolean;
+  peak_start_hour?: number; // e.g. 17 (5 PM)
+  peak_end_hour?: number; // e.g. 23 (11 PM)
 }
 
 export type PricingRules = Record<string, PricingRule>;

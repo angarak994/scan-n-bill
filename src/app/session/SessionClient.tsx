@@ -258,6 +258,14 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     );
   }
 
+  let isOffPeak = false;
+  if (session.status === 'idle' && session.pricingRules?.globalSettings?.enable_peak_rules !== false) {
+    const currentHour = new Date().getHours();
+    const peakStart = session.pricingRules?.globalSettings?.peak_start_hour ?? 17;
+    const peakEnd = session.pricingRules?.globalSettings?.peak_end_hour ?? 23;
+    isOffPeak = !(currentHour >= peakStart && currentHour < peakEnd);
+  }
+
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden border border-gray-100 dark:border-gray-700 p-8 flex flex-col items-center text-center gap-6">
@@ -273,6 +281,14 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               {session.discount && session.discount.percent > 0 && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
                   🎉 Happy Hour: {session.discount.percent}% OFF
+                </div>
+              )}
+              {isOffPeak && (
+                <div className="mt-4 w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-4 rounded-xl shadow-lg border border-emerald-400 animate-in zoom-in duration-500">
+                  <h3 className="font-bold text-lg mb-1 flex justify-center items-center gap-2">
+                    <span className="text-2xl">🌟</span> OFF-PEAK PROMO
+                  </h3>
+                  <p className="text-sm font-medium">Play for 1 Hour and get 15 Minutes FREE!</p>
                 </div>
               )}
             </div>

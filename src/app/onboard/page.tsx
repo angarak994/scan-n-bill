@@ -285,25 +285,71 @@ export default function OnboardPage() {
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Pricing Rules</h2>
                 <button onClick={() => setStep(1)} className="text-sm font-medium text-blue-600 hover:underline">← Back</button>
               </div>
-
               <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600 mb-2">
                 <h3 className="font-semibold mb-4 text-gray-800 dark:text-gray-200">Global Billing Settings</h3>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Rounding Mode</label>
-                  <select 
-                    value={globalSettings.rounding_mode || 'nearest_5'}
-                    onChange={(e) => setGlobalSettings({ ...globalSettings, rounding_mode: e.target.value as any })}
-                    className="w-full md:w-1/2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
-                  >
-                    <option value="nearest_5">Nearest ₹5 (e.g. ₹122 → ₹120, ₹123 → ₹125) - Default</option>
-                    <option value="up_5">Round Up to ₹5 (e.g. ₹121 → ₹125)</option>
-                    <option value="down_5">Round Down to ₹5 (e.g. ₹124 → ₹120)</option>
-                    <option value="none">No Rounding (Exact Amount)</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-2">Applies automatically to all active sessions to ensure clean bills (divisible by 5).</p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Rounding Mode</label>
+                    <select 
+                      value={globalSettings.rounding_mode || 'nearest_5'}
+                      onChange={(e) => setGlobalSettings({ ...globalSettings, rounding_mode: e.target.value as any })}
+                      className="w-full md:w-1/2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
+                    >
+                      <option value="nearest_5">Nearest ₹5 (e.g. ₹122 → ₹120, ₹123 → ₹125) - Default</option>
+                      <option value="up_5">Round Up to ₹5 (e.g. ₹121 → ₹125)</option>
+                      <option value="down_5">Round Down to ₹5 (e.g. ₹124 → ₹120)</option>
+                      <option value="none">No Rounding (Exact Amount)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Applies automatically to all active sessions to ensure clean bills.</p>
+                  </div>
+
+                  <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <input 
+                        type="checkbox"
+                        id="enable_peak_rules"
+                        checked={globalSettings.enable_peak_rules ?? true}
+                        onChange={(e) => setGlobalSettings({ ...globalSettings, enable_peak_rules: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="enable_peak_rules" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Enable Peak & Off-Peak Smart Billing
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">Enforces 1-hour minimum during Peak Hours, and gives a 15-min free promo during Off-Peak.</p>
+                    
+                    {(globalSettings.enable_peak_rules ?? true) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Peak Start Hour</label>
+                          <select 
+                            value={globalSettings.peak_start_hour ?? 17}
+                            onChange={(e) => setGlobalSettings({ ...globalSettings, peak_start_hour: parseInt(e.target.value) })}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
+                          >
+                            {Array.from({ length: 24 }).map((_, i) => (
+                              <option key={i} value={i}>{i === 0 ? 12 : i > 12 ? i - 12 : i}:00 {i >= 12 ? 'PM' : 'AM'}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Peak End Hour</label>
+                          <select 
+                            value={globalSettings.peak_end_hour ?? 23}
+                            onChange={(e) => setGlobalSettings({ ...globalSettings, peak_end_hour: parseInt(e.target.value) })}
+                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
+                          >
+                            {Array.from({ length: 24 }).map((_, i) => (
+                              <option key={i} value={i}>{i === 0 ? 12 : i > 12 ? i - 12 : i}:00 {i >= 12 ? 'PM' : 'AM'}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600">
                 <h3 className="font-semibold mb-4 text-gray-800 dark:text-gray-200">Add New Game Pricing</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
