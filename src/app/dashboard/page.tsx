@@ -44,9 +44,9 @@ function DashboardContent() {
   const [applyToFood, setApplyToFood] = useState(false);
   const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
 
-  const fetchData = async (pinToUse?: string) => {
+  const fetchData = async (pinToUse?: string, isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const currentPin = pinToUse || enteredPin;
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
       if (currentPin) {
@@ -70,14 +70,14 @@ function DashboardContent() {
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (isAuthorized) {
       fetchData();
-      const interval = setInterval(() => fetchData(), 5000);
+      const interval = setInterval(() => fetchData(undefined, true), 15000);
       return () => clearInterval(interval);
     }
   }, [isAuthorized]);
