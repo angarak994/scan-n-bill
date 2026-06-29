@@ -287,7 +287,9 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               />
             </div>
             
-            {session.pricingRules?.rules?.[session.game_type]?.is_per_person && (
+            {(session.pricingRules?.rules?.[session.game_type]?.is_per_person || 
+              session.pricingRules?.rules?.[session.game_type]?.multiplayer_mode === 'multiply' || 
+              session.pricingRules?.rules?.[session.game_type]?.multiplayer_mode === 'base_plus_extra') && (
               <div className="w-full mt-2 text-left">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Number of Players</label>
                 <div className="flex items-center gap-4">
