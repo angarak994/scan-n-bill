@@ -18,6 +18,7 @@ export default function OnboardPage() {
   const [pricingRules, setPricingRules] = useState<PricingRules>({});
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({ rounding_mode: 'nearest_5' });
   const [tables, setTables] = useState<TableConfig[]>([]);
+  const [menuItems, setMenuItems] = useState<{name: string, price: number}[]>([]);
 
   // Temp states for pricing
   const [newGameType, setNewGameType] = useState('');
@@ -27,10 +28,16 @@ export default function OnboardPage() {
   const [newEveningRate, setNewEveningRate] = useState('');
   const [newOpeningHour, setNewOpeningHour] = useState('11'); // Default to 11 AM
   const [newCutoffHour, setNewCutoffHour] = useState('16');
+  const [newMultiplayerMode, setNewMultiplayerMode] = useState<'none' | 'multiply' | 'base_plus_extra'>('none');
+  const [newExtraPerPlayer, setNewExtraPerPlayer] = useState('');
 
   // Temp states for tables
   const [newTableName, setNewTableName] = useState('');
   const [newTableGameType, setNewTableGameType] = useState('');
+
+  // Temp states for menu
+  const [newMenuName, setNewMenuName] = useState('');
+  const [newMenuPrice, setNewMenuPrice] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,7 +51,15 @@ export default function OnboardPage() {
     if (!newGameType) return;
     const gameTypeKey = newGameType.toLowerCase().trim();
     if (newPriceType === 'fixed') {
-      setPricingRules(prev => ({ ...prev, [gameTypeKey]: { type: 'fixed', rate: Number(newFixedRate) } }));
+      setPricingRules(prev => ({ 
+        ...prev, 
+        [gameTypeKey]: { 
+          type: 'fixed', 
+          rate: Number(newFixedRate), 
+          multiplayer_mode: newMultiplayerMode,
+          extra_per_player: newMultiplayerMode === 'base_plus_extra' ? Number(newExtraPerPlayer) : undefined
+        } 
+      }));
     } else {
       setPricingRules(prev => ({ 
         ...prev, 
@@ -53,7 +68,9 @@ export default function OnboardPage() {
           day_rate: Number(newDayRate), 
           evening_rate: Number(newEveningRate),
           opening_hour: Number(newOpeningHour),
-          cutoff_hour: Number(newCutoffHour)
+          cutoff_hour: Number(newCutoffHour),
+          multiplayer_mode: newMultiplayerMode,
+          extra_per_player: newMultiplayerMode === 'base_plus_extra' ? Number(newExtraPerPlayer) : undefined
         } 
       }));
     }
@@ -63,6 +80,8 @@ export default function OnboardPage() {
     setNewEveningRate('');
     setNewOpeningHour('11');
     setNewCutoffHour('16');
+    setNewMultiplayerMode('none');
+    setNewExtraPerPlayer('');
   };
 
   const removePricingRule = (key: string) => {
@@ -83,6 +102,17 @@ export default function OnboardPage() {
     setTables(prev => prev.filter(t => t.id !== id));
   };
 
+  const addMenuItem = () => {
+    if (!newMenuName || !newMenuPrice) return;
+    setMenuItems(prev => [...prev, { name: newMenuName.trim(), price: Number(newMenuPrice) }]);
+    setNewMenuName('');
+    setNewMenuPrice('');
+  };
+
+  const removeMenuItem = (index: number) => {
+    setMenuItems(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleNext = () => {
     if (step === 1) {
       if (!formData.business_name || !formData.owner_name || !formData.contact_number || !formData.google_sheet_id || !formData.dashboard_pin) {
@@ -101,6 +131,7 @@ export default function OnboardPage() {
         return;
       }
     }
+    // Step 3 is menu (optional, so no validation needed)
     setError('');
     setStep(step + 1);
   };
@@ -119,7 +150,8 @@ export default function OnboardPage() {
       const payload = {
         ...formData,
         pricing_rules: { rules: pricingRules, globalSettings },
-        tables: tables
+        tables: tables,
+        menu_items: menuItems
       };
 
       const res = await fetch('/api/onboard-business', {
@@ -199,6 +231,10 @@ export default function OnboardPage() {
             </div>
             <div className={`flex flex-col items-center opacity-${step >= 3 ? '100' : '50'} transition-opacity`}>
               <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold mb-2 shadow ${step >= 3 ? 'bg-white text-blue-600' : 'bg-blue-800/50 text-white'}`}>3</div>
+              <span className="text-sm font-medium">Menu</span>
+            </div>
+            <div className={`flex flex-col items-center opacity-${step >= 4 ? '100' : '50'} transition-opacity`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold mb-2 shadow ${step >= 4 ? 'bg-white text-blue-600' : 'bg-blue-800/50 text-white'}`}>4</div>
               <span className="text-sm font-medium">Tables</span>
             </div>
           </div>
@@ -323,6 +359,33 @@ export default function OnboardPage() {
                     </div>
                   </div>
                 )}
+                
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 mb-4">
+                  <label className="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Multiplayer Pricing Mode (Optional)</label>
+                  <select 
+                    value={newMultiplayerMode} 
+                    onChange={e => setNewMultiplayerMode(e.target.value as any)} 
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100 mb-3"
+                  >
+                    <option value="none">None (Flat Rate for Table)</option>
+                    <option value="multiply">Multiply Rate by Number of Players (e.g. 150 -&gt; 300 -&gt; 450)</option>
+                    <option value="base_plus_extra">Base Rate + Extra Rate Per Additional Player (e.g. 200 + 50/extra player)</option>
+                  </select>
+
+                  {newMultiplayerMode === 'base_plus_extra' && (
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Extra Rate Per Additional Player (₹)</label>
+                      <input 
+                        type="number" 
+                        value={newExtraPerPlayer} 
+                        onChange={e => setNewExtraPerPlayer(e.target.value)} 
+                        placeholder="e.g. 50"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100" 
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <button onClick={addPricingRule} className="px-4 py-2 bg-indigo-100 dark:bg-indigo-900/50 hover:bg-indigo-200 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 font-semibold rounded-lg transition-colors text-sm w-full">
                   + Add Pricing Rule
                 </button>
@@ -336,7 +399,9 @@ export default function OnboardPage() {
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {rule.type === 'fixed' 
                           ? `Fixed Rate: ₹${rule.rate}/hr` 
-                          : `Day: ₹${rule.day_rate}/hr | Evening: ₹${rule.evening_rate}/hr (Changes at ${rule.cutoff_hour! > 12 ? rule.cutoff_hour! - 12 : rule.cutoff_hour === 0 ? 12 : rule.cutoff_hour} ${rule.cutoff_hour! >= 12 ? 'PM' : 'AM'})`}
+                          : `Day: ₹${rule.day_rate}/hr | Evening: ₹${rule.evening_rate}/hr`}
+                        {(rule.multiplayer_mode === 'multiply' || rule.is_per_person) && <span className="ml-2 font-bold text-orange-500">(Multiply per player)</span>}
+                        {rule.multiplayer_mode === 'base_plus_extra' && <span className="ml-2 font-bold text-purple-500">(+₹{rule.extra_per_player}/extra player)</span>}
                       </p>
                     </div>
                     <button onClick={() => removePricingRule(game)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-lg transition-colors">
@@ -352,7 +417,7 @@ export default function OnboardPage() {
               </div>
 
               <button onClick={handleNext} className="w-full mt-4 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-lg transition-all">
-                Next: Configure Tables →
+                Next: Configure Menu →
               </button>
             </div>
           )}
@@ -360,8 +425,60 @@ export default function OnboardPage() {
           {step === 3 && (
             <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <div className="flex justify-between items-center mb-2">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Table Setup</h2>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Food & Drinks Menu</h2>
                 <button onClick={() => setStep(2)} className="text-sm font-medium text-blue-600 hover:underline">← Back</button>
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Add items like Cigarettes, Cold Drinks, Water Bottles, Snacks.</p>
+
+              <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Item Name</label>
+                    <input type="text" value={newMenuName} onChange={e => setNewMenuName(e.target.value)} placeholder="e.g. Redbull" className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Price (₹)</label>
+                    <input type="number" value={newMenuPrice} onChange={e => setNewMenuPrice(e.target.value)} placeholder="e.g. 150" className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100" />
+                  </div>
+                </div>
+                <button onClick={addMenuItem} className="px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-semibold rounded-lg transition-colors text-sm w-full">
+                  + Add Item
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {menuItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                    <div>
+                      <h4 className="font-bold text-gray-800 dark:text-white">{item.name}</h4>
+                      <span className="inline-block mt-1 text-green-600 dark:text-green-400 font-bold">
+                        ₹{item.price}
+                      </span>
+                    </div>
+                    <button onClick={() => removeMenuItem(idx)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-2 rounded-lg transition-colors">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              
+              {menuItems.length === 0 && (
+                <div className="text-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
+                  No menu items added. You can add them later.
+                </div>
+              )}
+
+              <button onClick={handleNext} className="w-full mt-4 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-lg transition-all">
+                Next: Configure Tables →
+              </button>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Table Setup</h2>
+                <button onClick={() => setStep(3)} className="text-sm font-medium text-blue-600 hover:underline">← Back</button>
               </div>
 
               <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-600">

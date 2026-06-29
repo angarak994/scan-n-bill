@@ -20,7 +20,7 @@ const getSheetsClient = () => {
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    const { business_name, owner_name, contact_number, address, google_sheet_id, business_type, pricing_rules, tables, dashboard_pin } = data;
+    const { business_name, owner_name, contact_number, address, google_sheet_id, business_type, pricing_rules, tables, dashboard_pin, menu_items } = data;
 
     if (!business_name || !owner_name || !contact_number || !google_sheet_id || !dashboard_pin) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -75,7 +75,8 @@ export async function POST(request: Request) {
       business_type,
       pricing_rules,
       tables,
-      dashboard_pin
+      dashboard_pin,
+      menu_items
     });
 
     // Generate QRs

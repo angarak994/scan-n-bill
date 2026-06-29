@@ -15,6 +15,8 @@ export interface Session {
   applied_pricing: string | null;
   cost: number | null;
   status: 'ACTIVE' | 'COMPLETED';
+  food_cost?: number;
+  num_players?: number;
 }
 
 function toSheetsDate(isoString: string | null | undefined): string {
@@ -148,6 +150,8 @@ export const sessionRepository = {
         game_type: session.game_type,
         start_time: session.start_time,
         status: session.status,
+        food_cost: session.food_cost || 0,
+        num_players: session.num_players || 1,
       }])
       .select('id')
       .single();
@@ -181,12 +185,15 @@ export const sessionRepository = {
       };
 
       const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+      const formattedCustomerName = session.num_players && session.num_players > 1 
+        ? `${session.customer_name} (${session.num_players} Players)`
+        : session.customer_name;
 
       // If headers are somehow missing or non-standard, fallback to default indices
       if (getIdx('date') === -1) {
         row[0] = shortId;
         row[1] = `'${toSheetsDate(session.start_time)}`;
-        row[2] = session.customer_name;
+        row[2] = formattedCustomerName;
         row[3] = session.table_id;
         row[4] = session.game_type;
         row[5] = `'${toSheetsTime(session.start_time)}`;
@@ -194,7 +201,7 @@ export const sessionRepository = {
       } else {
         setVal('session id', shortId);
         setVal('date', `'${toSheetsDate(session.start_time)}`);
-        setVal('customer name', session.customer_name);
+        setVal('customer name', formattedCustomerName);
         setVal('table no', session.table_id);
         setVal('game type', session.game_type);
         setVal('start time', `'${toSheetsTime(session.start_time)}`);
@@ -227,6 +234,8 @@ export const sessionRepository = {
         applied_pricing: updates.applied_pricing,
         cost: updates.cost,
         status: updates.status,
+        food_cost: updates.food_cost,
+        num_players: updates.num_players,
       })
       .eq('id', id)
       .select('*')
@@ -286,11 +295,13 @@ export const sessionRepository = {
           }
         };
 
-        const shortId = updatedData.id ? updatedData.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+        const formattedCustomerName = updatedData.num_players && updatedData.num_players > 1 
+          ? `${updatedData.customer_name} (${updatedData.num_players} Players)`
+          : updatedData.customer_name;
 
         setVal('session id', shortId, 0);
         setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 1);
-        setVal('customer name', updatedData.customer_name, 2);
+        setVal('customer name', formattedCustomerName, 2);
         setVal('table no', updatedData.table_id, 3);
         setVal('game type', updatedData.game_type, 4);
         setVal('start time', `'${toSheetsTime(updatedData.start_time)}`, 5);

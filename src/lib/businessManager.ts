@@ -13,6 +13,8 @@ export interface BusinessData {
   pricing_rules?: BusinessPricing;
   tables?: TableConfig[];
   dashboard_pin?: string;
+  menu_items?: { name: string; price: number }[];
+  active_discounts?: Record<string, { percent: number; applyToFood: boolean }>;
 }
 
 export const businessManager = {
@@ -29,6 +31,8 @@ export const businessManager = {
         pricing_rules: data.pricing_rules || null,
         tables: data.tables || null,
         dashboard_pin: data.dashboard_pin || null,
+        menu_items: data.menu_items || null,
+        active_discounts: data.active_discounts || null,
       }])
       .select('id')
       .single();
@@ -43,7 +47,7 @@ export const businessManager = {
   getBusiness: async (id: string): Promise<BusinessData | null> => {
     const { data, error } = await supabase
       .from('businesses')
-      .select('*')
+      .select('id, business_name, owner_name, contact_number, address, google_sheet_id, business_type, status, pricing_rules, tables, dashboard_pin, menu_items, active_discounts')
       .eq('id', id)
       .single();
 
@@ -68,5 +72,25 @@ export const businessManager = {
     }
 
     return data;
+  },
+
+  updateTableDiscount: async (businessId: string, tableId: string, percent: number, applyToFood: boolean) => {
+    const business = await businessManager.getBusiness(businessId);
+    if (!business) throw new Error('Business not found');
+
+    const active_discounts = business.active_discounts || {};
+    if (percent > 0) {
+      active_discounts[tableId] = { percent, applyToFood };
+    } else {
+      delete active_discounts[tableId];
+    }
+
+    const { error } = await supabase
+      .from('businesses')
+      .update({ active_discounts })
+      .eq('id', businessId);
+
+    if (error) throw error;
+    return active_discounts;
   }
 };

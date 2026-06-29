@@ -11,7 +11,7 @@ export function parseDateString(dateStr: string): number {
   return new Date(cleanStr).getTime();
 }
 
-export function getCurrentRate(gameType: string, nowMs: number, pricing?: BusinessPricing): { rate: number, slabName: string } {
+export function getCurrentRate(gameType: string, nowMs: number, pricing?: BusinessPricing, numPlayers: number = 1): { rate: number, slabName: string } {
   const game = gameType.toLowerCase();
   
   // Default fallback if no pricing rules are defined for this specific game
@@ -22,36 +22,63 @@ export function getCurrentRate(gameType: string, nowMs: number, pricing?: Busine
   }
 
   const rule = pricing.rules[game];
+  
+  // Calculate base rate first
+  let baseRate = 0;
+  let slabName = '';
+  
   if (rule.type === 'fixed') {
-    return { rate: rule.rate || 0, slabName: `${game} Flat ₹${rule.rate}/hr` };
+    baseRate = rule.rate || 0;
+    slabName = `${game} Flat ₹${baseRate}/hr`;
+  } else {
+    // time_based
+    const dateIst = new Date(nowMs + IST_OFFSET);
+    const currentHour = dateIst.getUTCHours();
+    
+    const cutoffHour = rule.cutoff_hour !== undefined ? rule.cutoff_hour : 16;
+    const openingHour = rule.opening_hour !== undefined ? rule.opening_hour : 6;
+    
+    const isDay = currentHour >= openingHour && currentHour < cutoffHour;
+    
+    const dayRate = rule.day_rate ?? rule.am_rate ?? 0;
+    const eveningRate = rule.evening_rate ?? rule.pm_rate ?? 0;
+
+    const displayCutoff = `${cutoffHour > 12 ? cutoffHour - 12 : cutoffHour === 0 ? 12 : cutoffHour} ${cutoffHour >= 12 ? 'PM' : 'AM'}`;
+    const displayOpening = `${openingHour > 12 ? openingHour - 12 : openingHour === 0 ? 12 : openingHour} ${openingHour >= 12 ? 'PM' : 'AM'}`;
+
+    if (isDay) {
+      baseRate = dayRate;
+      slabName = `${game} (${displayOpening} to ${displayCutoff})`;
+    } else {
+      baseRate = eveningRate;
+      slabName = `${game} (${displayCutoff} Onwards)`;
+    }
   }
 
-  // time_based (or legacy ampm)
-  const dateIst = new Date(nowMs + IST_OFFSET);
-  const currentHour = dateIst.getUTCHours();
-  
-  // Custom cutoff hour, default to 16 (4:00 PM) if not specified
-  const cutoffHour = rule.cutoff_hour !== undefined ? rule.cutoff_hour : 16;
-  const openingHour = rule.opening_hour !== undefined ? rule.opening_hour : 6; // Default day starts at 6:00 AM
-  
-  // Day rate is active strictly between openingHour and cutoffHour.
-  // Any time outside this window (including spanning across midnight) falls to the Evening rate.
-  const isDay = currentHour >= openingHour && currentHour < cutoffHour;
-  
-  // Support both new names (day/evening) and legacy names (am/pm)
-  const dayRate = rule.day_rate ?? rule.am_rate ?? 0;
-  const eveningRate = rule.evening_rate ?? rule.pm_rate ?? 0;
+  // Legacy support for is_per_person
+  const isMultiply = rule.multiplayer_mode === 'multiply' || rule.is_per_person;
+  const isBasePlusExtra = rule.multiplayer_mode === 'base_plus_extra';
 
-  const displayCutoff = `${cutoffHour > 12 ? cutoffHour - 12 : cutoffHour === 0 ? 12 : cutoffHour} ${cutoffHour >= 12 ? 'PM' : 'AM'}`;
-  const displayOpening = `${openingHour > 12 ? openingHour - 12 : openingHour === 0 ? 12 : openingHour} ${openingHour >= 12 ? 'PM' : 'AM'}`;
-
-  if (isDay) {
-    return { rate: dayRate, slabName: `${game} (${displayOpening} to ${displayCutoff})` };
+  if (isMultiply && numPlayers > 1) {
+    return { rate: baseRate * numPlayers, slabName: `${slabName} × ${numPlayers} Players` };
+  } else if (isBasePlusExtra && numPlayers > 1) {
+    const extraRate = rule.extra_per_player || 0;
+    const additionalPlayers = numPlayers - 1;
+    const totalRate = baseRate + (extraRate * additionalPlayers);
+    return { rate: totalRate, slabName: `${slabName} + ₹${extraRate}/extra player` };
   }
-  return { rate: eveningRate, slabName: `${game} (${displayCutoff} Onwards)` };
+  
+  return { rate: baseRate, slabName };
 }
 
-export function calculateCost(startMs: number, endMs: number, gameType: string, pricing?: BusinessPricing): { cost: number, slabsApplied: string } {
+export function calculateCost(
+  startMs: number, 
+  endMs: number, 
+  gameType: string, 
+  pricing?: BusinessPricing, 
+  numPlayers: number = 1,
+  discount?: { percent: number; applyToFood: boolean }
+): { cost: number, slabsApplied: string } {
   const totalMs = endMs - startMs;
   const durationMinutes = Math.floor(totalMs / 60000);
 
@@ -74,7 +101,7 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     const chunkEndMs = Math.min(nextMs, effectiveEndMs);
     const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
 
-    const { rate, slabName } = getCurrentRate(gameType, currentMs, pricing);
+    const { rate, slabName } = getCurrentRate(gameType, currentMs, pricing, numPlayers);
     appliedSlabs.add(slabName);
     
     totalCost += durationHours * rate;
@@ -95,13 +122,26 @@ export function calculateCost(startMs: number, endMs: number, gameType: string, 
     finalCost = Math.round(totalCost); // Round to nearest ₹1 to avoid weird decimals
   }
 
+  // Apply Happy Hour Discount on Game Time
+  if (discount && discount.percent > 0) {
+    finalCost = finalCost * (1 - (discount.percent / 100));
+    finalCost = Math.round(finalCost);
+  }
+
   return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
 /**
  * Pure function for billing calculation.
  */
-export function calculateBilling(startString: string, endString: string, gameType: string, pricing?: BusinessPricing) {
+export function calculateBilling(
+  startString: string, 
+  endString: string, 
+  gameType: string, 
+  pricing?: BusinessPricing, 
+  numPlayers: number = 1,
+  discount?: { percent: number; applyToFood: boolean }
+) {
   const startMs = parseDateString(startString);
   const endMs = parseDateString(endString);
 
@@ -112,7 +152,7 @@ export function calculateBilling(startString: string, endString: string, gameTyp
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing);
+  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount);
 
   const totalSeconds = (endMs - startMs) / 1000;
   const durationMinutes = Math.floor(totalSeconds / 60);

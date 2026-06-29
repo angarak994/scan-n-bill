@@ -30,13 +30,19 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const businessId = searchParams.get('b');
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }> } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
 
   const [enteredPin, setEnteredPin] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [pinError, setPinError] = useState('');
+
+  // Happy Hour States
+  const [selectedTable, setSelectedTable] = useState('');
+  const [discountPercent, setDiscountPercent] = useState('20');
+  const [applyToFood, setApplyToFood] = useState(false);
+  const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
 
   const fetchData = async (pinToUse?: string) => {
     try {
@@ -85,6 +91,42 @@ function DashboardContent() {
     e.preventDefault();
     if (enteredPin.length === 4) {
       fetchData(enteredPin);
+    }
+  };
+
+  const handleApplyDiscount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTable || !businessId) return;
+    setIsUpdatingDiscount(true);
+    try {
+      const res = await fetch('/api/update-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, table_id: selectedTable, percent: Number(discountPercent), applyToFood })
+      });
+      if (res.ok) {
+        fetchData(); // Refresh UI
+        setSelectedTable('');
+      }
+    } finally {
+      setIsUpdatingDiscount(false);
+    }
+  };
+
+  const handleRemoveDiscount = async (tableId: string) => {
+    if (!businessId) return;
+    setIsUpdatingDiscount(true);
+    try {
+      const res = await fetch('/api/update-discount', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, table_id: tableId, percent: 0, applyToFood: false })
+      });
+      if (res.ok) {
+        fetchData(); // Refresh UI
+      }
+    } finally {
+      setIsUpdatingDiscount(false);
     }
   };
 
@@ -177,6 +219,81 @@ function DashboardContent() {
           </div>
         </div>
 
+        {/* Happy Hour Controls Panel */}
+        {data.tables && data.tables.length > 0 && (
+          <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-6 shadow-lg mb-8 text-white">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              Happy Hour / Discounts
+            </h2>
+            
+            <form onSubmit={handleApplyDiscount} className="flex flex-col md:flex-row gap-4 items-end bg-white/10 p-4 rounded-xl">
+              <div className="w-full md:w-auto flex-1">
+                <label className="block text-sm font-medium mb-1">Select Table</label>
+                <select 
+                  value={selectedTable}
+                  onChange={e => setSelectedTable(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-none outline-none"
+                  required
+                >
+                  <option value="">-- Choose Table --</option>
+                  {data.tables.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-full md:w-32">
+                <label className="block text-sm font-medium mb-1">% Off</label>
+                <input 
+                  type="number" 
+                  min="1" max="100"
+                  value={discountPercent}
+                  onChange={e => setDiscountPercent(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-none outline-none text-center"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <input 
+                  type="checkbox" 
+                  id="applyFood"
+                  checked={applyToFood}
+                  onChange={e => setApplyToFood(e.target.checked)}
+                  className="w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                />
+                <label htmlFor="applyFood" className="text-sm font-medium cursor-pointer">Apply to Food too?</label>
+              </div>
+              <button 
+                type="submit" 
+                disabled={!selectedTable || isUpdatingDiscount}
+                className="w-full md:w-auto px-6 py-2.5 bg-white text-orange-600 hover:bg-gray-100 font-bold rounded-lg shadow transition-colors disabled:opacity-50"
+              >
+                {isUpdatingDiscount ? 'Applying...' : 'Apply Discount'}
+              </button>
+            </form>
+
+            {data.activeDiscounts && Object.keys(data.activeDiscounts).length > 0 && (
+              <div className="mt-6 flex flex-wrap gap-4">
+                {Object.entries(data.activeDiscounts).map(([tableId, discount]) => (
+                  <div key={tableId} className="flex items-center gap-3 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/30">
+                    <div>
+                      <span className="font-bold">{tableId}:</span> {discount.percent}% Off {discount.applyToFood ? '(+Food)' : ''}
+                    </div>
+                    <button 
+                      onClick={() => handleRemoveDiscount(tableId)}
+                      disabled={isUpdatingDiscount}
+                      className="p-1 hover:bg-white/20 rounded-full transition-colors"
+                      title="Remove Discount"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <h2 className="text-xl font-bold mb-4">Active Sessions</h2>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow border border-gray-100 dark:border-gray-700 overflow-hidden mb-8">
           <div className="overflow-x-auto">
@@ -204,8 +321,10 @@ function DashboardContent() {
                     let liveDuration = '0 min';
                     let liveCost = 0;
                     let liveSlab = 'None';
+                    const activeDiscount = data.activeDiscounts?.[session.table_id];
+
                     try {
-                      const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules);
+                      const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules, 1, activeDiscount);
                       liveDuration = res.duration;
                       liveCost = res.cost;
                       liveSlab = res.slabs_applied;
