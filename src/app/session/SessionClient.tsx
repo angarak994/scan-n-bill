@@ -532,12 +532,12 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Bill Generated</h1>
             <p className="text-gray-500 dark:text-gray-400 mb-8 font-medium">Please proceed to the counter to pay.</p>
             
-            <div className="w-full bg-gray-50 dark:bg-gray-750/50 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-gray-700">
+            <div className="w-full bg-gray-50 dark:bg-gray-900/50 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-gray-700/50">
               <div className="flex justify-between items-center mb-4">
                 <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm">Duration</span>
                 <span className="font-bold text-gray-900 dark:text-gray-100 font-mono text-lg">{billModalData.duration}</span>
               </div>
-              <div className="w-full h-px bg-gray-200 dark:bg-gray-700 my-4 border-dashed border-t"></div>
+              <div className="w-full h-px bg-gray-200 dark:bg-gray-700/50 my-4 border-dashed border-t"></div>
               <div className="flex justify-between items-end">
                 <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm mb-1">Total Amount</span>
                 <span className="text-5xl font-black text-green-600 dark:text-green-400">₹{billModalData.cost}</span>
