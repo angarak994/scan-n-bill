@@ -421,12 +421,6 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
                   {formatElapsed(elapsedSeconds)}
                 </p>
-                <div className="flex flex-col items-center mt-4">
-                  <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Game Cost</p>
-                  <p className="text-4xl font-bold tracking-tight text-green-600 dark:text-green-400">
-                    ₹{currentCost}
-                  </p>
-                </div>
                 {session.food_cost ? (
                   <div className="flex flex-col items-center mt-4">
                     <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>
@@ -445,7 +439,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               </div>
             </div>
             
-            <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs">
+            <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs mx-auto">
               <p className="text-gray-500 dark:text-gray-400 font-medium">
                 Active Rate: 
                 {session.discount && session.discount.percent > 0 ? (
@@ -457,17 +451,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                   ` ₹${currentActiveRate} / hour`
                 )}
               </p>
-              
-              <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-4">
-                <span className="text-gray-800 dark:text-gray-200 font-bold text-xl block mb-1">Current Bill</span>
-                <span className="text-4xl font-black text-green-600 dark:text-green-500">
-                  ₹{currentCost + (session.discount && session.discount.percent > 0 && session.discount.applyToFood 
-                    ? Math.round((session.food_cost || 0) * (1 - (session.discount.percent/100))) 
-                    : (session.food_cost || 0))}
-                </span>
-              </div>
-            </div>
-            
+            </div>            
             {session.menuItems && session.menuItems.length > 0 && (
               <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
                 <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Order Food & Drinks</h2>
