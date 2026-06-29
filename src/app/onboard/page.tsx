@@ -303,6 +303,19 @@ export default function OnboardPage() {
                     <p className="text-xs text-gray-500 mt-1">Applies automatically to all active sessions to ensure clean bills.</p>
                   </div>
 
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Billing Interval Mode</label>
+                    <select 
+                      value={globalSettings.billing_mode || 'per_minute'}
+                      onChange={(e) => setGlobalSettings({ ...globalSettings, billing_mode: e.target.value as any })}
+                      className="w-full md:w-1/2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none text-gray-800 dark:text-gray-100"
+                    >
+                      <option value="per_minute">Per-Minute Billing (Standard)</option>
+                      <option value="15_min_block">15-Minute Blocks (Slab Billing)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Slab Billing always rounds playtime UP to the next 15-minute mark (e.g. 17 mins = 30 mins billed).</p>
+                  </div>
+
                   <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-2">
                     <div className="flex items-center gap-2 mb-2">
                       <input 

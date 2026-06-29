@@ -88,6 +88,11 @@ export function calculateCost(
   }
 
   let billedDurationMinutes = durationMinutes;
+
+  const billingMode = pricing?.globalSettings?.billing_mode ?? 'per_minute';
+  if (billingMode === '15_min_block') {
+    billedDurationMinutes = Math.ceil(durationMinutes / 15) * 15;
+  }
   
   const enablePeakRules = pricing?.globalSettings?.enable_peak_rules ?? true; // Default to true based on user request
   const peakStart = pricing?.globalSettings?.peak_start_hour ?? 17; // 5 PM
