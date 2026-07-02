@@ -35,3 +35,33 @@ export interface TableConfig {
   type: string;
 }
 
+export interface DynamicPricingRule {
+  id: string;
+  business_id: string;
+  table_type: string;
+  rule_type: string;
+  day_of_week: number[] | null;
+  start_time: string; // HH:mm:ss
+  end_time: string; // HH:mm:ss
+  rate_per_hour: number;
+  priority: number;
+  active: boolean;
+}
+
+export function resolveRate(tableType: string, rules: DynamicPricingRule[], now = new Date()): DynamicPricingRule | null {
+  const currentDay = now.getDay();
+  const currentHourStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0') + ':' + now.getSeconds().toString().padStart(2, '0');
+
+  const applicable = rules
+    .filter(r => r.active)
+    .filter(r => r.table_type === 'all' || r.table_type === tableType)
+    .filter(r => !r.day_of_week || r.day_of_week.includes(currentDay))
+    .filter(r => {
+      if (!r.start_time || !r.end_time) return true;
+      return currentHourStr >= r.start_time && currentHourStr < r.end_time;
+    })
+    .sort((a, b) => b.priority - a.priority);
+
+  return applicable[0] || null;
+}
+

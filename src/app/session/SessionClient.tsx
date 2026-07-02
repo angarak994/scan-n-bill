@@ -127,7 +127,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id, game_type, customer_name: customerName, business_id, num_players: numPlayers }),
+        body: JSON.stringify({ table_id, game_type: game_type || (session.status !== 'loading' && session.status !== 'error' ? (session as any).game_type : 'unknown'), customer_name: customerName, business_id, num_players: numPlayers }),
       });
       const data = await res.json();
       if (res.ok) {

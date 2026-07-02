@@ -77,9 +77,15 @@ export function calculateCost(
   gameType: string, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean }
+  discount?: { percent: number; applyToFood: boolean },
+  pausedDurationSecs: number = 0,
+  lockedRate?: number,
+  lockedRateName?: string
 ): { cost: number, slabsApplied: string } {
-  const totalMs = endMs - startMs;
+  let totalMs = endMs - startMs;
+  if (pausedDurationSecs > 0) {
+    totalMs = Math.max(0, totalMs - (pausedDurationSecs * 1000));
+  }
   const durationMinutes = Math.floor(totalMs / 60000);
 
   // First 5 minutes are completely free (Grace Period logic)
@@ -128,7 +134,13 @@ export function calculateCost(
     const chunkEndMs = Math.min(nextMs, effectiveEndMs);
     const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
 
-    const { rate, slabName } = getCurrentRate(gameType, currentMs, pricing, numPlayers);
+    let rate = 0; let slabName = '';
+    if (lockedRate !== undefined && lockedRate !== null) {
+      rate = lockedRate; slabName = lockedRateName || 'Dynamic Rate';
+    } else {
+      const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
+      rate = cr.rate; slabName = cr.slabName;
+    }
     appliedSlabs.add(slabName);
     
     totalCost += durationHours * rate;
@@ -167,7 +179,10 @@ export function calculateBilling(
   gameType: string, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean }
+  discount?: { percent: number; applyToFood: boolean },
+  pausedDurationSecs: number = 0,
+  lockedRate?: number,
+  lockedRateName?: string
 ) {
   const startMs = parseDateString(startString);
   const endMs = parseDateString(endString);
@@ -179,9 +194,12 @@ export function calculateBilling(
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount);
+  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
 
-  const totalSeconds = (endMs - startMs) / 1000;
+  let totalSeconds = (endMs - startMs) / 1000;
+  if (pausedDurationSecs > 0) {
+    totalSeconds = Math.max(0, totalSeconds - pausedDurationSecs);
+  }
   const durationMinutes = Math.floor(totalSeconds / 60);
 
   const hours = Math.floor(durationMinutes / 60);

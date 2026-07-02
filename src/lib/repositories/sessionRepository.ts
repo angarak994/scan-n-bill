@@ -17,6 +17,18 @@ export interface Session {
   status: 'ACTIVE' | 'COMPLETED';
   food_cost?: number;
   num_players?: number;
+  last_activity_at?: string;
+  closure_type?: string;
+  paused_at?: string | null;
+  paused_duration_seconds?: number;
+  transferred_from_table_id?: string | null;
+  locked_rate?: number;
+  locked_rate_name?: string;
+  notes?: string | null;
+  base_cost?: number;
+  discount_amount?: number;
+  payment_status?: string;
+  completed_by?: string;
 }
 
 function toSheetsDate(isoString: string | null | undefined): string {
@@ -152,6 +164,12 @@ export const sessionRepository = {
         status: session.status,
         food_cost: session.food_cost || 0,
         num_players: session.num_players || 1,
+        locked_rate: session.locked_rate,
+        locked_rate_name: session.locked_rate_name,
+        base_cost: session.base_cost || 0,
+        discount_amount: session.discount_amount || 0,
+        payment_status: session.payment_status || 'Pending',
+        completed_by: session.completed_by || 'System',
       }])
       .select('id')
       .single();
@@ -236,6 +254,10 @@ export const sessionRepository = {
         status: updates.status,
         food_cost: updates.food_cost,
         num_players: updates.num_players,
+        base_cost: updates.base_cost,
+        discount_amount: updates.discount_amount,
+        payment_status: updates.payment_status,
+        completed_by: updates.completed_by,
       })
       .eq('id', id)
       .select('*')

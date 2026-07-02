@@ -1,37 +1,52 @@
-# 🎱 Billiards QR Session & Billing Tracker
+# 🎱 Scan-n-Bill: Multi-Tenant Billiards & Sports Club SaaS
 
-A modern, responsive, QR-based station tracking and automated billing system built specifically for Billiards, Snooker, and Pool clubs. 
+An enterprise-grade, multi-tenant QR-based session tracking, automated billing, and WhatsApp AI receptionist platform built specifically for Billiards, Snooker, and Sports clubs.
 
-This application seamlessly tracks playtime for individual tables, automatically calculates pricing based on structured time increments, and securely stores all session data directly into Google Sheets for reliable, scalable, and free database management.
+Scan-n-Bill transforms how sports clubs manage time-based rentals. By completely removing manual logbooks and introducing real-time QR scanning and autonomous AI booking management, clubs can scale their operations seamlessly.
 
 ---
 
-## ✨ Features
+## ✨ Enterprise Features
 
-- **QR Code Integration**: Quickly start or end sessions by scanning a table-specific QR code. No manual entry needed.
-- **Automated Billing Engine**: 
-  - Automatically calculates session cost.
-  - Bills in strict 15-minute increments for simplified accounting.
-  - Fixed pricing logic for different game types (Snooker vs Pool).
-- **Google Sheets Database**: Completely serverless database using Google Sheets. Highly scalable (up to 10 million cells) and easily accessible for exporting/analytics.
-- **Real-Time Tracking**: Clean, responsive UI with live session timers indicating elapsed playtime.
-- **Mobile Responsive**: Built with Tailwind CSS ensuring optimal experience for staff using mobile devices to scan.
+- **Multi-Tenant Architecture**: A single deployment supports unlimited isolated businesses. Each club gets its own unique Business ID, configuration, pricing rules, tables, AI agent, and dashboard.
+- **AI WhatsApp Receptionist**: Fully autonomous AI agent integrated with Twilio. It handles incoming WhatsApp messages, reads live table availability, quotes dynamic pricing, and creates or modifies bookings strictly within the bounds of a specific club's configuration.
+- **Dynamic Pricing Engine**: Granular pricing support for dynamic hourly rates, pro-rata minute billing, locked-rate sessions, happy hour automatic discounts, and custom food/beverage additions.
+- **Real-Time Dashboard**: A high-performance, real-time command center for club owners to monitor active tables, force-stop sessions, track completed revenue, and manage upcoming bookings.
+- **Serverless Google Sheets Sync**: All financial data, memberships, and session logs are automatically synchronized in real-time to a business-specific Google Sheet, providing highly reliable, free, and accessible audit trails.
+
+---
 
 ## 🛠️ Technology Stack
 
-- **Framework**: [Next.js 15 (App Router)](https://nextjs.org/)
-- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
-- **Language**: TypeScript
-- **Database**: Google Sheets API (via `googleapis`)
+- **Framework**: [Next.js 15 (App Router)](https://nextjs.org/) with Turbopack for lightning-fast builds.
+- **Language**: Strict TypeScript.
+- **Styling**: Tailwind CSS 4 with a bespoke enterprise design system.
+- **Database**: Supabase (PostgreSQL) for relational multi-tenant logic + Google Sheets API for robust data export and financial tracking.
+- **AI & Integrations**: 
+  - OpenAI (GPT-4o) for semantic reasoning and tool calling.
+  - Twilio API for WhatsApp Webhook integration.
 
 ---
 
-## 🚀 Local Setup & Installation
+## 🏗️ Architecture Overview
+
+The application follows a strictly decoupled architecture:
+
+1. **Routing Layer**: Edge-ready Next.js App Router for server-rendered dashboards and high-speed API endpoints.
+2. **Business Logic Layer**: Core services (`sessionManager.ts`, `billing.ts`) handle all heavy lifting, including complex dynamic pricing algorithms and cross-database synchronization.
+3. **Multi-Tenant Data Layer**: The `sessionRepository.ts` abstractly manages dual-writes to both Supabase (the transactional source of truth) and Google Sheets (the analytical data sink).
+4. **AI Layer**: The `aiAgent.ts` strictly utilizes OpenAI tool-calling definitions (`start_booking`, `update_booking`, `fetch_status`) ensuring zero-hallucination execution.
+
+---
+
+## 🚀 Local Development & Setup
 
 ### 1. Prerequisites
 - Node.js (v18 or higher)
-- A Google Cloud Console project with the **Google Sheets API** enabled.
-- A Google Service Account with a downloaded JSON key.
+- A Supabase Project
+- A Google Cloud Console project with the **Google Sheets API** enabled and a Service Account JSON key.
+- A Twilio Account (for WhatsApp testing)
+- An OpenAI Account
 
 ### 2. Clone the Repository
 ```bash
@@ -44,44 +59,72 @@ cd Billiards_QR_sessions
 npm install
 ```
 
-### 4. Environment Variables
-Create a `.env.local` file in the root directory. **NEVER commit this file to version control**. The `.gitignore` is pre-configured to ensure this stays secure.
-
-Add your Google Service Account credentials:
-```env
-GOOGLE_SHEETS_SPREADSHEET_ID="your-spreadsheet-id-here"
-GOOGLE_SERVICE_ACCOUNT_EMAIL="your-service-account-email"
-GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+### 4. Environment Configuration
+Copy the provided environment template:
+```bash
+cp .env.example .env.local
 ```
+Populate `.env.local` with your API keys. **Never commit `.env.local`**. 
 
-### 5. Run the Development Server
+### 5. Database Migrations
+Run the SQL migrations located in `supabase/migrations/` in sequential order within your Supabase project's SQL editor to generate the necessary multi-tenant tables.
+
+### 6. Run the Application
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+The application will boot at `http://localhost:3000`.
 
 ---
 
-## 📦 Deployment (Vercel)
+## 📖 API Documentation
 
-This project is optimized for deployment on Vercel.
+The platform exposes several critical REST APIs for integrations and internal use.
 
-1. Push your code to your GitHub repository.
-2. Sign in to [Vercel](https://vercel.com) and import the repository.
-3. Under **Environment Variables**, add the three `GOOGLE_` keys from your `.env.local` file.
-4. Click **Deploy**.
+### `POST /api/whatsapp-webhook`
+- **Description**: Ingests incoming WhatsApp messages via Twilio, identifies the target business based on the receiving number, processes the message via the AI Agent, and returns a response.
+- **Authentication**: Twilio Signature Validation (in production).
+- **Payload**: Standard Twilio `application/x-www-form-urlencoded` payload.
 
-*Note: Once deployed, ensure you update your QR Code generation script to use your new live Vercel URL as the base URL instead of `localhost`.*
+### `POST /api/onboard-business`
+- **Description**: Provisions a new tenant on the platform.
+- **Payload**: `{ "business_name": string, "owner_name": string, "owner_email": string, "whatsapp_number": string, "google_sheet_url": string }`
+- **Response**: `200 OK` with generated `business_id` and initial API tokens.
+
+### `POST /api/dashboard-data`
+- **Description**: Fetches the real-time state of a specific business (active sessions, completed sessions, bookings, revenue).
+- **Payload**: `{ "business_id": string }`
+- **Response**: Structured JSON containing all dashboard metrics.
+
+---
+
+## 📦 Deployment Readiness
+
+This repository is optimized for edge deployment on platforms like Vercel, Netlify, or Railway.
+
+1. **Build Verification**: Run `npm run build` to ensure there are zero TypeScript or ESLint errors.
+2. **Environment Setup**: Add all variables from `.env.example` into your hosting provider's environment settings.
+3. **Deploy**: Trigger a production build.
 
 ---
 
 ## 🔒 Security Posture
 
-- **Environment Secrets**: Database credentials (Google Service Account keys) are isolated in environment variables. They are securely injected into the Next.js server-side API routes and are never exposed to the client/browser.
-- **Safe Commits**: The `.gitignore` explicitly blocks `.env` and `.env.local` from being tracked by git.
-- **Type Safety**: Fully typed with TypeScript to prevent runtime errors and injection vulnerabilities.
-- **Strict Linting**: Verified against strict ESLint rules ensuring no memory leaks or unexpected cascading renders.
+- **Tenant Isolation**: Every API endpoint explicitly requires a `business_id` and authenticates the scope of the request to prevent cross-tenant data leakage.
+- **Environment Secrets**: All sensitive keys (Google, Supabase, OpenAI, Twilio) are server-side only. Client components only receive sanitized, non-sensitive data.
+- **Input Validation**: API routes employ strict type-checking before processing payloads.
+- **Zero-Trust UI**: Client-side state is treated as view-only. All destructive actions (e.g., Force Stop Session) must be verified server-side.
 
 ---
 
-*Designed for efficient club management. Clean, simple, and automated.*
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! 
+When contributing, please ensure:
+1. Code follows existing styling conventions.
+2. New features support the multi-tenant architecture.
+3. `npm run build` passes locally before submitting a PR.
+
+---
+
+*Scan-n-Bill: Built for performance, designed for scale.*

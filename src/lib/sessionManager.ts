@@ -3,6 +3,8 @@ import { sessionRepository, Session } from './repositories/sessionRepository';
 import { GameType } from './pricing';
 import { calculateBilling } from './billing';
 import { businessManager } from './businessManager';
+import { supabase } from './supabaseClient';
+import { resolveRate } from './pricing';
 
 // Use ISO strings for robust time storage
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
@@ -26,6 +28,21 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 
   const now = new Date();
+  
+  // Resolve rate
+  let lockedRate = undefined;
+  let lockedRateName = undefined;
+  if (businessId) {
+    const { data: pricingRules } = await supabase.from('pricing_rules').select('*').eq('business_id', businessId);
+    if (pricingRules) {
+      const activeRule = resolveRate(game_type, pricingRules, now);
+      if (activeRule) {
+        lockedRate = activeRule.rate_per_hour;
+        lockedRateName = activeRule.rule_type;
+      }
+    }
+  }
+
   const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
   const timeStr = now.toISOString(); // Full ISO timestamp
   
@@ -43,6 +60,8 @@ export async function startSession(table_id: string, game_type: GameType, custom
     status: 'ACTIVE' as const,
     food_cost: 0,
     num_players,
+    locked_rate: lockedRate,
+    locked_rate_name: lockedRateName,
   };
 
   await sessionRepository.create(session, businessId);
@@ -72,7 +91,28 @@ export async function endSession(table_id: string, businessId?: string) {
     discount = business.active_discounts?.[table_id];
   }
   
-  const { duration, cost: timeCost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, discount);
+  // Membership Discount Logic
+  try {
+    const { getMembershipByCustomer } = require('./googleSheets');
+    const member = await getMembershipByCustomer(session.customer_name);
+    if (member) {
+      // Define tier discounts (e.g., VIP gets 20%, Pro gets 10%)
+      let memberDiscountPercent = 0;
+      if (member.tier === 'Elite') memberDiscountPercent = 30;
+      else if (member.tier === 'VIP') memberDiscountPercent = 20;
+      else if (member.tier === 'Pro') memberDiscountPercent = 10;
+      else if (member.tier === 'Standard') memberDiscountPercent = 5;
+      
+      // If member discount is higher than current active discount, use member discount
+      if (!discount || memberDiscountPercent > discount.percent) {
+         discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+      }
+    }
+  } catch (e) {
+    console.error('Membership Lookup Error:', e);
+  }
+  
+  const { duration, cost: timeCost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, discount, 0, session.locked_rate, session.locked_rate_name);
   
   let finalFoodCost = session.food_cost || 0;
   if (discount && discount.percent > 0 && discount.applyToFood) {
@@ -81,6 +121,19 @@ export async function endSession(table_id: string, businessId?: string) {
   }
 
   const totalCost = timeCost + finalFoodCost;
+  
+  // Calculate raw amounts before discounts for the new Dashboard view
+  let baseCost = totalCost;
+  let discountAmount = 0;
+  if (discount && discount.percent > 0) {
+     // Re-calculate the original amount before discount.
+     // If totalCost = baseCost * (1 - discount/100), then baseCost = totalCost / (1 - discount/100)
+     // However, timeCost might be calculated already with discount inside calculateBilling.
+     // Let's rely on the calculateBilling returning the base cost, or we reverse engineer it.
+     // Wait, it's safer to recalculate.
+     baseCost = Math.round(totalCost / (1 - (discount.percent / 100)));
+     discountAmount = baseCost - totalCost;
+  }
 
   await sessionRepository.update(session.id, {
     end_time,
@@ -88,9 +141,38 @@ export async function endSession(table_id: string, businessId?: string) {
     duration,
     applied_pricing: slabs_applied,
     cost: totalCost,
+    base_cost: baseCost,
+    discount_amount: discountAmount,
+    payment_status: 'Paid',
+    completed_by: 'Club Owner', // Default to club owner for manual dashboard actions
   }, businessId);
 
-  return { duration, cost: totalCost, end_time };
+  // Sync booking status if this session was started from a booking
+  try {
+    const { data: booking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
+    if (booking) {
+      await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', booking.id);
+      const { logActivityToSheet } = require('./googleSheets');
+      await logActivityToSheet('BOOKING_COMPLETED', {
+        user: 'System',
+        table: booking.table_id,
+        details: `Booking ${booking.id} completed via Session ${session.id}`
+      }, businessId);
+    }
+  } catch (e) {
+    console.error('Failed to sync booking completion', e);
+  }
+
+  return { 
+    session_id: session.id, 
+    customer_name: session.customer_name, 
+    table_id: session.table_id, 
+    start_time: session.start_time, 
+    duration, 
+    cost: totalCost, 
+    discounts: discount ? discount.percent : 0, 
+    end_time 
+  };
 }
 
 export async function getTableStatus(table_id: string, businessId?: string) {

@@ -42,6 +42,7 @@ export default function OnboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [qrs, setQrs] = useState<{ name: string; dataUrl: string }[]>([]);
+  const [createdBusinessId, setCreatedBusinessId] = useState<string>('');
 
   const handleBasicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -166,6 +167,7 @@ export default function OnboardPage() {
       }
 
       setQrs(data.qrs);
+      setCreatedBusinessId(data.businessId);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -194,6 +196,12 @@ export default function OnboardPage() {
             >
               Print All QR Codes
             </button>
+            <a
+              href={`/dashboard?b=${createdBusinessId}`}
+              className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-lg transition-colors mt-2 print:hidden"
+            >
+              Go to Dashboard →
+            </a>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full print:grid-cols-2 print:gap-4">
             {qrs.map((qr) => (

@@ -12,6 +12,15 @@ export async function POST(request: Request) {
 
 
     const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1);
+    
+    // Sync to Google Sheets
+    try {
+      const { logSessionStartToSheet } = require('@/lib/googleSheets');
+      await logSessionStartToSheet(result);
+    } catch (sheetError) {
+      console.error('Google Sheets Sync Error:', sheetError);
+    }
+    
     return NextResponse.json(result, { status: 201 });
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };

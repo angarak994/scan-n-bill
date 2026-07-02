@@ -1,10 +1,73 @@
+import Link from 'next/link';
+
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 md:p-24 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm flex flex-col gap-6">
-        <h1 className="text-4xl font-bold text-center text-blue-600 dark:text-blue-400">QR-Based Session Tracking & Billing System</h1>
-        <p className="text-xl text-center text-gray-600 dark:text-gray-300">Scan a station&apos;s QR code to start a session.</p>
-      </div>
+    <main className="min-h-screen bg-bg-base text-text-primary overflow-x-hidden">
+      {/* Navbar */}
+      <nav className="w-full flex justify-between items-center px-8 py-6 max-w-7xl mx-auto">
+        <div className="flex items-center gap-2">
+          <svg className="w-8 h-8 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          <span className="text-xl font-bold font-mono tracking-tighter">CueSync<span className="text-accent">.</span></span>
+        </div>
+        <div className="flex gap-4">
+          <Link href="/login" className="px-6 py-2.5 rounded-full font-bold hover:bg-bg-surface transition-colors">
+            Log In
+          </Link>
+          <Link href="/register" className="px-6 py-2.5 bg-text-primary text-bg-base font-bold rounded-full hover:bg-text-secondary transition-colors shadow-lg">
+            Add Your Club
+          </Link>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section className="relative w-full max-w-7xl mx-auto px-8 pt-20 pb-32 flex flex-col items-center text-center mt-12">
+        <div className="absolute top-0 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
+        
+        <span className="px-4 py-1.5 rounded-full bg-accent/10 text-accent font-bold text-xs uppercase tracking-widest mb-8 border border-accent/20">
+          The Future of Billiards Management
+        </span>
+        
+        <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-tight mb-8 max-w-4xl">
+          Automate your club with <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">AI Bookings.</span>
+        </h1>
+        
+        <p className="text-xl text-text-secondary mb-12 max-w-2xl leading-relaxed">
+          The all-in-one SaaS platform for Pool and Snooker clubs. Stop losing money to manual timers. Let our WhatsApp AI handle reservations while you focus on the game.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <Link href="/register" className="px-8 py-4 bg-accent text-white font-bold rounded-full text-lg hover:bg-accent/90 transition-all shadow-[0_0_40px_rgba(141,213,182,0.4)] flex items-center justify-center gap-2">
+            Register Your Club
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+          </Link>
+        </div>
+
+        {/* Mockup Preview */}
+        <div className="mt-24 w-full max-w-5xl rounded-2xl border border-border-theme bg-bg-card p-2 shadow-2xl relative">
+          <div className="absolute -top-4 -right-4 bg-warning text-bg-base font-bold text-xs px-4 py-2 rounded-full transform rotate-12 shadow-lg">
+            Live Sync included!
+          </div>
+          <div className="w-full h-12 bg-bg-surface rounded-t-xl border-b border-border-theme flex items-center px-4 gap-2">
+            <div className="w-3 h-3 rounded-full bg-danger"></div>
+            <div className="w-3 h-3 rounded-full bg-warning"></div>
+            <div className="w-3 h-3 rounded-full bg-accent"></div>
+          </div>
+          <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6 bg-bg-base rounded-b-xl">
+            <div className="bg-bg-surface p-6 rounded-xl border border-border-theme">
+              <h3 className="font-bold text-lg mb-2">🤖 AI WhatsApp Agent</h3>
+              <p className="text-text-secondary text-sm">Customers book instantly via WhatsApp. No human required.</p>
+            </div>
+            <div className="bg-bg-surface p-6 rounded-xl border border-border-theme">
+              <h3 className="font-bold text-lg mb-2">⏱️ QR Smart Timers</h3>
+              <p className="text-text-secondary text-sm">Customers scan a QR code to start their session. Billing is exact.</p>
+            </div>
+            <div className="bg-bg-surface p-6 rounded-xl border border-border-theme">
+              <h3 className="font-bold text-lg mb-2">🛡️ Revenue Protection</h3>
+              <p className="text-text-secondary text-sm">Auto-alerts if a table is occupied but the timer isn't running.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
