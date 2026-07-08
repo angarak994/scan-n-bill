@@ -75,6 +75,8 @@ export async function POST(request: Request) {
           duration: res.duration,
           applied_pricing: res.slabs_applied,
           cost: res.cost,
+          base_cost: res.baseCost,
+          discount_amount: res.discountAmount,
           closure_type: 'manual_force',
           last_activity_at: now
         };
@@ -83,34 +85,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
-    // Apply session update via supabase directly or repository
-    const { error: updateError } = await supabase
-      .from('sessions')
-      .update(dbUpdates)
-      .eq('id', session_id);
-      
-    if (updateError) throw updateError;
-
-    // Optional: Sync to google sheets if ended or transferred. But keeping simple, the regular sync might pick it up if we use repository.
-    // For force_end, we should probably use repository update to sync it.
     if (action === 'force_end') {
+      // Use repository to ensure Google Sheets sync and DB update happens atomically
       await sessionRepository.update(session_id, dbUpdates, business_id);
-      try {
-        const { logSessionEndToSheet } = require('@/lib/googleSheets');
-        await logSessionEndToSheet({
-          id: session_id,
-          business_id,
-          customer_name: session.customer_name,
-          table_id: session.table_id,
-          start_time: session.start_time,
-          end_time: now,
-          duration: dbUpdates.duration,
-          cost: dbUpdates.cost,
-          discounts: 0
-        });
-      } catch (e) {
-        console.error('Google Sheets Sync Error on force_end:', e);
-      }
+    } else {
+      // Apply session update via supabase directly for pause/resume/transfer
+      const { error: updateError } = await supabase
+        .from('sessions')
+        .update(dbUpdates)
+        .eq('id', session_id);
+        
+      if (updateError) throw updateError;
     }
 
     // Log intervention

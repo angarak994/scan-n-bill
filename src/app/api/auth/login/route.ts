@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business not found. Check your Club Name or Phone.' }, { status: 404 });
     }
 
-    if (data.dashboard_pin !== pin) {
+    if (String(data.dashboard_pin).trim() !== String(pin || '').trim()) {
       return NextResponse.json({ error: 'Incorrect Admin PIN.' }, { status: 401 });
     }
 

@@ -7,7 +7,7 @@ export default function Home() {
       <nav className="w-full flex justify-between items-center px-8 py-6 max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
           <svg className="w-8 h-8 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-          <span className="text-xl font-bold font-mono tracking-tighter">CueSync<span className="text-accent">.</span></span>
+          <span className="text-xl font-bold font-mono tracking-tighter">QControl<span className="text-accent">.</span></span>
         </div>
         <div className="flex gap-4">
           <Link href="/login" className="px-6 py-2.5 rounded-full font-bold hover:bg-bg-surface transition-colors">
@@ -24,15 +24,15 @@ export default function Home() {
         <div className="absolute top-0 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
         
         <span className="px-4 py-1.5 rounded-full bg-accent/10 text-accent font-bold text-xs uppercase tracking-widest mb-8 border border-accent/20">
-          The Future of Billiards Management
+          The Future of Business Operations
         </span>
         
         <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-tight mb-8 max-w-4xl">
-          Automate your club with <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">AI Bookings.</span>
+          Automate your business with <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">AI Bookings.</span>
         </h1>
         
         <p className="text-xl text-text-secondary mb-12 max-w-2xl leading-relaxed">
-          The all-in-one SaaS platform for Pool and Snooker clubs. Stop losing money to manual timers. Let our WhatsApp AI handle reservations while you focus on the game.
+          The all-in-one SaaS platform for managing physical spaces and time-based services. Let our AI handle reservations while you focus on growth.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">

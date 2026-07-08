@@ -12,7 +12,7 @@ export type PricingRules = {
   [K in string as K extends '_global' ? never : K]: PricingRule;
 };
 
-const obj: PricingRules = {
+const obj: any = {
   _global: { rounding_mode: 'nearest_5' },
   pool: { type: 'fixed' }
 };

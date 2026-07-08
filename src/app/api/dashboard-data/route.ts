@@ -33,15 +33,47 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    if (business.dashboard_pin && business.dashboard_pin !== pin) {
+    if (business.dashboard_pin && String(business.dashboard_pin).trim() !== String(pin || '').trim()) {
       return NextResponse.json({ error: 'Unauthorized: Invalid PIN' }, { status: 401 });
     }
 
-    const todayStr = toReadableDate(new Date());
-    const sessions = await sessionRepository.findAllToday(todayStr, businessId as string);
+    const requestedDate = searchParams.get('date');
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
+
+    const getLocalDateStr = (d = new Date()) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    const todayDateStr = getLocalDateStr();
+    const startDate = startDateParam || requestedDate || todayDateStr;
+    const endDate = endDateParam || requestedDate || todayDateStr;
+    const targetDateStr = startDate; // Legacy variable for today Start
+    const todayStr = startDate === endDate ? toReadableDate(new Date(startDate)) : `${toReadableDate(new Date(startDate))} - ${toReadableDate(new Date(endDate))}`;
+
+    const sessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
-    let completedSessions = sessions.filter(s => s.status === 'COMPLETED' && s.date === todayStr);
+    let completedSessions = sessions.filter(s => {
+      if (s.status !== 'COMPLETED') return false;
+      // If the session ended today, count it for today.
+      // If end_time is somehow null, fallback to the start date.
+      if (s.end_time) {
+        // Create local date string (YYYY-MM-DD) from the UTC end_time.
+        // We will do a basic check.
+        // The safest way is to check if it's within the range string-wise after converting to IST or just taking the UTC date since the DB query handled it.
+        // Actually, the DB query returned it if end_time matched OR date matched. Let's just keep it if it's COMPLETED.
+        // But wait, it might return a session started today but completed tomorrow (if checking past ranges).
+        // Let's use the local YYYY-MM-DD of end_time.
+        const dateObj = new Date(s.end_time);
+        const tzOffset = 5.5 * 60 * 60 * 1000;
+        const localDateStr = new Date(dateObj.getTime() + tzOffset).toISOString().split('T')[0];
+        return localDateStr >= startDate && localDateStr <= endDate;
+      }
+      return s.date >= startDate && s.date <= endDate;
+    });
 
     // Auto-cutoff abandoned sessions (older than 12 hours)
     const nowMs = Date.now();
@@ -64,9 +96,18 @@ export async function GET(request: Request) {
 
     if (didAutoEnd) {
       // Re-fetch to get the updated lists
-      const freshSessions = await sessionRepository.findAllToday(todayStr, businessId as string);
+      const freshSessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
       activeSessions = freshSessions.filter(s => s.status === 'ACTIVE');
-      completedSessions = freshSessions.filter(s => s.status === 'COMPLETED' && s.date === todayStr);
+      completedSessions = freshSessions.filter(s => {
+        if (s.status !== 'COMPLETED') return false;
+        if (s.end_time) {
+          const dateObj = new Date(s.end_time);
+          const tzOffset = 5.5 * 60 * 60 * 1000;
+          const localDateStr = new Date(dateObj.getTime() + tzOffset).toISOString().split('T')[0];
+          return localDateStr >= startDate && localDateStr <= endDate;
+        }
+        return s.date >= startDate && s.date <= endDate;
+      });
     }
 
     const dailyRevenue = completedSessions.reduce((acc, session) => acc + (session.cost || 0), 0);
@@ -75,16 +116,19 @@ export async function GET(request: Request) {
     const todayStart = new Date();
     todayStart.setHours(0,0,0,0);
 
+    const localTodayStart = new Date();
+    localTodayStart.setHours(0, 0, 0, 0);
+    const startOfDayUTC = localTodayStart.toISOString();
+
     const { data: interventions } = await supabase
       .from('session_interventions')
       .select('amount_recovered, intervention_type, sessions!inner(business_id)')
       .eq('sessions.business_id', businessId)
       .eq('intervention_type', 'force_close')
-      .gte('created_at', todayStart.toISOString());
+      .gte('created_at', startOfDayUTC);
 
     const manualClosuresToday = interventions?.length || 0;
-    const todayDateStr = todayStart.toISOString().split('T')[0];
-    const { data: bookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', todayDateStr);
+    const { data: bookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate).lte('booking_date', endDate);
 
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
 
@@ -101,7 +145,8 @@ export async function GET(request: Request) {
       bookings: bookings || [],
       businessId,
       businessName: business.business_name,
-      ownerName: business.owner_name
+      ownerName: business.owner_name,
+      goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 }
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);

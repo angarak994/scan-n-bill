@@ -277,7 +277,22 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Table: {session.table_id}</h1>
-              <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Game: {session.game_type}</p>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Service / Game Type</label>
+                <select 
+                  value={session.game_type}
+                  onChange={(e) => setSession(prev => ({ ...prev, game_type: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all capitalize"
+                >
+                  {session.pricingRules?.rules && Object.keys(session.pricingRules.rules).length > 0 ? (
+                    Object.keys(session.pricingRules.rules).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))
+                  ) : (
+                    <option value={session.game_type}>{session.game_type}</option>
+                  )}
+                </select>
+              </div>
               {session.discount && session.discount.percent > 0 && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
                   🎉 Happy Hour: {session.discount.percent}% OFF
@@ -299,7 +314,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Enter name to start..."
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
             
@@ -496,7 +511,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               </div>
             )}
 
-            <div className="w-full mt-4 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-center text-sm">
+            <div className="w-full mt-4 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-black/10 dark:border-white/10 text-gray-600 dark:text-gray-400 text-center text-sm">
               To end this session, please scan the table's QR code again.
             </div>
           </>

@@ -136,6 +136,20 @@ export const sessionRepository = {
     return data as Session[];
   },
 
+  findAllByDateRange: async (startDate: string, endDate: string, businessId?: string): Promise<Session[]> => {
+    if (!businessId) return [];
+    
+    // Fetch sessions between startDate and endDate, PLUS any currently active sessions
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('business_id', businessId)
+      .or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startDate}T00:00:00Z,end_time.lte.${endDate}T23:59:59.999Z),status.eq.ACTIVE`);
+
+    if (error || !data) return [];
+    return data as Session[];
+  },
+
   findById: async (id: string, businessId?: string): Promise<Session | null> => {
     const { data, error } = await supabase
       .from('sessions')

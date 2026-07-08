@@ -1,37 +1,69 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #10141a;
+  color-scheme: light;
+  /* Layout & Backgrounds */
+  --background: #fcfcfc;
+  --foreground: #09090b;
 
-  --bg-primary: #f8f9fb;
+  --bg-primary: #f8fafc;
   --bg-surface: #ffffff;
   --bg-card: #ffffff;
-  --text-primary: #10141a;
-  --text-secondary: #5c6370;
-  --border: #e4e6eb;
   
-  --accent: #206a51; /* inverse-primary from DESIGN.md */
-  --success: #206a51;
-  --warning: #cca830;
-  --danger: #dc2626;
+  /* Text */
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-disabled: #94a3b8;
+  
+  /* Borders */
+  --border: rgba(15, 23, 42, 0.08);
+  --border-light: rgba(15, 23, 42, 0.04);
+  
+  /* Core Colors */
+  --primary: #0f172a;      /* Deep blue-gray for high contrast primary elements */
+  --secondary: #3b82f6;    /* Vibrant blue for links/secondary accents */
+  --accent: #10b981;       /* Emerald green for primary active/start actions */
+  
+  /* Status Colors */
+  --success: #10b981;      /* Emerald */
+  --warning: #f59e0b;      /* Amber */
+  --error: #ef4444;        /* Red */
+  --danger: #ef4444;
+  --info: #0ea5e9;         /* Light Blue */
+  --disabled: #e2e8f0;     /* Disabled state backgrounds */
 }
 
 .dark {
-  --background: #10141a;
-  --foreground: #dfe2eb;
+  color-scheme: dark;
+  /* Layout & Backgrounds */
+  --background: #09090b;
+  --foreground: #fafafa;
 
-  --bg-primary: #10141a;
-  --bg-surface: #10141a;
-  --bg-card: #1c2026;
-  --text-primary: #dfe2eb;
-  --text-secondary: #bfc9c2;
-  --border: #31353c;
+  --bg-primary: #09090b;
+  --bg-surface: #141414;
+  --bg-card: #141414;
   
-  --accent: #8dd5b6;
-  --success: #8dd5b6;
-  --warning: #eac34a;
-  --danger: #ffb4ab;
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-disabled: #52525b;
+  
+  /* Borders */
+  --border: #27272a;
+  --border-light: #18181b;
+  
+  /* Core Colors */
+  --primary: #fafafa;
+  --secondary: #60a5fa;
+  --accent: #10b981;
+  
+  /* Status Colors */
+  --success: #10b981;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --danger: #f87171;
+  --info: #38bdf8;
+  --disabled: #27272a;
 }
 
 @theme inline {
@@ -44,33 +76,87 @@
   
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
+  --color-text-disabled: var(--text-disabled);
   
   --color-border-theme: var(--border);
+  --color-border-light: var(--border-light);
   
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
   --color-accent: var(--accent);
+  
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-error: var(--error);
   --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-disabled: var(--disabled);
 
-  --font-sans: var(--font-hanken-grotesk);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-hanken-grotesk), "Inter", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
 }
 
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-sans), sans-serif;
+  font-family: var(--font-sans);
   letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Glassmorphism utilities */
 .glass-panel {
-  background: rgba(28, 32, 38, 0.7);
+  background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(137, 147, 141, 0.2);
+  border: 1px solid var(--border);
 }
 
+.dark .glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid var(--border);
+}
+
+/* UI Micro-interactions */
 .card-glow {
-  box-shadow: inset 0 0 20px rgba(141, 213, 182, 0.05);
+  box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.dark .hover-lift:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom Scrollbar for a cleaner look */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 20px;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: var(--text-disabled);
+}
+
+/* Pulse animation for notifications */
+@keyframes soft-pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-soft-pulse {
+  animation: soft-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

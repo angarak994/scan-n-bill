@@ -81,7 +81,7 @@ export function calculateCost(
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string
-): { cost: number, slabsApplied: string } {
+): { cost: number, baseCost: number, discountAmount: number, slabsApplied: string } {
   let totalMs = endMs - startMs;
   if (pausedDurationSecs > 0) {
     totalMs = Math.max(0, totalMs - (pausedDurationSecs * 1000));
@@ -90,7 +90,7 @@ export function calculateCost(
 
   // First 5 minutes are completely free (Grace Period logic)
   if (durationMinutes <= 5) {
-    return { cost: 0, slabsApplied: 'None (Grace Period)' };
+    return { cost: 0, baseCost: 0, discountAmount: 0, slabsApplied: 'None (Grace Period)' };
   }
 
   let billedDurationMinutes = durationMinutes;
@@ -161,13 +161,17 @@ export function calculateCost(
     finalCost = Math.round(totalCost); // Round to nearest ₹1 to avoid weird decimals
   }
 
+  let baseCost = finalCost;
+  let discountAmount = 0;
+  
   // Apply Happy Hour Discount on Game Time
   if (discount && discount.percent > 0) {
     finalCost = finalCost * (1 - (discount.percent / 100));
     finalCost = Math.round(finalCost);
+    discountAmount = baseCost - finalCost;
   }
 
-  return { cost: finalCost, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
+  return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
 }
 
 /**
@@ -194,7 +198,7 @@ export function calculateBilling(
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
+  const { cost, baseCost, discountAmount, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
 
   let totalSeconds = (endMs - startMs) / 1000;
   if (pausedDurationSecs > 0) {
@@ -208,5 +212,5 @@ export function calculateBilling(
   if (hours > 0) duration += `${hours} hr `;
   duration += `${mins} min`;
 
-  return { duration: duration.trim() || '0 min', cost, slabs_applied: slabsApplied };
+  return { duration: duration.trim() || '0 min', cost, baseCost, discountAmount, slabs_applied: slabsApplied };
 }

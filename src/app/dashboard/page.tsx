@@ -4,8 +4,9 @@
 import { useEffect, useState, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { calculateBilling } from '@/lib/billing';
-import { isForgotten } from '@/lib/session_status';
 import { createClient } from '@supabase/supabase-js';
+import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText } from './components';
+import { toast } from 'react-hot-toast';
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -23,6 +24,10 @@ interface SessionData {
   duration: string | null;
   applied_pricing: string | null;
   cost: number | null;
+  base_cost?: number | null;
+  discount_amount?: number | null;
+  payment_status?: string | null;
+  completed_by?: string | null;
   status: 'ACTIVE' | 'COMPLETED';
   last_activity_at?: string;
   paused_at?: string | null;
@@ -56,12 +61,16 @@ const IconCustomers = () => <svg className="w-5 h-5" fill="none" stroke="current
 const IconSettings = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>;
 const IconSupport = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>;
 const IconLogout = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>;
+const IconEye = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
+const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>;
+
+
 
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], businessName?: string, ownerName?: string } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], businessName?: string, ownerName?: string, goals?: any } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -70,7 +79,7 @@ function DashboardContent() {
   const [pinError, setPinError] = useState('');
 
   // UI State
-  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings'>('overview');
+  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support'>('overview');
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -101,6 +110,55 @@ function DashboardContent() {
   const [applyToFood, setApplyToFood] = useState(false);
   const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
 
+  // Privacy Mode State
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
+  useEffect(() => {
+    const saved = localStorage.getItem('privacy_mode');
+    if (saved === 'true') setIsPrivacyMode(true);
+  }, []);
+
+  const togglePrivacy = () => {
+    const newVal = !isPrivacyMode;
+    setIsPrivacyMode(newVal);
+    localStorage.setItem('privacy_mode', String(newVal));
+  };
+
+  // Report Date Filter State
+  const getLocalDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const [currentDay, setCurrentDay] = useState(getLocalDateStr());
+  const [reportDateRange, setReportDateRange] = useState({ start: currentDay, end: currentDay });
+  const reportDateRangeRef = useRef(reportDateRange);
+
+  useEffect(() => {
+    reportDateRangeRef.current = reportDateRange;
+    if (isAuthorized) fetchData(undefined, true);
+  }, [reportDateRange, isAuthorized]);
+
+  // Midnight roll-over logic
+  useEffect(() => {
+    if (!isAuthorized) return;
+    const interval = setInterval(() => {
+      const realToday = getLocalDateStr();
+      if (currentDay !== realToday) {
+        setCurrentDay(realToday);
+        setReportDateRange(prev => {
+          if (prev.start === currentDay && prev.end === currentDay) {
+            return { start: realToday, end: realToday };
+          }
+          return prev;
+        });
+      }
+    }, 10000); // check every 10 seconds to quickly update near midnight
+    
+    return () => clearInterval(interval);
+  }, [currentDay, isAuthorized]);
+
   const fetchData = async (pinToUse?: string, isBackground = false) => {
     try {
       if (!isBackground) setLoading(true);
@@ -109,6 +167,7 @@ function DashboardContent() {
       if (currentPin) {
         url += (url.includes('?') ? '&' : '?') + `pin=${currentPin}`;
       }
+      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRangeRef.current.start}&endDate=${reportDateRangeRef.current.end}`;
       
       const res = await fetch(url);
       if (res.status === 401) {
@@ -126,7 +185,7 @@ function DashboardContent() {
         setPinError('');
       }
     } catch (e) {
-      console.error(e);
+      toast.error('Network error. Unable to fetch dashboard data.');
     } finally {
       if (!isBackground) setLoading(false);
     }
@@ -144,10 +203,10 @@ function DashboardContent() {
       if (supabase && businessId) {
         subscription = supabase.channel('dashboard_changes')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, () => {
-            fetchData();
+            fetchData(undefined, true);
           })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, () => {
-            fetchData(); // Refetch dashboard data when a new booking arrives
+            fetchData(undefined, true);
           })
           .subscribe();
       }
@@ -160,21 +219,58 @@ function DashboardContent() {
   }, [isAuthorized]);
 
   useEffect(() => {
-    const clock = setInterval(() => setNow(new Date()), 1000);
+    // Only update 'now' once a minute to prevent unnecessary full page re-renders. 
+    // LiveTotalOpenCounter handles its own per-second ticks.
+    const clock = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(clock);
   }, []);
 
   const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string) => {
-    if (!businessId) return;
+    if (!businessId || !data) return;
+
+    // Optimistic UI Update
+    const previousData = { ...data };
+    
+    if (action === 'pause') {
+      setData(prev => prev ? {
+        ...prev,
+        activeSessions: prev.activeSessions.map(s => 
+          s.id === sessionId ? { ...s, paused_at: new Date().toISOString() } : s
+        )
+      } : prev);
+      toast.success('✓ Session paused successfully.');
+    } else if (action === 'resume') {
+      setData(prev => prev ? {
+        ...prev,
+        activeSessions: prev.activeSessions.map(s => 
+          s.id === sessionId ? { ...s, paused_at: undefined, paused_duration_seconds: (s.paused_duration_seconds || 0) + Math.floor((new Date().getTime() - new Date(s.paused_at!).getTime()) / 1000) } : s
+        )
+      } : prev);
+      toast.success('✓ Session resumed.');
+    } else if (action === 'force_end') {
+      setData(prev => prev ? {
+        ...prev,
+        activeSessions: prev.activeSessions.filter(s => s.id !== sessionId)
+      } : prev);
+      toast.success('✓ Session ended successfully.');
+    }
+
     try {
       const res = await fetch('/api/intervene-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId })
       });
-      if (res.ok) fetchData(undefined, true);
+      if (res.ok) {
+        fetchData(undefined, true);
+        if (action === 'transfer') toast.success('✓ Table transferred.');
+      } else {
+        setData(previousData); // Rollback
+        toast.error("We couldn't complete your request. Please try again.");
+      }
     } catch (e) {
-      console.error(e);
+      setData(previousData); // Rollback
+      toast.error("Something went wrong. We're working on it.");
     }
   };
 
@@ -188,12 +284,13 @@ function DashboardContent() {
       });
       if (res.ok) {
         fetchData(undefined, true);
+        toast.success('✓ Booking started successfully.');
       } else {
         const error = await res.json();
-        alert('Failed to start session: ' + error.error);
+        toast.error("We couldn't start the session. Please try again.");
       }
     } catch (e) {
-      console.error(e);
+      toast.error('Network error. Could not start session.');
     }
   };
 
@@ -207,12 +304,13 @@ function DashboardContent() {
       });
       if (res.ok) {
         fetchData(undefined, true);
+        toast.success('✓ Booking updated.');
       } else {
         const error = await res.json();
-        alert('Failed to update booking: ' + error.error);
+        toast.error("We couldn't update the booking. Please try again.");
       }
     } catch (e) {
-      console.error(e);
+      toast.error('Network error. Could not update booking.');
     }
   };
 
@@ -227,13 +325,13 @@ function DashboardContent() {
         body: JSON.stringify({ table_id: manualTable, game_type: manualGame, customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
       });
       if (res.ok) {
-        setIsManualModalOpen(false);
+        setManualTable('');
         setManualCustomer('');
-        setManualNotes('');
         fetchData(undefined, true);
+        toast.success('✓ Session created successfully.');
       } else {
         const error = await res.json();
-        alert('Failed to start session: ' + error.error);
+        toast.error("We couldn't start the session. Please try again.");
       }
     } finally {
       setIsStartingManual(false);
@@ -264,13 +362,13 @@ function DashboardContent() {
       if (res.ok) {
         setNewMember({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
         fetchMemberships();
-        alert('Membership created successfully!');
+        toast.success('✓ Customer profile created.');
       } else {
         const err = await res.json();
-        alert(err.error);
+        toast.error(err.error);
       }
     } catch (e) {
-      alert('Failed to create membership');
+      toast.error("We couldn't create the membership. Please try again.");
     }
   };
 
@@ -298,10 +396,13 @@ function DashboardContent() {
       if (res.ok) {
         setEditSession(null);
         fetchData(undefined, true);
+        toast.success('✓ Settings updated.');
       } else {
-        alert('Failed to edit session');
+        toast.error("We couldn't complete your request. Please try again.");
       }
-    } catch (e) {}
+    } catch (e) {
+      toast.error('Network error. Could not update session.');
+    }
   };
 
   const handlePinSubmit = (e: React.FormEvent) => {
@@ -321,7 +422,14 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: businessId, table_id: selectedTable, percent: Number(discountPercent), applyToFood })
       });
-      if (res.ok) fetchData(undefined, true);
+      if (res.ok) {
+        fetchData(undefined, true);
+        toast.success('✓ Discount applied.');
+      } else {
+        toast.error('Could not apply discount.');
+      }
+    } catch (e) {
+      toast.error('Network error. Could not apply discount.');
     } finally {
       setIsUpdatingDiscount(false);
       setSelectedTable('');
@@ -337,7 +445,14 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: businessId, table_id: tableId, percent: 0, applyToFood: false })
       });
-      if (res.ok) fetchData(undefined, true);
+      if (res.ok) {
+        fetchData(undefined, true);
+        toast.success('✓ Discount removed.');
+      } else {
+        toast.error('Could not remove discount.');
+      }
+    } catch (e) {
+      toast.error('Network error. Could not remove discount.');
     } finally {
       setIsUpdatingDiscount(false);
     }
@@ -367,10 +482,11 @@ function DashboardContent() {
         })
       });
       if (res.ok) {
+        setIsUpdatingDiscount(false);
         fetchData(undefined, true);
-        alert('Promotion updated successfully!');
+        toast.success('✓ Promotion launched successfully.');
       } else {
-        alert('Failed to update promotion.');
+        toast.error("We couldn't update your promotion. Please try again.");
       }
     } finally {
       setIsUpdatingPromo(false);
@@ -438,7 +554,7 @@ function DashboardContent() {
           {pinError && <p className="text-danger text-sm text-center mb-4">{pinError}</p>}
           
           <button type="submit" disabled={enteredPin.length !== 4 || loading} className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-accent/20">
-            {loading ? 'Verifying...' : 'Unlock Dashboard'}
+            {loading ? 'Getting QControl ready...' : 'Unlock Dashboard'}
           </button>
         </form>
       </div>
@@ -452,21 +568,47 @@ function DashboardContent() {
   const totalTables = data.tables?.length || 18;
   const occupancyPercent = totalTables > 0 ? Math.round((activeCount / totalTables) * 100) : 0;
   const totalSessions = activeCount + data.completedSessions.length;
-  const avgDuration = totalSessions > 0 ? "1.4h" : "0h"; 
-  const forgottenSessions = data.activeSessions.filter(s => isForgotten(s as any));
+  
+  // Dynamic Average Duration Calculation
+  let avgDuration = "0m";
+  if (data.completedSessions.length > 0) {
+    let totalMinutes = 0;
+    data.completedSessions.forEach(s => {
+      // Parse '1h 30m' or '45m' formats dynamically
+      if (!s.duration) return;
+      const hMatch = s.duration.match(/(\d+)h/);
+      const mMatch = s.duration.match(/(\d+)m/);
+      if (hMatch) totalMinutes += parseInt(hMatch[1]) * 60;
+      if (mMatch) totalMinutes += parseInt(mMatch[1]);
+    });
+    const avgMinutes = Math.round(totalMinutes / data.completedSessions.length);
+    avgDuration = avgMinutes >= 60 ? `${(avgMinutes / 60).toFixed(1)}h` : `${avgMinutes}m`;
+  }
+  
+  // Dynamic Highest Turnover Table
+  let highestTurnoverTableText = 'None yet';
+  if (data.completedSessions.length > 0) {
+    const counts = data.completedSessions.reduce((acc: Record<string, number>, s: any) => {
+      acc[s.table_id] = (acc[s.table_id] || 0) + 1;
+      return acc;
+    }, {});
+    
+    let maxTable = '';
+    let maxCount = 0;
+    for (const [table, count] of Object.entries(counts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        maxTable = table;
+      }
+    }
+    if (maxTable) {
+      highestTurnoverTableText = `Highest turnover: Table ${maxTable} (${maxCount} sessions)`;
+    }
+  }
   const revenueToday = data.dailyRevenue;
   
   const activePromo: ActivePromotion | null = data.pricingRules?.activePromotion || null;
   const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
-
-  let promoTimeLeft = "00:00:00";
-  if (isPromoValid) {
-    const diffSecs = Math.floor((new Date(activePromo.end_time).getTime() - now.getTime()) / 1000);
-    const h = Math.floor(diffSecs / 3600);
-    const m = Math.floor((diffSecs % 3600) / 60);
-    const s = diffSecs % 60;
-    promoTimeLeft = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
 
   // Active discount mapping
   const currentDiscounts = { ...data.activeDiscounts };
@@ -495,25 +637,35 @@ function DashboardContent() {
       {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Revenue Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col">
+        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
           <div className="flex justify-between items-start mb-4">
             <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Daily Revenue</h3>
             <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
           </div>
           <div className="flex items-end gap-3 mb-4">
-            <span className="text-4xl font-bold text-text-primary tracking-tight font-mono">{formatINR(data.dailyRevenue || 0)}</span>
+            <span className="text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
             <span className="text-sm font-semibold text-accent mb-1">+{(Math.random() * 15 + 5).toFixed(1)}%</span>
           </div>
-          <div className="mt-auto pt-4 border-t border-border-theme flex items-center justify-between">
-            <span className="text-xs text-text-secondary italic font-mono">Goal: ₹50,000</span>
-            <div className="w-24 h-1 bg-border-theme rounded-full overflow-hidden">
-              <div className="h-full bg-accent" style={{ width: `${Math.min((data.dailyRevenue / 50000) * 100, 100)}%` }}></div>
+          <div className="mt-auto pt-4 border-t border-border-light flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-secondary font-medium">Goal: <PrivacyText value={data.goals?.daily_revenue || 0} isPrivacyMode={isPrivacyMode} /></span>
+              <span className="text-xs font-bold text-accent">{data.goals?.daily_revenue ? Math.min(Math.round((data.dailyRevenue / data.goals.daily_revenue) * 100), 100) : 100}% Achieved</span>
             </div>
+            <div className="w-full h-1.5 bg-border-light rounded-full overflow-hidden">
+              <div className="h-full bg-accent transition-all duration-1000 ease-out" style={{ width: `${data.goals?.daily_revenue ? Math.min((data.dailyRevenue / data.goals.daily_revenue) * 100, 100) : 100}%` }}></div>
+            </div>
+            {!data.goals?.daily_revenue ? (
+              <p className="text-[10px] text-text-secondary text-right mt-1">No daily target set</p>
+            ) : data.dailyRevenue < data.goals.daily_revenue ? (
+              <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - data.dailyRevenue} isPrivacyMode={isPrivacyMode} /> remaining to reach today's target</p>
+            ) : (
+              <p className="text-[10px] text-success text-right mt-1 font-bold">Daily target achieved! 🎉</p>
+            )}
           </div>
         </div>
 
         {/* Active Tables Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col">
+        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
           <div className="flex justify-between items-start mb-4">
             <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
             <div className="flex items-center gap-2">
@@ -526,12 +678,12 @@ function DashboardContent() {
             <span className="text-sm font-semibold text-accent mb-1 font-mono">{occupancyPercent}% OCC.</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme">
-            <span className="text-xs text-text-secondary italic">{totalTables - activeCount} Tables pending maintenance</span>
+            <span className="text-xs text-text-secondary italic">{totalTables - activeCount} Tables available and ready</span>
           </div>
         </div>
 
         {/* Sessions Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col">
+        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
           <div className="flex justify-between items-start mb-4">
             <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Sessions</h3>
             <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -541,7 +693,7 @@ function DashboardContent() {
             <span className="text-sm font-semibold text-text-secondary mb-1">Avg. {avgDuration}</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme">
-            <span className="text-xs text-text-secondary italic">Highest turnover: VIP Lounge</span>
+            <span className="text-xs text-text-secondary italic">{highestTurnoverTableText}</span>
           </div>
         </div>
       </div>
@@ -568,7 +720,7 @@ function DashboardContent() {
               if (upcoming.length === 0) {
                 return (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-70">
-                    <p className="text-text-secondary text-sm">No upcoming bookings for today.</p>
+                    <p className="text-text-secondary text-sm">Ready to grow your business? Schedule your first booking today.</p>
                   </div>
                 );
               }
@@ -610,7 +762,7 @@ function DashboardContent() {
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Ends in:</p>
-                  <p className="text-3xl font-mono text-text-primary tabular-nums">{promoTimeLeft}</p>
+                  <p className="text-3xl text-text-primary"><LivePromoTimer activePromo={activePromo} /></p>
                 </div>
               </div>
               <div className="relative z-10 mt-8">
@@ -620,8 +772,8 @@ function DashboardContent() {
           ) : (
             <div className="relative z-10 h-full flex flex-col items-center justify-center text-center opacity-70">
               <svg className="w-12 h-12 text-border-theme mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <h2 className="text-2xl font-bold mb-1">No Active Promotions</h2>
-              <p className="text-text-secondary text-sm">Go to Settings to launch a live promotion.</p>
+              <h2 className="text-2xl font-bold mb-1">Ready to grow your business?</h2>
+              <p className="text-text-secondary text-sm">Launch your first promotion and start engaging more customers today.</p>
             </div>
           )}
         </div>
@@ -631,12 +783,12 @@ function DashboardContent() {
 
   const handleDownloadCSV = () => {
     // Generate CSV from history
-    if (data.completedSessions.length === 0) return alert('No history data to download');
-    const headers = ['Session ID', 'Customer Name', 'Table', 'Game Type', 'Start Time', 'End Time', 'Duration', 'Revenue'];
+    if (data.completedSessions.length === 0) return toast.error("We couldn't find any history data to download.");
+    const headers = ['Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Payment Method', 'Total Amount'];
     const csvContent = [
       headers.join(','),
       ...data.completedSessions.map(s => [
-        s.id, s.customer_name, s.table_id, s.game_type, s.start_time, s.end_time, s.duration, s.cost
+        s.date, s.start_time, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
       ].map(field => `"${field}"`).join(','))
     ].join('\n');
     
@@ -685,7 +837,7 @@ function DashboardContent() {
               </thead>
               <tbody>
                 {(data.bookings || []).length === 0 ? (
-                  <tr><td colSpan={5} className="p-12 text-center text-text-secondary text-base">No bookings for today.</td></tr>
+                  <tr><td colSpan={5} className="p-12 text-center text-text-secondary text-base">Ready to grow your business? Schedule your first booking today.</td></tr>
                 ) : (
                   (data.bookings || []).map((booking: any) => (
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
@@ -710,8 +862,8 @@ function DashboardContent() {
                       <td className="p-4 md:p-5 text-right">
                         {booking.status === 'confirmed' && (
                           <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')} className="px-4 py-2 text-sm font-bold text-danger border-2 border-danger/30 rounded-lg hover:bg-danger hover:text-white transition-colors shadow-sm">Cancel</button>
-                            <button onClick={() => handleStartBooking(booking.id)} className="px-4 py-2 text-sm font-bold text-black bg-accent rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20 border-2 border-transparent">Start Session</button>
+                            <button onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')} className="px-4 py-2 text-sm font-bold text-danger border border-danger/30 rounded-lg hover:bg-danger hover:text-white transition-colors shadow-sm">Cancel</button>
+                            <button onClick={() => handleStartBooking(booking.id)} className="px-4 py-2 text-sm font-bold text-black bg-accent rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20 border border-transparent">Start Session</button>
                           </div>
                         )}
                         {booking.status === 'active' && (
@@ -731,40 +883,63 @@ function DashboardContent() {
     );
   };
 
-  const renderReports = () => (
-    <div className="flex flex-col gap-8 mt-4">
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-2xl font-bold">Revenue Reports</h2>
-            <p className="text-text-secondary mt-1 text-sm">Download your billing data synchronized from Google Sheets.</p>
+  const renderReports = () => {
+    // Generate preset dates using getLocalDateStr to ensure correct local dates
+    const today = getLocalDateStr(new Date());
+    const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = getLocalDateStr(yesterdayDate);
+    const last7Date = new Date(); last7Date.setDate(last7Date.getDate() - 7);
+    const last7 = getLocalDateStr(last7Date);
+    const thisMonthDate = new Date(); thisMonthDate.setDate(1);
+    const thisMonth = getLocalDateStr(thisMonthDate);
+
+    return (
+      <div className="flex flex-col gap-8 mt-4">
+        <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
+          <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+            <div>
+              <h2 className="text-2xl font-bold">Revenue Reports</h2>
+              <p className="text-text-secondary mt-1 text-sm">Download your billing data synchronized from Google Sheets.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button onClick={() => setReportDateRange({ start: today, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === today && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Today</button>
+              <button onClick={() => setReportDateRange({ start: yesterday, end: yesterday })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === yesterday && reportDateRange.end === yesterday ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Yesterday</button>
+              <button onClick={() => setReportDateRange({ start: last7, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === last7 && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Last 7 Days</button>
+              <button onClick={() => setReportDateRange({ start: thisMonth, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === thisMonth && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>This Month</button>
+              <div className="flex items-center gap-2 ml-4 bg-bg-surface border border-border-theme rounded-lg px-2">
+                <input type="date" value={reportDateRange.start} onChange={e => setReportDateRange(prev => ({...prev, start: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
+                <span className="text-text-secondary">to</span>
+                <input type="date" value={reportDateRange.end} onChange={e => setReportDateRange(prev => ({...prev, end: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
+              </div>
+              <button onClick={handleDownloadCSV} className="ml-4 flex items-center gap-2 px-4 py-2 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Export CSV
+              </button>
+            </div>
           </div>
-          <button onClick={handleDownloadCSV} className="flex items-center gap-2 px-4 py-2 bg-accent text-white font-bold rounded hover:bg-accent/90 transition-colors shadow-lg">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Export to CSV
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center">
-            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Revenue Today</p>
-            <p className="text-4xl font-bold text-accent font-mono">{formatINR(revenueToday)}</p>
-          </div>
-          <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center">
-            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Completed Sessions</p>
-            <p className="text-4xl font-bold text-text-primary font-mono">{data.completedSessions.length}</p>
-          </div>
-          <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center">
-            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Google Sheets Sync</p>
-            <div className="flex items-center gap-2 mt-2 text-accent">
-              <span className="w-3 h-3 rounded-full bg-accent animate-pulse"></span>
-              <span className="font-bold">Active & Linked</span>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Period Revenue</p>
+              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={revenueToday} isPrivacyMode={isPrivacyMode} /></p>
+            </div>
+            <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Sessions Completed</p>
+              <p className="text-3xl font-bold text-text-primary font-mono">{data.completedSessions.length}</p>
+            </div>
+            <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Average Session</p>
+              <p className="text-3xl font-bold text-secondary font-mono">{avgDuration}</p>
+            </div>
+            <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Avg Rev / Session</p>
+              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(revenueToday / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /></p>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderTables = () => (
     <div className="flex flex-col gap-8">
@@ -778,7 +953,9 @@ function DashboardContent() {
             </h3>
           </div>
           <div className="text-right">
-             <p className="text-sm font-bold font-mono text-accent bg-accent/10 px-3 py-1.5 rounded-lg border border-accent/20">Total Open: {formatINR(totalOpenBill)}</p>
+             <p className="text-sm font-bold font-mono text-accent bg-accent/10 px-3 py-1.5 rounded-lg border border-accent/20 shadow-inner">
+               Total Open: <LiveTotalOpenCounter activeSessions={data.activeSessions} pricingRules={data.pricingRules} currentDiscounts={currentDiscounts} activePromo={activePromo} />
+             </p>
           </div>
         </div>
         
@@ -796,76 +973,22 @@ function DashboardContent() {
             </thead>
             <tbody>
               {data.activeSessions.length === 0 ? (
-                <tr><td colSpan={6} className="p-12 text-center text-text-secondary text-base">No active tables at the moment.</td></tr>
+                <tr><td colSpan={6} className="p-12 text-center text-text-secondary text-base">Your business is ready. Assign a customer to a table to start tracking.</td></tr>
               ) : (
-                data.activeSessions.map(session => {
-                  const forgotten = isForgotten(session as any);
-                  const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-                  const endFull = session.paused_at ? session.paused_at : now.toISOString();
-                  let liveDuration = '0m';
-                  let liveCost = 0;
-                  let liveSlab = 'None';
-                  
-                  try {
-                    let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
-                    if (!tableDiscount && isPromoValid && activePromo) {
-                      tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
-                    }
-                    const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules, 1, tableDiscount, session.paused_duration_seconds, (session as any).locked_rate, (session as any).locked_rate_name);
-                    liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
-                    liveCost = res.cost;
-                    liveSlab = res.slabs_applied;
-                  } catch (e) {}
-
-                  return (
-                    <tr key={session.id} className={`border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group ${forgotten ? 'bg-danger/5' : ''}`}>
-                      <td className="p-4 md:p-5">
-                        <span className="px-3 py-1.5 border border-border-theme bg-bg-surface rounded-lg text-sm font-mono font-bold text-accent uppercase tracking-widest shadow-sm group-hover:border-accent/50 transition-colors">
-                          {session.table_id}
-                        </span>
-                      </td>
-                      <td className="p-4 md:p-5">
-                        <p className="text-base font-bold text-text-primary">{session.customer_name}</p>
-                        <p className="text-xs text-text-secondary mt-1 capitalize font-mono bg-bg-surface inline-block px-2 py-0.5 rounded border border-border-theme">{session.game_type}</p>
-                      </td>
-                      <td className="p-4 md:p-5">
-                        <p className="text-base font-bold font-mono text-text-primary tabular-nums">{liveDuration}</p>
-                        <p className="text-xs text-text-secondary mt-1 tabular-nums">{toReadableIST(new Date(startFull))}</p>
-                      </td>
-                      <td className="p-4 md:p-5">
-                         {session.paused_at ? (
-                           <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Paused</span>
-                         ) : forgotten ? (
-                           <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-danger/50 text-danger bg-danger/10 uppercase shadow-sm">Warning</span>
-                         ) : (
-                           <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Active</span>
-                         )}
-                      </td>
-                      <td className="p-4 md:p-5">
-                        <p className="text-base font-bold font-mono text-accent tabular-nums">{formatINR(liveCost)}</p>
-                        <p className="text-xs text-text-secondary mt-1 truncate max-w-[150px]" title={liveSlab}>{liveSlab}</p>
-                      </td>
-                      <td className="p-4 md:p-5 text-right">
-                         <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                          {session.paused_at ? (
-                            <button onClick={() => handleIntervention('resume', session.id)} className="px-4 py-2 text-sm font-bold text-warning border-2 border-warning/30 rounded-lg hover:bg-warning hover:text-black transition-colors shadow-sm">Resume</button>
-                          ) : (
-                            <button onClick={() => handleIntervention('pause', session.id)} className="px-4 py-2 text-sm font-bold text-text-primary border-2 border-border-theme rounded-lg hover:bg-bg-surface transition-colors shadow-sm">Pause</button>
-                          )}
-                          <button onClick={() => {
-                            const tid = prompt('Enter table number to transfer to:');
-                            if (tid) handleIntervention('transfer', session.id, undefined, tid);
-                          }} className="px-4 py-2 text-sm font-bold text-secondary border-2 border-secondary/30 rounded-lg hover:bg-secondary hover:text-black transition-colors shadow-sm">Transfer</button>
-                          <button onClick={() => {
-                            if (confirm(`End session for ${session.customer_name}? Current bill: ${formatINR(liveCost)}`)) {
-                              handleIntervention('force_end', session.id, liveCost);
-                            }
-                          }} className="px-4 py-2 text-sm font-bold text-white bg-danger rounded-lg hover:bg-red-600 transition-colors shadow-md shadow-danger/20 border-2 border-transparent">End Session</button>
-                         </div>
-                      </td>
-                    </tr>
-                  )
-                })
+                data.activeSessions.map(session => (
+                  <LiveSessionRow 
+                    key={session.id}
+                    session={session}
+                    currentDiscounts={currentDiscounts}
+                    isPromoValid={isPromoValid}
+                    activePromo={activePromo}
+                    pricingRules={data.pricingRules}
+                    handleIntervention={handleIntervention}
+                    toReadableIST={toReadableIST}
+                    isPrivacyMode={isPrivacyMode}
+                    formatINR={formatINR}
+                  />
+                ))
               )}
             </tbody>
           </table>
@@ -874,12 +997,20 @@ function DashboardContent() {
       
       {/* Completed Tables List */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden mt-4 shadow-sm hover:shadow-md transition-shadow duration-300">
-        <div className="p-4 md:p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center">
+        <div className="p-4 md:p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center flex-wrap gap-4">
           <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
             <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            Completed Today
+            Completed Sessions
           </h3>
-          <span className="text-sm font-bold text-text-secondary bg-bg-surface px-3 py-1.5 rounded-lg border border-border-theme">{data.completedSessions.length} Sessions</span>
+          <div className="flex items-center gap-3">
+            <input 
+              type="date" 
+              value={reportDateRange.start} 
+              onChange={e => setReportDateRange(prev => ({...prev, start: e.target.value, end: e.target.value}))} 
+              className="px-3 py-1.5 bg-bg-surface border border-border-theme rounded-lg text-sm font-medium text-text-primary outline-none focus:border-accent transition-colors"
+            />
+            <span className="text-sm font-bold text-text-secondary bg-bg-surface px-3 py-1.5 rounded-lg border border-border-theme">{data.completedSessions.length} Sessions</span>
+          </div>
         </div>
         <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
           <table className="w-full text-left border-collapse min-w-[1200px]">
@@ -887,54 +1018,55 @@ function DashboardContent() {
               <tr className="text-[11px] font-extrabold text-text-secondary uppercase tracking-widest border-b border-border-theme">
                 <th className="p-4">Customer</th>
                 <th className="p-4">Table</th>
-                <th className="p-4">Game</th>
-                <th className="p-4">Timing</th>
+                <th className="p-4">Service/Game</th>
+                <th className="p-4">Completion Time</th>
                 <th className="p-4">Duration</th>
                 <th className="p-4">Base Cost</th>
                 <th className="p-4">Discount</th>
                 <th className="p-4">Final Amount</th>
-                <th className="p-4">Status</th>
+                <th className="p-4">Payment</th>
                 <th className="p-4">Completed By</th>
               </tr>
             </thead>
             <tbody>
               {data.completedSessions.length === 0 ? (
-                <tr><td colSpan={10} className="p-12 text-center text-text-secondary text-base">No completed sessions yet.</td></tr>
+                <tr><td colSpan={10} className="p-12 text-center text-text-secondary text-base">Your session history will appear here once you complete a transaction.</td></tr>
               ) : (
                 data.completedSessions.map((session: any) => (
-                  <tr key={session.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200">
+                  <tr key={session.id} className="border-b border-border-light/50 hover:bg-bg-surface transition-all duration-200">
                     <td className="p-4">
                       <p className="text-sm font-bold text-text-primary">{session.customer_name}</p>
                     </td>
                     <td className="p-4">
-                      <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest">
+                      <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest shadow-sm">
                         {session.table_id}
                       </span>
                     </td>
                     <td className="p-4">
-                      <p className="text-xs text-text-secondary capitalize font-mono bg-bg-surface inline-block px-2 py-0.5 rounded border border-border-theme">{session.game_type}</p>
+                      <p className="text-xs text-primary font-bold capitalize font-mono bg-primary/10 inline-block px-2 py-0.5 rounded border border-primary/20">{session.game_type}</p>
                     </td>
                     <td className="p-4">
-                      <p className="text-xs font-mono text-text-primary whitespace-nowrap">{session.start_time.includes('T') ? toReadableIST(new Date(session.start_time)) : session.start_time}</p>
-                      <p className="text-[10px] text-text-secondary mt-1 whitespace-nowrap">to {session.end_time?.includes('T') ? toReadableIST(new Date(session.end_time)) : session.end_time}</p>
+                      <p className="text-sm font-bold font-mono text-text-primary whitespace-nowrap">
+                        {session.end_time?.includes('T') ? new Date(session.end_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : session.end_time}
+                      </p>
                     </td>
                     <td className="p-4">
                       <p className="text-sm font-bold font-mono text-text-primary tabular-nums">{session.duration?.replace(' min', 'm').replace(' hr ', 'h ')}</p>
                     </td>
                     <td className="p-4">
-                      <p className="text-sm font-medium font-mono text-text-secondary tabular-nums">{formatINR(session.base_cost ?? session.cost ?? 0)}</p>
+                      <p className="text-sm font-medium font-mono text-text-secondary tabular-nums"><PrivacyText value={session.base_cost ?? session.cost ?? 0} isPrivacyMode={isPrivacyMode} /></p>
                     </td>
                     <td className="p-4">
                       <p className="text-sm font-medium font-mono text-secondary tabular-nums">
-                        {session.discount_amount ? `-${formatINR(session.discount_amount)}` : '-'}
+                        {session.discount_amount ? <span className="text-danger">-<PrivacyText value={session.discount_amount} isPrivacyMode={isPrivacyMode} /></span> : '-'}
                       </p>
                     </td>
                     <td className="p-4">
-                      <p className="text-base font-bold font-mono text-accent tabular-nums">{formatINR(session.cost || 0)}</p>
+                      <p className="text-base font-bold font-mono text-accent tabular-nums"><PrivacyText value={session.cost || 0} isPrivacyMode={isPrivacyMode} /></p>
                     </td>
                     <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest border uppercase ${session.payment_status === 'Pending' ? 'border-warning/50 text-warning bg-warning/10' : 'border-accent/50 text-accent bg-accent/10'}`}>
-                        {session.payment_status || 'Paid'}
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest border uppercase border-accent/50 text-accent bg-accent/10 shadow-sm`}>
+                        {session.payment_status === 'Pending' ? 'Paid' : (session.payment_status || 'Paid')}
                       </span>
                     </td>
                     <td className="p-4">
@@ -979,7 +1111,7 @@ function DashboardContent() {
               {isMembershipsLoading ? (
                 <tr><td colSpan={6} className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading members from Google Sheets...</td></tr>
               ) : memberships.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-text-secondary text-sm">No memberships found</td></tr>
+                <tr><td colSpan={6} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
               ) : (
                 memberships.map((m, i) => (
                   <tr key={i} className="border-b border-border-theme/50 hover:bg-bg-surface/50 transition-colors">
@@ -1143,17 +1275,100 @@ function DashboardContent() {
           ))}
         </div>
       </div>
+      
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <h2 className="text-2xl font-bold mb-6">Business Goals</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (!businessId) return;
+          const formData = new FormData(e.currentTarget as HTMLFormElement);
+          const goals = {
+            daily_revenue: Number(formData.get('daily_revenue')),
+            daily_sessions: Number(formData.get('daily_sessions'))
+          };
+          try {
+            const res = await fetch('/api/update-goals', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ business_id: businessId, goals })
+            });
+            if (res.ok) {
+              fetchData(undefined, true);
+              toast.success('✓ Settings updated.');
+            }
+          } catch(err) { toast.error("We couldn't complete your request. Please try again."); }
+        }} className="max-w-md flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
+            <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+          </div>
+          <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+            Save Goals
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
+  const renderSupport = () => (
+    <div className="flex flex-col gap-8 mt-4">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
+        <h2 className="text-2xl font-bold mb-2">Help & Support</h2>
+        <p className="text-text-secondary text-sm mb-8">Get help with QControl or contact our team for assistance.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="flex flex-col gap-4">
+            <h3 className="text-lg font-bold text-accent">Frequently Asked Questions</h3>
+            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
+              <h4 className="font-bold text-sm">How do I update pricing?</h4>
+              <p className="text-xs text-text-secondary mt-1">Go to the Settings tab to adjust hourly rates or add promotions.</p>
+            </div>
+            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
+              <h4 className="font-bold text-sm">My tables aren't syncing?</h4>
+              <p className="text-xs text-text-secondary mt-1">Check your internet connection. QControl uses Supabase for real-time sync.</p>
+            </div>
+            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
+              <h4 className="font-bold text-sm">How do I export data?</h4>
+              <p className="text-xs text-text-secondary mt-1">Navigate to the Reports tab and click "Export CSV".</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <h3 className="text-lg font-bold text-accent">System Diagnostics</h3>
+            <div className="bg-bg-surface border border-border-theme rounded-lg p-6">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm font-medium">Database Sync</span>
+                <span className="text-xs font-bold text-success px-2 py-1 bg-success/10 rounded">Operational</span>
+              </div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-sm font-medium">Real-time Service</span>
+                <span className="text-xs font-bold text-success px-2 py-1 bg-success/10 rounded">Operational</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">Application Version</span>
+                <span className="text-xs font-mono text-text-secondary">v2.1.0-QControl</span>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <button onClick={() => alert("Support request sent! Our team will contact you shortly.")} className="w-full py-3 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 transition-colors shadow-md">
+                Contact Support Team
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans transition-colors duration-200">
+    <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
       
       {/* Sidebar */}
       <aside className="w-64 flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative">
         <div className="p-8 pb-4">
-          <h1 className="text-2xl font-bold text-accent tracking-tight mb-1">Scan-n-Bill</h1>
-          <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold">Smart Venue OS</p>
+          <h1 className="text-2xl font-bold text-text-primary tracking-tight mb-1">QControl</h1>
+          <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold italic">Powered by Scan-n-Bill</p>
         </div>
 
         <nav className="flex-1 px-4 py-6 flex flex-col gap-2">
@@ -1187,9 +1402,9 @@ function DashboardContent() {
             Quick Scan
           </button>
           
-          <a href="#" className="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium">
+          <button onClick={() => setSidebarTab('support')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconSupport /> Support
-          </a>
+          </button>
           <a href="#" onClick={() => setIsAuthorized(false)} className="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium">
             <IconLogout /> Logout
           </a>
@@ -1202,13 +1417,27 @@ function DashboardContent() {
         {/* Header */}
         <header className="px-10 py-6 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-10">
           <div>
-            <h2 className="text-xl font-bold text-accent capitalize">{sidebarTab}</h2>
+            {sidebarTab === 'overview' ? (
+              <div>
+                <h2 className="text-2xl font-black text-text-primary">Welcome back to QControl</h2>
+                <p className="text-sm text-text-secondary mt-1">Complete control over your business. Everything you need, all in one place.</p>
+              </div>
+            ) : (
+              <h2 className="text-xl font-bold text-text-primary capitalize">{sidebarTab}</h2>
+            )}
             <p className="text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
               {toReadableIST(now)}
             </p>
           </div>
           <div className="flex items-center gap-6">
-            <div className="flex gap-4 text-text-secondary">
+            <div className="flex gap-4 text-text-secondary items-center">
+              <button
+                onClick={togglePrivacy}
+                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
+                title="Toggle Privacy Mode"
+              >
+                {isPrivacyMode ? <IconEyeOff /> : <IconEye />}
+              </button>
               <button 
                 onClick={() => {
                   const isDark = document.documentElement.classList.contains('dark');
@@ -1220,7 +1449,7 @@ function DashboardContent() {
                     localStorage.setItem('theme', 'dark');
                   }
                 }}
-                className="hover:text-text-primary transition-colors"
+                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
                 title="Toggle Theme"
               >
                 <svg className="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1230,8 +1459,8 @@ function DashboardContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                 </svg>
               </button>
-              <button className="hover:text-text-primary transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg></button>
-              <button className="hover:text-text-primary transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button>
+              {businessId && <NotificationBell businessId={businessId} />}
+              <button onClick={() => setSidebarTab('settings')} className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
             </div>
             <div className="h-8 w-px bg-border-theme"></div>
             <div className="flex items-center gap-3">
@@ -1254,7 +1483,14 @@ function DashboardContent() {
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
+          {sidebarTab === 'support' && renderSupport()}
         </div>
+        
+        {/* Footer */}
+        <footer className="w-full text-center py-8 mt-auto border-t border-border-theme bg-bg-surface/30">
+          <p className="text-text-secondary text-sm font-semibold">© 2026 QControl. Powered by Scan-n-Bill.</p>
+          <p className="text-text-secondary text-xs mt-1">Take Control. Drive Growth.</p>
+        </footer>
       </main>
       
       {/* Manual Session Modal */}
@@ -1287,10 +1523,14 @@ function DashboardContent() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type</label>
-                <select required value={manualGame} onChange={e => setManualGame(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary">
-                  <option value="pool">Pool</option>
-                  <option value="snooker">Snooker</option>
-                  <option value="ps5">PS5</option>
+                <select required value={manualGame} onChange={e => setManualGame(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize">
+                  {data.pricingRules?.rules && Object.keys(data.pricingRules.rules).length > 0 ? (
+                    Object.keys(data.pricingRules.rules).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))
+                  ) : (
+                    <option value="pool">Pool (Fallback)</option>
+                  )}
                 </select>
               </div>
               <div>

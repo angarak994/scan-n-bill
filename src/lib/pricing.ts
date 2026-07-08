@@ -27,6 +27,7 @@ export type PricingRules = Record<string, PricingRule>;
 export interface BusinessPricing {
   rules: PricingRules;
   globalSettings?: GlobalSettings;
+  activePromotion?: any;
 }
 
 export interface TableConfig {

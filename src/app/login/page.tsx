@@ -56,7 +56,7 @@ export default function Login() {
         <div className="bg-bg-card border border-border-theme p-8 rounded-2xl shadow-2xl">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold mb-2">Club Portal Login</h1>
-            <p className="text-text-secondary text-sm">Access your CueSync dashboard.</p>
+            <p className="text-text-secondary text-sm">Access your QControl dashboard.</p>
           </div>
 
           {error && (
@@ -82,7 +82,7 @@ export default function Login() {
           </form>
           
           <div className="mt-8 text-center">
-            <p className="text-sm text-text-secondary">New to CueSync? <Link href="/register" className="text-accent font-bold hover:underline">Register your club</Link></p>
+            <p className="text-sm text-text-secondary">New to QControl? <Link href="/register" className="text-accent font-bold hover:underline">Register your club</Link></p>
           </div>
         </div>
       </div>

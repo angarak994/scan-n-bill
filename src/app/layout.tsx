@@ -13,7 +13,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Scan-n-Bill | Smart Venue OS",
+  title: "QControl | Powered by Scan-n-Bill",
   description: "Enterprise Club Management System",
   manifest: '/manifest.json',
 };

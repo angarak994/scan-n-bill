@@ -89,6 +89,12 @@ export async function endSession(table_id: string, businessId?: string) {
   if (business) {
     pricingRules = business.pricing_rules;
     discount = business.active_discounts?.[table_id];
+    
+    const activePromo = pricingRules?.activePromotion;
+    const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
+    if (!discount && isPromoValid) {
+      discount = { percent: activePromo.discount_percent, applyToFood: false };
+    }
   }
   
   // Membership Discount Logic
@@ -112,28 +118,20 @@ export async function endSession(table_id: string, businessId?: string) {
     console.error('Membership Lookup Error:', e);
   }
   
-  const { duration, cost: timeCost, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, discount, 0, session.locked_rate, session.locked_rate_name);
+  const { duration, cost: timeCost, baseCost, discountAmount, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, discount, 0, session.locked_rate, session.locked_rate_name);
   
   let finalFoodCost = session.food_cost || 0;
+  let foodDiscountAmount = 0;
   if (discount && discount.percent > 0 && discount.applyToFood) {
+    const originalFoodCost = finalFoodCost;
     finalFoodCost = finalFoodCost * (1 - (discount.percent / 100));
     finalFoodCost = Math.round(finalFoodCost);
+    foodDiscountAmount = originalFoodCost - finalFoodCost;
   }
 
   const totalCost = timeCost + finalFoodCost;
-  
-  // Calculate raw amounts before discounts for the new Dashboard view
-  let baseCost = totalCost;
-  let discountAmount = 0;
-  if (discount && discount.percent > 0) {
-     // Re-calculate the original amount before discount.
-     // If totalCost = baseCost * (1 - discount/100), then baseCost = totalCost / (1 - discount/100)
-     // However, timeCost might be calculated already with discount inside calculateBilling.
-     // Let's rely on the calculateBilling returning the base cost, or we reverse engineer it.
-     // Wait, it's safer to recalculate.
-     baseCost = Math.round(totalCost / (1 - (discount.percent / 100)));
-     discountAmount = baseCost - totalCost;
-  }
+  const totalBaseCost = baseCost + (session.food_cost || 0);
+  const totalDiscountAmount = discountAmount + foodDiscountAmount;
 
   await sessionRepository.update(session.id, {
     end_time,
@@ -141,8 +139,8 @@ export async function endSession(table_id: string, businessId?: string) {
     duration,
     applied_pricing: slabs_applied,
     cost: totalCost,
-    base_cost: baseCost,
-    discount_amount: discountAmount,
+    base_cost: totalBaseCost,
+    discount_amount: totalDiscountAmount,
     payment_status: 'Paid',
     completed_by: 'Club Owner', // Default to club owner for manual dashboard actions
   }, businessId);
@@ -200,6 +198,12 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
+      
+      const activePromo = pricingRules?.activePromotion;
+      const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
+      if (!discount && isPromoValid) {
+        discount = { percent: activePromo.discount_percent, applyToFood: false };
+      }
     }
 
     return {
@@ -226,6 +230,12 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
+    
+    const activePromo = pricingRules?.activePromotion;
+    const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
+    if (!discount && isPromoValid) {
+      discount = { percent: activePromo.discount_percent, applyToFood: false };
+    }
   }
 
   return { 

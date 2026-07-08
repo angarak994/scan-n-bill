@@ -60,7 +60,7 @@ export default function Register() {
         <div className="bg-bg-card border border-border-theme p-8 rounded-2xl shadow-2xl">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold mb-2">Register Your Club</h1>
-            <p className="text-text-secondary text-sm">Join CueSync and automate your billing and bookings today.</p>
+            <p className="text-text-secondary text-sm">Join QControl and automate your business operations today.</p>
           </div>
 
           {error && (
