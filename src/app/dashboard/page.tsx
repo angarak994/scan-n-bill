@@ -141,6 +141,17 @@ function DashboardContent() {
     if (isAuthorized) fetchData(undefined, true);
   }, [reportDateRange, isAuthorized]);
 
+  // Try to use PIN from sessionStorage on initial load
+  useEffect(() => {
+    if (!isAuthorized) {
+      const savedPin = sessionStorage.getItem('dashboard_pin');
+      if (savedPin && savedPin.length === 4) {
+        setEnteredPin(savedPin);
+        fetchData(savedPin);
+      }
+    }
+  }, []);
+
   // Midnight roll-over logic
   useEffect(() => {
     if (!isAuthorized) return;
@@ -174,6 +185,7 @@ function DashboardContent() {
       if (res.status === 401) {
         setIsAuthorized(false);
         setPinError('Incorrect PIN. Please try again.');
+        sessionStorage.removeItem('dashboard_pin');
         setLoading(false);
         return;
       }
@@ -184,6 +196,7 @@ function DashboardContent() {
         if (json.businessId) setBusinessId(json.businessId);
         setIsAuthorized(true);
         setPinError('');
+        sessionStorage.setItem('dashboard_pin', currentPin!);
       }
     } catch (e) {
       toast.error('Network error. Unable to fetch dashboard data.');
@@ -411,6 +424,13 @@ function DashboardContent() {
     if (enteredPin.length === 4) {
       fetchData(enteredPin);
     }
+  };
+
+  const handleLogout = (e: React.MouseEvent) => {
+    e.preventDefault();
+    sessionStorage.removeItem('dashboard_pin');
+    setEnteredPin('');
+    setIsAuthorized(false);
   };
 
   const handleApplyDiscount = async (e: React.FormEvent) => {
@@ -1406,7 +1426,7 @@ function DashboardContent() {
           <button onClick={() => setSidebarTab('support')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconSupport /> Support
           </button>
-          <a href="#" onClick={() => setIsAuthorized(false)} className="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium">
+          <a href="#" onClick={handleLogout} className="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium">
             <IconLogout /> Logout
           </a>
         </div>
@@ -1647,7 +1667,7 @@ function DashboardContent() {
                 Quick Scan
               </button>
               <div className="mt-auto pt-4">
-                <a href="#" onClick={() => setIsAuthorized(false)} className="flex items-center gap-3 px-4 py-3 text-text-secondary text-sm font-medium">
+                <a href="#" onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 text-text-secondary text-sm font-medium">
                   <IconLogout /> Logout
                 </a>
               </div>

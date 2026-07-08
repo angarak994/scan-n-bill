@@ -38,7 +38,8 @@ export default function Login() {
       }
 
       // Success, route to dashboard
-      router.push(`/dashboard?b=${data.businessId}&pin=${data.pin}`);
+      sessionStorage.setItem('dashboard_pin', data.pin);
+      router.push(`/dashboard?b=${data.businessId}`);
     } catch (err: any) {
       setError(err.message || 'Login failed');
       setLoading(false);

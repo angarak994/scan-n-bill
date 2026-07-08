@@ -41,8 +41,9 @@ export default function Register() {
         throw new Error(data.error || 'Failed to register business');
       }
 
-      // Redirect to their new dashboard
-      router.push(`/dashboard?b=${data.businessId}&pin=${data.pin}`);
+      // Registration successful! We'll auto-login them now
+      sessionStorage.setItem('dashboard_pin', data.pin);
+      router.push(`/dashboard?b=${data.businessId}`);
     } catch (err: any) {
       setError(err.message || 'Failed to register business');
       setLoading(false);
