@@ -228,7 +228,7 @@ export default function OnboardPage() {
       <div className="max-w-2xl w-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white">
           <h1 className="text-3xl font-extrabold text-center">Self-Service Setup</h1>
-          <div className="flex justify-center gap-8 mt-6">
+          <div className="flex flex-wrap justify-center gap-4 sm:gap-8 mt-6">
             <div className={`flex flex-col items-center opacity-${step >= 1 ? '100' : '50'} transition-opacity`}>
               <div className="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center font-bold mb-2 shadow">1</div>
               <span className="text-sm font-medium">Business</span>

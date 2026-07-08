@@ -80,6 +80,7 @@ function DashboardContent() {
 
   // UI State
   const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support'>('overview');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -1364,8 +1365,8 @@ function DashboardContent() {
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
       
-      {/* Sidebar */}
-      <aside className="w-64 flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative">
+      {/* Sidebar (Desktop) */}
+      <aside className="w-64 hidden lg:flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative">
         <div className="p-8 pb-4">
           <h1 className="text-2xl font-bold text-text-primary tracking-tight mb-1">QControl</h1>
           <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold italic">Powered by Scan-n-Bill</p>
@@ -1412,22 +1413,31 @@ function DashboardContent() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-bg-primary">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-bg-primary pb-20 lg:pb-0">
         
         {/* Header */}
-        <header className="px-10 py-6 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-10">
-          <div>
-            {sidebarTab === 'overview' ? (
-              <div>
-                <h2 className="text-2xl font-black text-text-primary">Welcome back to QControl</h2>
-                <p className="text-sm text-text-secondary mt-1">Complete control over your business. Everything you need, all in one place.</p>
-              </div>
-            ) : (
-              <h2 className="text-xl font-bold text-text-primary capitalize">{sidebarTab}</h2>
-            )}
-            <p className="text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
-              {toReadableIST(now)}
-            </p>
+        <header className="px-6 lg:px-10 py-4 lg:py-6 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-10">
+          <div className="flex items-center gap-4">
+            {/* Mobile Hamburger Menu */}
+            <button 
+              className="lg:hidden p-2 text-text-secondary hover:text-text-primary"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+            <div>
+              {sidebarTab === 'overview' ? (
+                <div>
+                  <h2 className="text-xl lg:text-2xl font-black text-text-primary">Welcome back</h2>
+                  <p className="text-xs lg:text-sm text-text-secondary mt-1 hidden sm:block">Complete control over your business. Everything you need, all in one place.</p>
+                </div>
+              ) : (
+                <h2 className="text-lg lg:text-xl font-bold text-text-primary capitalize">{sidebarTab}</h2>
+              )}
+              <p className="text-[10px] lg:text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
+                {toReadableIST(now)}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex gap-4 text-text-secondary items-center">
@@ -1495,8 +1505,8 @@ function DashboardContent() {
       
       {/* Manual Session Modal */}
       {isManualModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md my-auto shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button 
               onClick={() => setIsManualModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -1547,8 +1557,8 @@ function DashboardContent() {
 
       {/* Edit Session Modal */}
       {editSession && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md my-auto shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
             <button 
               onClick={() => setEditSession(null)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -1582,8 +1592,8 @@ function DashboardContent() {
 
       {/* QR Codes Modal */}
       {isQRModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-5xl my-auto shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] lg:max-w-5xl my-auto shadow-2xl relative max-h-[90vh] flex flex-col">
             <button 
               onClick={() => setIsQRModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -1612,6 +1622,61 @@ function DashboardContent() {
           </div>
         </div>
       )}
+      {/* Mobile Menu Drawer */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 lg:hidden flex justify-end">
+          <div className="bg-bg-surface w-64 h-full flex flex-col shadow-2xl relative animate-slide-in-right">
+            <div className="p-6 border-b border-border-theme flex justify-between items-center">
+              <h2 className="font-bold text-lg">Menu</h2>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 -mr-2 text-text-secondary hover:text-text-primary">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              <button onClick={() => { setSidebarTab('settings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconSettings /> Settings
+              </button>
+              <button onClick={() => { setSidebarTab('support'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconSupport /> Support
+              </button>
+              <div className="my-4 border-t border-border-theme/50"></div>
+              <button onClick={() => { setIsManualModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2">
+                New Session
+              </button>
+              <button onClick={() => { setIsQRModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-accent text-white font-bold rounded-lg text-sm">
+                Quick Scan
+              </button>
+              <div className="mt-auto pt-4">
+                <a href="#" onClick={() => setIsAuthorized(false)} className="flex items-center gap-3 px-4 py-3 text-text-secondary text-sm font-medium">
+                  <IconLogout /> Logout
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Bottom Navigation */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg-surface border-t border-border-theme z-40 pb-safe">
+        <div className="flex justify-around items-center h-16">
+          <button onClick={() => setSidebarTab('overview')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary'}`}>
+            <IconOverview />
+            <span className="text-[10px] font-bold">Overview</span>
+          </button>
+          <button onClick={() => setSidebarTab('tables')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary'}`}>
+            <IconTables />
+            <span className="text-[10px] font-bold">Tables</span>
+          </button>
+          <button onClick={() => setSidebarTab('bookings')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary'}`}>
+            <IconBookings />
+            <span className="text-[10px] font-bold">Bookings</span>
+          </button>
+          <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary'}`}>
+            <IconBookings />
+            <span className="text-[10px] font-bold">Reports</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
