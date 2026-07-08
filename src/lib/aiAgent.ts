@@ -2,12 +2,17 @@ import OpenAI from 'openai';
 import { supabase } from './supabaseClient';
 import { logActivityToSheet } from './googleSheets';
 
+let openaiInstance: OpenAI | null = null;
 const useGroq = !!process.env.GROQ_API_KEY;
-
-const openai = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || '',
-  baseURL: useGroq ? 'https://api.groq.com/openai/v1' : undefined
-});
+const getOpenAI = () => {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || 'dummy_key',
+      baseURL: useGroq ? 'https://api.groq.com/openai/v1' : undefined
+    });
+  }
+  return openaiInstance;
+};
 
 // Tool Definitions for OpenAI
 const tools = [
@@ -201,7 +206,7 @@ WORKFLOW:
   ];
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: useGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini',
       messages,
       tools,
@@ -241,7 +246,7 @@ WORKFLOW:
       }
 
       // Get final response from AI after providing tool results
-      const finalResponse = await openai.chat.completions.create({
+      const finalResponse = await getOpenAI().chat.completions.create({
         model: useGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini',
         messages
       });
