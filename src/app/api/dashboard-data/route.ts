@@ -3,6 +3,7 @@ import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { businessManager } from '@/lib/businessManager';
 import { endSession } from '@/lib/sessionManager';
 import { supabase } from '@/lib/supabaseClient';
+import { getSession } from '@/lib/auth';
 
 function toReadableDate(date: Date): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -14,27 +15,26 @@ function toReadableDate(date: Date): string {
 
 export async function GET(request: Request) {
   try {
+    const sessionCookie = await getSession();
     const { searchParams } = new URL(request.url);
     let businessId = searchParams.get('b');
-    const pin = searchParams.get('pin');
 
-    if (!businessId) {
-      // Fallback: Get the first business in the system (useful for single-tenant local testing)
-      const { data: firstBusiness } = await supabase.from('businesses').select('id').limit(1).single();
-      if (firstBusiness) {
-        businessId = firstBusiness.id;
-      } else {
-        return NextResponse.json({ error: 'Business ID is required and no businesses found' }, { status: 400 });
-      }
+    // Secure backend validation via JWT
+    if (!sessionCookie || !sessionCookie.businessId) {
+       return NextResponse.json({ error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
     }
+
+    // Optional: enforce that requested businessId matches JWT (if provided)
+    if (businessId && businessId !== sessionCookie.businessId) {
+      return NextResponse.json({ error: 'Unauthorized: Access denied for this business' }, { status: 403 });
+    }
+    
+    // Fallback to JWT businessId
+    businessId = sessionCookie.businessId;
 
     const business = await businessManager.getBusiness(businessId as string);
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
-    }
-
-    if (business.dashboard_pin && String(business.dashboard_pin).trim() !== String(pin || '').trim()) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid PIN' }, { status: 401 });
     }
 
     const requestedDate = searchParams.get('date');
@@ -74,41 +74,6 @@ export async function GET(request: Request) {
       }
       return s.date >= startDate && s.date <= endDate;
     });
-
-    // Auto-cutoff abandoned sessions (older than 12 hours)
-    const nowMs = Date.now();
-    const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
-    let didAutoEnd = false;
-    
-    for (const s of activeSessions) {
-      if (s.start_time) {
-        const startMs = new Date(s.start_time).getTime();
-        if (nowMs - startMs > TWELVE_HOURS_MS) {
-          try {
-            await endSession(s.table_id, businessId as string);
-            didAutoEnd = true;
-          } catch (e) {
-            console.error(`Failed to auto-end session ${s.id}`, e);
-          }
-        }
-      }
-    }
-
-    if (didAutoEnd) {
-      // Re-fetch to get the updated lists
-      const freshSessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
-      activeSessions = freshSessions.filter(s => s.status === 'ACTIVE');
-      completedSessions = freshSessions.filter(s => {
-        if (s.status !== 'COMPLETED') return false;
-        if (s.end_time) {
-          const dateObj = new Date(s.end_time);
-          const tzOffset = 5.5 * 60 * 60 * 1000;
-          const localDateStr = new Date(dateObj.getTime() + tzOffset).toISOString().split('T')[0];
-          return localDateStr >= startDate && localDateStr <= endDate;
-        }
-        return s.date >= startDate && s.date <= endDate;
-      });
-    }
 
     const dailyRevenue = completedSessions.reduce((acc, session) => acc + (session.cost || 0), 0);
     const pricingRules = business.pricing_rules;

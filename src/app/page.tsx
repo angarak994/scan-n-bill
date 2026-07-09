@@ -13,22 +13,22 @@ export default function Home() {
           <Link href="/login" className="px-4 py-2 sm:px-6 sm:py-2.5 rounded-full font-bold text-sm sm:text-base hover:bg-bg-surface transition-colors">
             Log In
           </Link>
-          <Link href="/register" className="px-4 py-2 sm:px-6 sm:py-2.5 bg-text-primary text-bg-base font-bold text-sm sm:text-base rounded-full hover:bg-text-secondary transition-colors shadow-lg">
+          <Link href="/register" className="px-4 py-2 sm:px-6 sm:py-2.5 bg-accent text-white font-bold text-sm sm:text-base rounded-full hover:bg-accent/90 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
             Add Your Club
           </Link>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative w-full max-w-7xl mx-auto px-4 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-32 flex flex-col items-center text-center mt-6 sm:mt-12">
-        <div className="absolute top-0 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-accent/10 rounded-full blur-[50px] sm:blur-[100px] -z-10 pointer-events-none"></div>
+      <section className="relative w-full max-w-7xl mx-auto px-4 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-32 flex flex-col items-center text-center mt-6 sm:mt-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        <div className="absolute top-0 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-accent/10 rounded-full blur-[50px] sm:blur-[100px] -z-10 pointer-events-none animate-pulse duration-[3000ms]"></div>
         
-        <span className="px-4 py-1.5 rounded-full bg-accent/10 text-accent font-bold text-xs uppercase tracking-widest mb-8 border border-accent/20">
+        <span className="px-4 py-1.5 rounded-full bg-accent/10 text-accent font-bold text-xs uppercase tracking-widest mb-8 border border-accent/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
           The Future of Business Operations
         </span>
         
         <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter leading-tight mb-6 sm:mb-8 max-w-4xl">
-          Automate your business with <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">AI Bookings.</span>
+          Automate your business with <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400 drop-shadow-sm">AI Bookings.</span>
         </h1>
         
         <p className="text-base sm:text-xl text-text-secondary mb-8 sm:mb-12 max-w-2xl leading-relaxed">
@@ -53,16 +53,16 @@ export default function Home() {
             <div className="w-3 h-3 rounded-full bg-accent"></div>
           </div>
           <div className="p-4 sm:p-8 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 bg-bg-base rounded-b-xl text-left">
-            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme">
-              <h3 className="font-bold text-base sm:text-lg mb-2">🤖 AI WhatsApp Agent</h3>
+            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme transition-transform hover:-translate-y-1 hover:shadow-xl duration-300">
+              <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2"><span className="text-xl">🤖</span> AI WhatsApp Agent</h3>
               <p className="text-text-secondary text-xs sm:text-sm">Customers book instantly via WhatsApp. No human required.</p>
             </div>
-            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme">
-              <h3 className="font-bold text-base sm:text-lg mb-2">⏱️ QR Smart Timers</h3>
+            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme transition-transform hover:-translate-y-1 hover:shadow-xl duration-300">
+              <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2"><span className="text-xl">⏱️</span> QR Smart Timers</h3>
               <p className="text-text-secondary text-xs sm:text-sm">Customers scan a QR code to start their session. Billing is exact.</p>
             </div>
-            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme">
-              <h3 className="font-bold text-base sm:text-lg mb-2">🛡️ Revenue Protection</h3>
+            <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme transition-transform hover:-translate-y-1 hover:shadow-xl duration-300">
+              <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2"><span className="text-xl">🛡️</span> Revenue Protection</h3>
               <p className="text-text-secondary text-xs sm:text-sm">Auto-alerts if a table is occupied but the timer isn't running.</p>
             </div>
           </div>

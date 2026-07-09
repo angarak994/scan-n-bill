@@ -97,21 +97,32 @@ export async function endSession(table_id: string, businessId?: string) {
     }
   }
   
-  // Membership Discount Logic
+  // Membership Discount Logic via Native DB
   try {
-    const { getMembershipByCustomer } = require('./googleSheets');
-    const member = await getMembershipByCustomer(session.customer_name);
-    if (member) {
-      // Define tier discounts (e.g., VIP gets 20%, Pro gets 10%)
-      let memberDiscountPercent = 0;
-      if (member.tier === 'Elite') memberDiscountPercent = 30;
-      else if (member.tier === 'VIP') memberDiscountPercent = 20;
-      else if (member.tier === 'Pro') memberDiscountPercent = 10;
-      else if (member.tier === 'Standard') memberDiscountPercent = 5;
-      
-      // If member discount is higher than current active discount, use member discount
-      if (!discount || memberDiscountPercent > discount.percent) {
-         discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+    if (businessId) {
+      const { data: member } = await supabase
+        .from('memberships')
+        .select('*')
+        .eq('business_id', businessId)
+        .or(`mobile.eq.${session.customer_name},name.eq.${session.customer_name}`)
+        .limit(1)
+        .single();
+        
+      if (member && member.status === 'Active') {
+        // Define tier discounts
+        let memberDiscountPercent = 0;
+        if (member.tier === 'Elite') memberDiscountPercent = 30;
+        else if (member.tier === 'VIP') memberDiscountPercent = 20;
+        else if (member.tier === 'Pro') memberDiscountPercent = 10;
+        else if (member.tier === 'Standard') memberDiscountPercent = 5;
+        
+        // Use member discount if better than promo
+        if (!discount || memberDiscountPercent > discount.percent) {
+           discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+        }
+
+        // We will increment total_spend and loyalty_points later after final math
+        (session as any)._matchedMemberId = member.id;
       }
     }
   } catch (e) {
@@ -144,6 +155,25 @@ export async function endSession(table_id: string, businessId?: string) {
     payment_status: 'Paid',
     completed_by: 'Club Owner', // Default to club owner for manual dashboard actions
   }, businessId);
+
+  if ((session as any)._matchedMemberId) {
+    try {
+      // 1 point per 100 spent (example logic)
+      const earnedPoints = Math.floor(totalCost / 100);
+      
+      // Update member using RPC or manual fetch/update. 
+      // Supabase doesn't have an atomic increment without RPC, so we fetch and update.
+      const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', (session as any)._matchedMemberId).single();
+      if (member) {
+         await supabase.from('memberships').update({
+            total_spend: (member.total_spend || 0) + totalCost,
+            loyalty_points: (member.loyalty_points || 0) + earnedPoints
+         }).eq('id', (session as any)._matchedMemberId);
+      }
+    } catch (e) {
+      console.error('Failed to update member points', e);
+    }
+  }
 
   // Sync booking status if this session was started from a booking
   try {

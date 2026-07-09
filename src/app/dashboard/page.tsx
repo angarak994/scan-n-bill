@@ -76,6 +76,7 @@ function DashboardContent() {
   
   const [enteredPin, setEnteredPin] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [pinError, setPinError] = useState('');
 
   // UI State
@@ -147,8 +148,12 @@ function DashboardContent() {
       const savedPin = sessionStorage.getItem('dashboard_pin');
       if (savedPin && savedPin.length === 4) {
         setEnteredPin(savedPin);
-        fetchData(savedPin);
+        fetchData(savedPin).finally(() => setIsInitialLoading(false));
+      } else {
+        setIsInitialLoading(false);
       }
+    } else {
+      setIsInitialLoading(false);
     }
   }, []);
 
@@ -548,6 +553,17 @@ function DashboardContent() {
     return Array.from(map.values()).sort((a,b) => b.totalSpent - a.totalSpent);
   }, [data]);
 
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-primary">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-text-secondary font-medium animate-pulse">Authenticating securely...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthorized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg-primary p-4">
@@ -575,7 +591,7 @@ function DashboardContent() {
           {pinError && <p className="text-danger text-sm text-center mb-4">{pinError}</p>}
           
           <button type="submit" disabled={enteredPin.length !== 4 || loading} className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-accent/20">
-            {loading ? 'Getting QControl ready...' : 'Unlock Dashboard'}
+            {loading ? 'Authenticating...' : 'Unlock Dashboard'}
           </button>
         </form>
       </div>
@@ -656,16 +672,16 @@ function DashboardContent() {
   const renderOverview = () => (
     <>
       {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Revenue Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Daily Revenue</h3>
-            <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+          <div className="flex justify-between items-start mb-2 sm:mb-4">
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Daily Revenue</h3>
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
           </div>
-          <div className="flex items-end gap-3 mb-4">
-            <span className="text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
-            <span className="text-sm font-semibold text-accent mb-1">+{(Math.random() * 15 + 5).toFixed(1)}%</span>
+          <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
+            <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
+            <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1">+{(Math.random() * 15 + 5).toFixed(1)}%</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-light flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -686,35 +702,36 @@ function DashboardContent() {
         </div>
 
         {/* Active Tables Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
+        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+          <div className="flex justify-between items-start mb-2 sm:mb-4">
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
-              <span className="text-[10px] text-accent font-bold uppercase tracking-widest">Live</span>
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
+              <span className="text-[8px] sm:text-[10px] text-accent font-bold uppercase tracking-widest">Live</span>
             </div>
           </div>
-          <div className="flex items-end gap-3 mb-4">
-            <span className="text-4xl font-bold text-text-primary tracking-tight font-mono">{activeCount}<span className="text-2xl text-text-secondary font-normal">/{totalTables}</span></span>
-            <span className="text-sm font-semibold text-accent mb-1 font-mono">{occupancyPercent}% OCC.</span>
+          <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
+            <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono">{activeCount}<span className="text-lg sm:text-2xl text-text-secondary font-normal">/{totalTables}</span></span>
+            <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1 font-mono">{occupancyPercent}% OCC.</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme">
-            <span className="text-xs text-text-secondary italic">{totalTables - activeCount} Tables available and ready</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary italic">{totalTables - activeCount} Tables available and ready</span>
           </div>
         </div>
 
         {/* Sessions Card */}
-        <div className="bg-bg-card rounded-xl p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
-          <div className="flex justify-between items-start mb-4">
-            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">Sessions</h3>
-            <svg className="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300 col-span-1 sm:col-span-2 lg:col-span-1">
+          <div className="flex justify-between items-start mb-2 sm:mb-4">
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Sessions</h3>
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           </div>
-          <div className="flex items-end gap-3 mb-4">
-            <span className="text-4xl font-bold text-text-primary tracking-tight font-mono">{totalSessions}</span>
-            <span className="text-sm font-semibold text-text-secondary mb-1">Avg. {avgDuration}</span>
+          <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
+            <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono">{totalSessions}</span>
+            <span className="text-xs sm:text-sm font-semibold text-text-secondary mb-0.5 sm:mb-1">Avg. {avgDuration}</span>
           </div>
-          <div className="mt-auto pt-4 border-t border-border-theme">
-            <span className="text-xs text-text-secondary italic">{highestTurnoverTableText}</span>
+          <div className="mt-auto pt-4 border-t border-border-theme flex justify-between">
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(data.dailyRevenue / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /> / session</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><span className="text-text-primary font-bold">{data.completedSessions.length}</span> finished</span>
           </div>
         </div>
       </div>
@@ -1109,7 +1126,7 @@ function DashboardContent() {
         <div className="p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center">
           <div>
             <h3 className="text-xl font-bold text-text-primary">Membership Directory</h3>
-            <p className="text-xs text-text-secondary mt-1 italic">Synced in real-time with Google Sheets</p>
+            <p className="text-xs text-text-secondary mt-1 italic">Manage your loyal customers</p>
           </div>
           <button onClick={fetchMemberships} className="p-2 bg-bg-surface border border-border-theme rounded hover:bg-border-theme transition-colors">
             <svg className="w-4 h-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -1117,22 +1134,23 @@ function DashboardContent() {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
                 <th className="p-5 font-bold">Member</th>
                 <th className="p-5 font-bold">Contact</th>
                 <th className="p-5 font-bold">Tier</th>
-                <th className="p-5 font-bold">Join Date</th>
+                <th className="p-5 font-bold">Points</th>
+                <th className="p-5 font-bold">Spend</th>
                 <th className="p-5 font-bold">Expiry Date</th>
                 <th className="p-5 font-bold">Status</th>
               </tr>
             </thead>
             <tbody>
               {isMembershipsLoading ? (
-                <tr><td colSpan={6} className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading members from Google Sheets...</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading directory...</td></tr>
               ) : memberships.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
               ) : (
                 memberships.map((m, i) => (
                   <tr key={i} className="border-b border-border-theme/50 hover:bg-bg-surface/50 transition-colors">
@@ -1151,8 +1169,9 @@ function DashboardContent() {
                     <td className="p-5">
                       <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{m.tier}</span>
                     </td>
-                    <td className="p-5"><span className="text-sm font-mono text-text-secondary">{m.join_date}</span></td>
-                    <td className="p-5"><span className="text-sm font-mono text-text-primary">{m.expiry_date}</span></td>
+                    <td className="p-5"><span className="text-sm font-mono font-bold text-accent">{m.loyalty_points || 0}</span></td>
+                    <td className="p-5"><span className="text-sm font-mono">₹{m.total_spend || 0}</span></td>
+                    <td className="p-5"><span className="text-sm font-mono text-text-primary">{m.expiry_date ? m.expiry_date.split('T')[0] : 'N/A'}</span></td>
                     <td className="p-5">
                       <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
                     </td>
@@ -1470,14 +1489,30 @@ function DashboardContent() {
               </button>
               <button 
                 onClick={() => {
-                  const isDark = document.documentElement.classList.contains('dark');
-                  if (isDark) {
-                    document.documentElement.classList.remove('dark');
-                    localStorage.setItem('theme', 'light');
-                  } else {
-                    document.documentElement.classList.add('dark');
-                    localStorage.setItem('theme', 'dark');
+                  const switchTheme = () => {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    if (isDark) {
+                      document.documentElement.classList.remove('dark');
+                      localStorage.setItem('theme', 'light');
+                    } else {
+                      document.documentElement.classList.add('dark');
+                      localStorage.setItem('theme', 'dark');
+                    }
+                  };
+
+                  if (!document.startViewTransition) {
+                    // Fallback for browsers without View Transitions API
+                    document.documentElement.classList.add('theme-transition-fallback');
+                    switchTheme();
+                    setTimeout(() => {
+                      document.documentElement.classList.remove('theme-transition-fallback');
+                    }, 350);
+                    return;
                   }
+                  
+                  document.startViewTransition(() => {
+                    switchTheme();
+                  });
                 }}
                 className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
                 title="Toggle Theme"
@@ -1677,23 +1712,27 @@ function DashboardContent() {
       )}
 
       {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg-surface border-t border-border-theme z-40 pb-safe">
-        <div className="flex justify-around items-center h-16">
-          <button onClick={() => setSidebarTab('overview')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary'}`}>
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg-surface/80 backdrop-blur-xl border-t border-border-theme z-40 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+        <div className="flex justify-around items-center h-[72px]">
+          <button onClick={() => setSidebarTab('overview')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+            {sidebarTab === 'overview' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconOverview />
-            <span className="text-[10px] font-bold">Overview</span>
+            <span className="text-[10px] font-bold tracking-wide">Overview</span>
           </button>
-          <button onClick={() => setSidebarTab('tables')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary'}`}>
+          <button onClick={() => setSidebarTab('tables')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+            {sidebarTab === 'tables' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconTables />
-            <span className="text-[10px] font-bold">Tables</span>
+            <span className="text-[10px] font-bold tracking-wide">Tables</span>
           </button>
-          <button onClick={() => setSidebarTab('bookings')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary'}`}>
+          <button onClick={() => setSidebarTab('bookings')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+            {sidebarTab === 'bookings' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconBookings />
-            <span className="text-[10px] font-bold">Bookings</span>
+            <span className="text-[10px] font-bold tracking-wide">Bookings</span>
           </button>
-          <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1 ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary'}`}>
+          <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+            {sidebarTab === 'reports' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconBookings />
-            <span className="text-[10px] font-bold">Reports</span>
+            <span className="text-[10px] font-bold tracking-wide">Reports</span>
           </button>
         </div>
       </div>
