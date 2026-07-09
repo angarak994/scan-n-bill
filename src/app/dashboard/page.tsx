@@ -36,9 +36,11 @@ interface SessionData {
 }
 
 interface ActivePromotion {
-  title: string;
+  id: string;
+  name: string;
   discount_percent: number;
   end_time: string;
+  status: string;
 }
 
 function toReadableIST(date: Date): string {
@@ -70,7 +72,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], businessName?: string, ownerName?: string, goals?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, goals?: any } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -486,33 +488,26 @@ function DashboardContent() {
 
   const handleSavePromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessId) return;
     setIsUpdatingPromo(true);
     
-    let end_time = null;
-    if (promoTitle && promoDiscount) {
-      const endDate = new Date();
-      endDate.setHours(endDate.getHours() + Number(promoDurationHours));
-      end_time = endDate.toISOString();
-    }
-
     try {
-      const res = await fetch('/api/update-promotion', {
+      const res = await fetch('/api/promotions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          business_id: businessId, 
           title: promoTitle, 
           discount_percent: promoDiscount, 
-          end_time 
+          duration_hours: promoDurationHours 
         })
       });
       if (res.ok) {
         setIsUpdatingDiscount(false);
         fetchData(undefined, true);
         toast.success('✓ Promotion launched successfully.');
+        setPromoTitle('');
       } else {
-        toast.error("We couldn't update your promotion. Please try again.");
+        const err = await res.json();
+        toast.error(err.error || "We couldn't update your promotion. Please try again.");
       }
     } finally {
       setIsUpdatingPromo(false);
@@ -520,17 +515,22 @@ function DashboardContent() {
   };
 
   const handleClearPromo = async () => {
-    if (!businessId) return;
+    const activePromo = data?.activePromotions?.[0];
+    if (!activePromo) return;
+    
     setIsUpdatingPromo(true);
     try {
-      const res = await fetch('/api/update-promotion', {
-        method: 'POST',
+      const res = await fetch('/api/promotions', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId })
+        body: JSON.stringify({ id: activePromo.id, status: 'Expired' })
       });
       if (res.ok) {
         fetchData(undefined, true);
         setPromoTitle('');
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to end promotion.");
       }
     } finally {
       setIsUpdatingPromo(false);
@@ -644,7 +644,7 @@ function DashboardContent() {
   }
   const revenueToday = data.dailyRevenue;
   
-  const activePromo: ActivePromotion | null = data.pricingRules?.activePromotion || null;
+  const activePromo: ActivePromotion | null = data.activePromotions?.[0] || null;
   const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
 
   // Active discount mapping
@@ -795,11 +795,11 @@ function DashboardContent() {
               <div className="relative z-10 flex justify-between items-start">
                 <div>
                   <span className="inline-block px-3 py-1 bg-warning text-white text-[10px] font-bold tracking-widest uppercase rounded-full mb-4 animate-pulse">Live Promotion</span>
-                  <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">{activePromo.title}</h2>
+                  <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">{activePromo.name}</h2>
                   <h3 className="text-3xl md:text-4xl font-bold text-accent">{activePromo.discount_percent}% Off Tables</h3>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Ends in:</p>
+                <div className="flex flex-col items-center">
+                  <p className="text-sm font-bold text-text-secondary uppercase tracking-widest mb-1 text-center">Ends In</p>
                   <p className="text-3xl text-text-primary"><LivePromoTimer activePromo={activePromo} /></p>
                 </div>
               </div>

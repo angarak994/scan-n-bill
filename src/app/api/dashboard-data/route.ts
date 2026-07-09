@@ -97,6 +97,12 @@ export async function GET(request: Request) {
 
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
 
+    const { data: activePromotions } = await supabase
+      .from('promotions')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('status', 'Active');
+
     return NextResponse.json({
       activeSessions,
       completedSessions,
@@ -108,6 +114,7 @@ export async function GET(request: Request) {
       manualClosuresToday,
       revenueSavedToday,
       bookings: bookings || [],
+      activePromotions: activePromotions || [],
       businessId,
       businessName: business.business_name,
       ownerName: business.owner_name,

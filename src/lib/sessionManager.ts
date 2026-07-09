@@ -90,10 +90,19 @@ export async function endSession(table_id: string, businessId?: string) {
     pricingRules = business.pricing_rules;
     discount = business.active_discounts?.[table_id];
     
-    const activePromo = pricingRules?.activePromotion;
+    // Fetch active promotion from db
+    const { data: activePromos } = await supabase
+      .from('promotions')
+      .select('id, discount_percent, end_time')
+      .eq('business_id', business.id)
+      .eq('status', 'Active')
+      .limit(1);
+
+    const activePromo = activePromos?.[0];
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
     if (!discount && isPromoValid) {
       discount = { percent: activePromo.discount_percent, applyToFood: false };
+      (session as any)._appliedPromoId = activePromo.id;
     }
   }
   
@@ -116,9 +125,10 @@ export async function endSession(table_id: string, businessId?: string) {
         else if (member.tier === 'Pro') memberDiscountPercent = 10;
         else if (member.tier === 'Standard') memberDiscountPercent = 5;
         
-        // Use member discount if better than promo
+        // Use member discount if better than promo (and unset promo flag since it wasn't the winning discount)
         if (!discount || memberDiscountPercent > discount.percent) {
            discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+           (session as any)._appliedPromoId = undefined; // Promo didn't win
         }
 
         // We will increment total_spend and loyalty_points later after final math
@@ -175,6 +185,19 @@ export async function endSession(table_id: string, businessId?: string) {
     }
   }
 
+  if ((session as any)._appliedPromoId) {
+    try {
+      const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', (session as any)._appliedPromoId).single();
+      if (promo) {
+         await supabase.from('promotions').update({
+            usage_count: (promo.usage_count || 0) + 1
+         }).eq('id', (session as any)._appliedPromoId);
+      }
+    } catch (e) {
+      console.error('Failed to increment promotion usage', e);
+    }
+  }
+
   // Sync booking status if this session was started from a booking
   try {
     const { data: booking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
@@ -228,8 +251,15 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
+      // Fetch active promotion
+      const { data: activePromos } = await supabase
+        .from('promotions')
+        .select('discount_percent, end_time')
+        .eq('business_id', businessId)
+        .eq('status', 'Active')
+        .limit(1);
       
-      const activePromo = pricingRules?.activePromotion;
+      const activePromo = activePromos?.[0];
       const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
       if (!discount && isPromoValid) {
         discount = { percent: activePromo.discount_percent, applyToFood: false };
@@ -260,8 +290,15 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
+    // Fetch active promotion
+    const { data: activePromos } = await supabase
+      .from('promotions')
+      .select('discount_percent, end_time')
+      .eq('business_id', businessId)
+      .eq('status', 'Active')
+      .limit(1);
     
-    const activePromo = pricingRules?.activePromotion;
+    const activePromo = activePromos?.[0];
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
     if (!discount && isPromoValid) {
       discount = { percent: activePromo.discount_percent, applyToFood: false };
