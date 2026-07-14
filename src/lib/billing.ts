@@ -101,22 +101,11 @@ export function calculateCost(
   }
   
   const enablePeakRules = pricing?.globalSettings?.enable_peak_rules ?? true; // Default to true based on user request
-  const peakStart = pricing?.globalSettings?.peak_start_hour ?? 17; // 5 PM
-  const peakEnd = pricing?.globalSettings?.peak_end_hour ?? 23; // 11 PM
 
   if (enablePeakRules) {
-    const startIst = new Date(startMs + IST_OFFSET);
-    const startHour = startIst.getUTCHours();
-    
-    // Check if start hour is within peak window
-    const isPeak = startHour >= peakStart && startHour < peakEnd;
-    
-    // The 45-Minute Trap: If they play between 45 and 60 minutes, bump them to exactly 60.
-    if (billedDurationMinutes >= 45 && billedDurationMinutes <= 60) {
+    // The 10-Minute Trap: If they play between 50 and 60 minutes, bump them to exactly 60.
+    if (billedDurationMinutes >= 50 && billedDurationMinutes <= 60) {
       billedDurationMinutes = 60;
-    } else if (!isPeak && billedDurationMinutes > 60) {
-      // Off-Peak Promo Logic: If they play > 60 mins off-peak, give up to 15 mins free (min 60)
-      billedDurationMinutes = Math.max(60, billedDurationMinutes - 15);
     }
   }
 
