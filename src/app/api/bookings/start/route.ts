@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         business_id: business_id,
         table_id: booking.table_id,
         customer_name: booking.customer_name,
-        game_type: 'pool', // Default or derived from booking if available
+        game_type: booking.game_type || 'pool', // Dynamic inheritance with fallback
         status: 'ACTIVE',
         start_time: startTimeLocal,
         date: todayStr

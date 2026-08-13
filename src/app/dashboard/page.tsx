@@ -3,7 +3,7 @@
 
 import { useEffect, useState, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { calculateBilling } from '@/lib/billing';
+import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { createClient } from '@supabase/supabase-js';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText } from './components';
 import { toast } from 'react-hot-toast';
@@ -33,6 +33,9 @@ interface SessionData {
   paused_at?: string | null;
   paused_duration_seconds?: number;
   transferred_from_table_id?: string | null;
+  num_players?: number;
+  locked_rate?: number;
+  locked_rate_name?: string;
 }
 
 interface ActivePromotion {
@@ -108,6 +111,17 @@ function DashboardContent() {
   const [promoDurationHours, setPromoDurationHours] = useState('2');
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
 
+  // Change Password State
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showUnlockPin, setShowUnlockPin] = useState(false);
+  const [showCurrentPin, setShowCurrentPin] = useState(false);
+  const [showNewPin, setShowNewPin] = useState(false);
+  const [showConfirmPin, setShowConfirmPin] = useState(false);
+
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
   const [discountPercent, setDiscountPercent] = useState('40');
@@ -137,6 +151,24 @@ function DashboardContent() {
 
   const [currentDay, setCurrentDay] = useState(getLocalDateStr());
   const [reportDateRange, setReportDateRange] = useState({ start: currentDay, end: currentDay });
+
+  // Manual Booking State (Additive)
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingTable, setBookingTable] = useState('');
+  const [bookingCustomer, setBookingCustomer] = useState('');
+  const [bookingDate, setBookingDate] = useState(getLocalDateStr());
+  const [bookingStartTime, setBookingStartTime] = useState('');
+  const [bookingDuration, setBookingDuration] = useState('60');
+  const [bookingGame, setBookingGame] = useState('pool');
+  const [isCreatingBooking, setIsCreatingBooking] = useState(false);
+  const [dismissedReminders, setDismissedReminders] = useState<Record<string, boolean>>({});
+
+  // PS5 & Game Category Configuration State
+  const [newStationId, setNewStationId] = useState('');
+  const [newStationName, setNewStationName] = useState('');
+  const [newStationType, setNewStationType] = useState('ps5');
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+  const [selectedGameRule, setSelectedGameRule] = useState('ps5');
   const reportDateRangeRef = useRef(reportDateRange);
 
   useEffect(() => {
@@ -144,16 +176,10 @@ function DashboardContent() {
     if (isAuthorized) fetchData(undefined, true);
   }, [reportDateRange, isAuthorized]);
 
-  // Try to use PIN from sessionStorage on initial load
+  // Initial load check
   useEffect(() => {
     if (!isAuthorized) {
-      const savedPin = sessionStorage.getItem('dashboard_pin');
-      if (savedPin && savedPin.length === 4) {
-        setEnteredPin(savedPin);
-        fetchData(savedPin).finally(() => setIsInitialLoading(false));
-      } else {
-        setIsInitialLoading(false);
-      }
+      fetchData().finally(() => setIsInitialLoading(false));
     } else {
       setIsInitialLoading(false);
     }
@@ -181,18 +207,13 @@ function DashboardContent() {
   const fetchData = async (pinToUse?: string, isBackground = false) => {
     try {
       if (!isBackground) setLoading(true);
-      const currentPin = pinToUse || enteredPin;
+      
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      if (currentPin) {
-        url += (url.includes('?') ? '&' : '?') + `pin=${currentPin}`;
-      }
       url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRangeRef.current.start}&endDate=${reportDateRangeRef.current.end}`;
       
       const res = await fetch(url);
       if (res.status === 401) {
         setIsAuthorized(false);
-        setPinError('Incorrect PIN. Please try again.');
-        sessionStorage.removeItem('dashboard_pin');
         setLoading(false);
         return;
       }
@@ -202,8 +223,6 @@ function DashboardContent() {
         setData(json);
         if (json.businessId) setBusinessId(json.businessId);
         setIsAuthorized(true);
-        setPinError('');
-        sessionStorage.setItem('dashboard_pin', currentPin!);
       }
     } catch (e) {
       toast.error('Network error. Unable to fetch dashboard data.');
@@ -359,6 +378,184 @@ function DashboardContent() {
     }
   };
 
+  const getAvailableGameTypesForTable = (tableId: string): string[] => {
+    if (!tableId || !data?.tables) {
+      return Object.keys(data?.pricingRules?.rules || { pool: {} });
+    }
+    const t = data.tables.find((tbl: any) => tbl.id === tableId);
+    if (!t || !t.type) {
+      return Object.keys(data?.pricingRules?.rules || { pool: {} });
+    }
+    const assigned = t.type.split(/[,/]/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+    return assigned.length > 0 ? assigned : Object.keys(data?.pricingRules?.rules || { pool: {} });
+  };
+
+  const handleSaveConfig = async (newRules?: any, newTables?: any[]) => {
+    if (!businessId) return;
+    setIsUpdatingConfig(true);
+    try {
+      const payload: any = { business_id: businessId };
+      if (newRules !== undefined) payload.pricing_rules = newRules;
+      if (newTables !== undefined) payload.tables = newTables;
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        toast.success('✓ Business settings & PS5 config updated successfully.');
+        fetchData(undefined, true);
+      } else {
+        toast.error('Failed to update configuration.');
+      }
+    } catch (err) {
+      toast.error('Error connecting to configuration service.');
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  };
+
+  const handleEnablePS5 = async () => {
+    if (!data) return;
+    const existingRules = data.pricingRules?.rules || {};
+    if (existingRules['ps5']) {
+      toast.success('✓ PS5 support is already enabled!');
+      return;
+    }
+    const updatedRules = {
+      ...existingRules,
+      ps5: {
+        type: 'fixed',
+        rate: 250,
+        multiplayer_mode: 'base_plus_extra',
+        extra_per_player: 50
+      }
+    };
+    const fullPricing = { ...data.pricingRules, rules: updatedRules };
+    await handleSaveConfig(fullPricing, undefined);
+  };
+
+  const handleAddStation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStationId || !newStationName || !data) return;
+    const existing = data.tables || [];
+    if (existing.some((t: any) => t.id.toLowerCase() === newStationId.toLowerCase())) {
+      toast.error(`Station ID "${newStationId}" already exists.`);
+      return;
+    }
+    const updatedTables = [...existing, { id: newStationId, name: newStationName, type: newStationType }];
+    await handleSaveConfig(undefined, updatedTables);
+    setNewStationId('');
+    setNewStationName('');
+  };
+
+  const renderBookingReminders = () => {
+    if (!data?.bookings || !data.bookings.length) return null;
+    const now = new Date();
+    const todayStr = getLocalDateStr();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const dueBookings = data.bookings.filter((b: any) => {
+      if (b.status !== 'confirmed' || b.booking_date !== todayStr) return false;
+      if (dismissedReminders[b.id]) return false;
+      if (!b.start_time) return false;
+      const parts = b.start_time.split(':');
+      const startMinutes = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      const duration = Number(b.duration_minutes) || 60;
+      return currentMinutes >= (startMinutes - 15) && currentMinutes <= (startMinutes + duration);
+    });
+
+    if (dueBookings.length === 0) return null;
+
+    return (
+      <div className="flex flex-col gap-3">
+        {dueBookings.map((booking: any) => {
+          const isOccupied = data.activeSessions?.some((s: any) => s.table_id === booking.table_id && s.status === 'ACTIVE');
+          const assignedTable = data.tables?.find((t: any) => t.id === booking.table_id);
+          const gameDisplay = booking.game_type || assignedTable?.type || 'Table Game';
+          
+          return (
+            <div key={booking.id} className="p-5 rounded-xl border-2 border-warning/80 bg-warning/10 text-text-primary flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-lg animate-soft-pulse">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-warning text-black flex items-center justify-center font-extrabold text-xl shrink-0 shadow">
+                  🔔
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-base sm:text-lg font-bold">Scheduled Booking Reminder</h4>
+                    <span className="px-2.5 py-0.5 rounded-md text-xs font-bold font-mono uppercase bg-warning text-black tracking-wider shadow-sm">RESERVED</span>
+                    <span className="px-2 py-0.5 rounded-md text-xs font-bold font-mono capitalize bg-bg-surface border border-border-theme text-primary">{gameDisplay}</span>
+                  </div>
+                  <p className="text-sm text-text-secondary mt-1">
+                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{booking.customer_name || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
+                  </p>
+                  {isOccupied && (
+                    <p className="text-xs font-bold text-danger mt-2 flex items-center gap-1.5 bg-danger/10 px-2.5 py-1 rounded border border-danger/30 w-fit">
+                      <span>⚠️</span> Warning: Table {booking.table_id} is currently occupied! A reserved booking is waiting to start.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+                <button
+                  onClick={() => setDismissedReminders(prev => ({ ...prev, [booking.id]: true }))}
+                  className="px-4 py-2.5 rounded-lg border border-border-theme text-text-secondary hover:text-text-primary text-xs sm:text-sm font-bold transition-colors min-h-[44px]"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={() => handleStartBooking(booking.id)}
+                  disabled={isOccupied}
+                  className="px-5 py-2.5 rounded-lg bg-accent text-black font-extrabold text-xs sm:text-sm uppercase hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={isOccupied ? 'End current active session on table before starting' : 'Start Session'}
+                >
+                  {isOccupied ? 'Table Occupied' : 'Start Booking'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const handleCreateManualBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bookingTable || !bookingDate || !bookingStartTime || !businessId) return;
+    setIsCreatingBooking(true);
+    try {
+      const res = await fetch('/api/bookings/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: businessId,
+          table_id: bookingTable,
+          customer_name: bookingCustomer,
+          booking_date: bookingDate,
+          start_time: bookingStartTime,
+          duration_minutes: Number(bookingDuration) || 60,
+          game_type: bookingGame
+        })
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        setIsBookingModalOpen(false);
+        setBookingTable('');
+        setBookingCustomer('');
+        setBookingStartTime('');
+        setBookingDuration('60');
+        fetchData(undefined, true);
+        toast.success('✓ Manual booking created.');
+      } else {
+        toast.error(result.error || "Couldn't create booking. Please try again.");
+      }
+    } catch (err: any) {
+      toast.error("Failed to connect to booking service.");
+    } finally {
+      setIsCreatingBooking(false);
+    }
+  };
+
   const fetchMemberships = async () => {
     setIsMembershipsLoading(true);
     try {
@@ -426,16 +623,34 @@ function DashboardContent() {
     }
   };
 
-  const handlePinSubmit = (e: React.FormEvent) => {
+  const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (enteredPin.length === 4) {
-      fetchData(enteredPin);
+    if (enteredPin.length > 0) {
+      setLoading(true);
+      setPinError('');
+      try {
+        const res = await fetch('/api/auth/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ businessId, pin: enteredPin })
+        });
+        if (res.ok) {
+          setIsAuthorized(true);
+          fetchData();
+        } else {
+          const err = await res.json();
+          setPinError(err.error || 'Incorrect Password/PIN.');
+        }
+      } catch (e) {
+        setPinError('Network error.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
   const handleLogout = (e: React.MouseEvent) => {
     e.preventDefault();
-    sessionStorage.removeItem('dashboard_pin');
     setEnteredPin('');
     setIsAuthorized(false);
   };
@@ -537,6 +752,34 @@ function DashboardContent() {
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New PINs do not match.');
+      return;
+    }
+    setPasswordError('');
+    setIsChangingPassword(true);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      if (res.ok) {
+        toast.success('PIN changed successfully! Please log in again.');
+        window.location.href = '/login';
+      } else {
+        const err = await res.json();
+        setPasswordError(err.error || 'Failed to change PIN.');
+      }
+    } catch (e) {
+      setPasswordError('Network error.');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   // Memoized unique customers
   const customers = useMemo(() => {
     if (!data) return [];
@@ -576,21 +819,29 @@ function DashboardContent() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-center text-text-primary mb-2">Dashboard Locked</h1>
-          <p className="text-center text-text-secondary mb-6 text-sm">Enter your 4-digit PIN to view financial data.</p>
+          <p className="text-center text-text-secondary mb-6 text-sm">Enter your 4-digit PIN to unlock.</p>
           
-          <input 
-            type="password" 
-            maxLength={4}
-            value={enteredPin}
-            onChange={e => setEnteredPin(e.target.value)}
-            className="w-full text-center text-3xl font-mono tracking-[1em] px-4 py-4 rounded-xl border border-border-theme bg-bg-primary outline-none focus:border-accent focus:card-glow mb-4 text-text-primary"
-            placeholder="••••"
-            autoFocus
-          />
+          <div className="relative mb-4">
+            <input 
+              type={showUnlockPin ? "text" : "password"} 
+              maxLength={4}
+              value={enteredPin}
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '');
+                setEnteredPin(val);
+              }}
+              className="w-full text-center text-3xl font-mono tracking-[1em] px-12 py-4 rounded-xl border border-border-theme bg-bg-primary outline-none focus:border-accent focus:card-glow text-text-primary placeholder-text-disabled placeholder:tracking-normal"
+              placeholder="••••"
+              autoFocus
+            />
+            <button type="button" onClick={() => setShowUnlockPin(!showUnlockPin)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+              {showUnlockPin ? <IconEyeOff /> : <IconEye />}
+            </button>
+          </div>
           
           {pinError && <p className="text-danger text-sm text-center mb-4">{pinError}</p>}
           
-          <button type="submit" disabled={enteredPin.length !== 4 || loading} className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-accent/20">
+          <button type="submit" disabled={enteredPin.length === 0 || loading} className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-accent/20">
             {loading ? 'Authenticating...' : 'Unlock Dashboard'}
           </button>
         </form>
@@ -663,7 +914,8 @@ function DashboardContent() {
         tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
       }
 
-      const res = calculateBilling(startFull, now.toISOString(), session.game_type, data.pricingRules, 1, tableDiscount, session.paused_duration_seconds, (session as any).locked_rate, (session as any).locked_rate_name);
+      const endFull = session.paused_at ? session.paused_at : now.toISOString();
+      const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, (session as any).locked_rate, (session as any).locked_rate_name);
       return acc + res.cost;
     } catch { return acc; }
   }, 0);
@@ -774,7 +1026,7 @@ function DashboardContent() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center mt-3">
-                    <span className="text-xs font-bold text-accent">{booking.start_time?.substring(0,5)} • {booking.duration_minutes}m</span>
+                    <span className="text-xs font-bold text-accent">{formatTimeReadable(booking.start_time, true, booking.booking_date)} • {booking.duration_minutes}m</span>
                     <div className="flex gap-2">
                       <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-2 py-1 rounded border border-danger/50 text-danger text-[10px] font-bold uppercase hover:bg-danger/10">No Show</button>
                       <button onClick={() => handleStartBooking(booking.id)} className="px-3 py-1 rounded bg-accent text-white text-[10px] font-bold uppercase hover:bg-accent/90 shadow-lg shadow-accent/20">Start</button>
@@ -847,18 +1099,27 @@ function DashboardContent() {
     return (
       <div className="flex flex-col gap-8 mt-4">
         <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
             <div>
               <h2 className="text-2xl font-bold">Master Bookings Log</h2>
               <p className="text-text-secondary mt-1 text-sm">Full history of all table reservations across all statuses.</p>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-[#25D366]/20 text-[#25D366] rounded-full border border-[#25D366]/30">
-              <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
-              <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
-                <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                Today's Bookings
-              </h3>
-              <p className="text-xs text-text-secondary mt-1 italic">Automatically synchronized via WhatsApp AI</p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <button
+                onClick={() => setIsBookingModalOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white font-bold rounded-lg shadow-md hover:bg-accent/90 transition-all duration-200 text-sm border border-accent/20"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                New Manual Booking
+              </button>
+              <div className="flex items-center gap-2 px-4 py-2 bg-[#25D366]/20 text-[#25D366] rounded-full border border-[#25D366]/30">
+                <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
+                <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
+                  <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  Today's Bookings
+                </h3>
+                <p className="text-xs text-text-secondary mt-1 italic">Automatically synchronized via WhatsApp AI</p>
+              </div>
             </div>
           </div>
           
@@ -888,7 +1149,7 @@ function DashboardContent() {
                         </span>
                       </td>
                       <td className="p-4 md:p-5">
-                        <p className="text-sm font-bold font-mono text-text-primary tabular-nums whitespace-nowrap">{booking.start_time} - {booking.end_time}</p>
+                        <p className="text-sm font-bold font-mono text-text-primary tabular-nums whitespace-nowrap">{formatTimeReadable(booking.start_time, true, booking.booking_date)} – {formatTimeReadable(booking.end_time)}</p>
                         <p className="text-xs text-text-secondary mt-1">{booking.duration_minutes} mins</p>
                       </td>
                       <td className="p-4 md:p-5">
@@ -1057,8 +1318,8 @@ function DashboardContent() {
                 <th className="p-4">Customer</th>
                 <th className="p-4">Table</th>
                 <th className="p-4">Service/Game</th>
-                <th className="p-4">Completion Time</th>
-                <th className="p-4">Duration</th>
+                <th className="p-4">Session Timing (Start / End)</th>
+                <th className="p-4">Duration (Elapsed / Paused / Billable)</th>
                 <th className="p-4">Base Cost</th>
                 <th className="p-4">Discount</th>
                 <th className="p-4">Final Amount</th>
@@ -1070,48 +1331,80 @@ function DashboardContent() {
               {data.completedSessions.length === 0 ? (
                 <tr><td colSpan={10} className="p-12 text-center text-text-secondary text-base">Your session history will appear here once you complete a transaction.</td></tr>
               ) : (
-                data.completedSessions.map((session: any) => (
-                  <tr key={session.id} className="border-b border-border-light/50 hover:bg-bg-surface transition-all duration-200">
-                    <td className="p-4">
-                      <p className="text-sm font-bold text-text-primary">{session.customer_name}</p>
-                    </td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest shadow-sm">
-                        {session.table_id}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-xs text-primary font-bold capitalize font-mono bg-primary/10 inline-block px-2 py-0.5 rounded border border-primary/20">{session.game_type}</p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-bold font-mono text-text-primary whitespace-nowrap">
-                        {session.end_time?.includes('T') ? new Date(session.end_time).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : session.end_time}
-                      </p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-bold font-mono text-text-primary tabular-nums">{session.duration?.replace(' min', 'm').replace(' hr ', 'h ')}</p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-medium font-mono text-text-secondary tabular-nums"><PrivacyText value={session.base_cost ?? session.cost ?? 0} isPrivacyMode={isPrivacyMode} /></p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-medium font-mono text-secondary tabular-nums">
-                        {session.discount_amount ? <span className="text-danger">-<PrivacyText value={session.discount_amount} isPrivacyMode={isPrivacyMode} /></span> : '-'}
-                      </p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-base font-bold font-mono text-accent tabular-nums"><PrivacyText value={session.cost || 0} isPrivacyMode={isPrivacyMode} /></p>
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest border uppercase border-accent/50 text-accent bg-accent/10 shadow-sm`}>
-                        {session.payment_status === 'Pending' ? 'Paid' : (session.payment_status || 'Paid')}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-xs text-text-secondary">{session.completed_by || 'System'}</p>
-                    </td>
-                  </tr>
-                ))
+                data.completedSessions.map((session: any) => {
+                  const formatTimeStr = (t?: string) => {
+                    if (!t) return '-';
+                    try {
+                      return t.includes('T') ? new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : t;
+                    } catch { return t; }
+                  };
+                  const startTimeFormatted = formatTimeReadable(session.start_time, true, session.date);
+                  const endTimeFormatted = formatTimeReadable(session.end_time);
+
+                  const startMs = parseDateString(session.start_time?.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`);
+                  const endMs = session.end_time ? parseDateString(session.end_time?.includes('T') ? session.end_time : `${session.date}, ${session.end_time}`) : startMs;
+                  const elapsedSecs = !isNaN(startMs) && !isNaN(endMs) && endMs > startMs ? Math.floor((endMs - startMs) / 1000) : 0;
+                  const pausedSecs = session.paused_duration_seconds || 0;
+                  const billableSecs = Math.max(0, elapsedSecs - pausedSecs);
+
+                  const fmtDuration = (sec: number) => {
+                    const h = Math.floor(sec / 3600);
+                    const m = Math.floor((sec % 3600) / 60);
+                    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                  };
+
+                  const elapsedStr = elapsedSecs > 0 ? fmtDuration(elapsedSecs) : (session.duration?.replace(' min', 'm').replace(' hr ', 'h ') || '0m');
+                  const pausedStr = pausedSecs > 0 ? fmtDuration(pausedSecs) : '0m';
+                  const billableStr = session.duration?.replace(' min', 'm').replace(' hr ', 'h ') || fmtDuration(billableSecs);
+
+                  return (
+                    <tr key={session.id} className="border-b border-border-light/50 hover:bg-bg-surface transition-all duration-200">
+                      <td className="p-4">
+                        <p className="text-sm font-bold text-text-primary">{session.customer_name}</p>
+                      </td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest shadow-sm">
+                          {session.table_id}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-xs text-primary font-bold capitalize font-mono bg-primary/10 inline-block px-2 py-0.5 rounded border border-primary/20">{session.game_type}</p>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1 font-mono text-xs whitespace-nowrap">
+                          <p className="text-text-primary font-bold"><span className="text-text-secondary font-normal mr-1">Start:</span>{startTimeFormatted}</p>
+                          <p className="text-text-primary font-bold"><span className="text-text-secondary font-normal mr-1">End:</span>{endTimeFormatted}</p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1 font-mono text-xs tabular-nums">
+                          <p className="text-text-secondary">Elapsed: <span className="font-bold text-text-primary">{elapsedStr}</span></p>
+                          {pausedSecs > 0 && <p className="text-warning font-bold">Paused: -{pausedStr}</p>}
+                          <p className="text-accent font-bold text-sm">Billable: {billableStr}</p>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-sm font-medium font-mono text-text-secondary tabular-nums"><PrivacyText value={session.base_cost ?? session.cost ?? 0} isPrivacyMode={isPrivacyMode} /></p>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-sm font-medium font-mono text-secondary tabular-nums">
+                          {session.discount_amount ? <span className="text-danger">-<PrivacyText value={session.discount_amount} isPrivacyMode={isPrivacyMode} /></span> : '-'}
+                        </p>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-base font-bold font-mono text-accent tabular-nums"><PrivacyText value={session.cost || 0} isPrivacyMode={isPrivacyMode} /></p>
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest border uppercase border-accent/50 text-accent bg-accent/10 shadow-sm`}>
+                          {session.payment_status === 'Pending' ? 'Paid' : (session.payment_status || 'Paid')}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <p className="text-xs text-text-secondary">{session.completed_by || 'System'}</p>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1228,6 +1521,244 @@ function DashboardContent() {
 
   const renderSettings = () => (
     <div className="flex flex-col gap-8 mt-4">
+      {/* Game Categories & PS5 Management (Additive) */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
+              <span>🎮</span> Game Categories &amp; PS5 Support
+            </h2>
+            <p className="text-text-secondary text-xs sm:text-sm mt-1">
+              Configure dynamic pricing, time slots, schedules, and multiplayer rules for all sports including PS5.
+            </p>
+          </div>
+          {!data?.pricingRules?.rules?.['ps5'] ? (
+            <button
+              onClick={handleEnablePS5}
+              disabled={isUpdatingConfig}
+              className="px-5 py-3 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 shrink-0 min-h-[44px]"
+            >
+              + Enable PS5 Support
+            </button>
+          ) : (
+            <span className="px-3 py-1.5 rounded-md text-xs font-bold font-mono tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">
+              ✓ PS5 Natively Active
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Rule Configuration */}
+          <div className="lg:col-span-7 flex flex-col gap-4">
+            <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">Configure Pricing Schedules &amp; Rates</h3>
+            <div className="flex gap-2 flex-wrap mb-2">
+              {Object.keys(data?.pricingRules?.rules || {}).map(game => (
+                <button
+                  key={game}
+                  onClick={() => setSelectedGameRule(game)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-extrabold capitalize font-mono transition-all min-h-[38px] ${selectedGameRule === game ? 'bg-primary text-white shadow-md shadow-primary/30 scale-105' : 'bg-bg-primary text-text-secondary border border-border-theme hover:border-text-secondary'}`}
+                >
+                  {game === 'ps5' ? '🎮 PS5' : `🎱 ${game}`}
+                </button>
+              ))}
+            </div>
+
+            {(() => {
+              const currentRule = data?.pricingRules?.rules?.[selectedGameRule] || { type: 'fixed', rate: 200, multiplayer_mode: 'none' };
+              return (
+                <div className="p-5 rounded-xl border border-border-theme bg-bg-primary flex flex-col gap-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold capitalize font-mono text-accent">{selectedGameRule} Rule Configuration</span>
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-text-secondary bg-bg-surface px-2 py-0.5 rounded border border-border-theme">Dynamic Engine</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Pricing Model</label>
+                      <select
+                        value={currentRule.type || 'fixed'}
+                        onChange={e => {
+                          const newType = e.target.value;
+                          const updated = { ...currentRule, type: newType };
+                          const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                          handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                        }}
+                        className="w-full px-3 py-2.5 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                      >
+                        <option value="fixed">Flat Rate (Fixed ₹/hr)</option>
+                        <option value="time_based">Schedule / Time Slots (Day &amp; Evening)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Multiplayer Mode</label>
+                      <select
+                        value={currentRule.multiplayer_mode || 'none'}
+                        onChange={e => {
+                          const mode = e.target.value;
+                          const updated = { ...currentRule, multiplayer_mode: mode };
+                          const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                          handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                        }}
+                        className="w-full px-3 py-2.5 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                      >
+                        <option value="none">Standard Table Rate (No Multiplier)</option>
+                        <option value="multiply">Multiply Rate by Players</option>
+                        <option value="base_plus_extra">Base Rate + Extra per Additional Player</option>
+                      </select>
+                    </div>
+                    {currentRule.type === 'fixed' ? (
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Flat Rate (₹ / hr)</label>
+                        <input
+                          type="number"
+                          defaultValue={currentRule.rate || 0}
+                          onBlur={e => {
+                            const val = Number(e.target.value) || 0;
+                            if (val === currentRule.rate) return;
+                            const updated = { ...currentRule, rate: val };
+                            const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                            handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                          }}
+                          className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Day Rate (₹ / hr)</label>
+                          <input
+                            type="number"
+                            defaultValue={currentRule.day_rate || currentRule.am_rate || 0}
+                            onBlur={e => {
+                              const val = Number(e.target.value) || 0;
+                              const updated = { ...currentRule, day_rate: val, am_rate: val };
+                              const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                              handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                            }}
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Evening/Peak Rate (₹ / hr)</label>
+                          <input
+                            type="number"
+                            defaultValue={currentRule.evening_rate || currentRule.pm_rate || 0}
+                            onBlur={e => {
+                              const val = Number(e.target.value) || 0;
+                              const updated = { ...currentRule, evening_rate: val, pm_rate: val };
+                              const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                              handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                            }}
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Opening Hour (24h format)</label>
+                          <input
+                            type="number" min="0" max="23"
+                            defaultValue={currentRule.opening_hour ?? 6}
+                            onBlur={e => {
+                              const val = Number(e.target.value) || 0;
+                              const updated = { ...currentRule, opening_hour: val };
+                              const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                              handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                            }}
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Cutoff Hour (Evening start, e.g. 16)</label>
+                          <input
+                            type="number" min="0" max="23"
+                            defaultValue={currentRule.cutoff_hour ?? 16}
+                            onBlur={e => {
+                              const val = Number(e.target.value) || 0;
+                              const updated = { ...currentRule, cutoff_hour: val };
+                              const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                              handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                            }}
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          />
+                        </div>
+                      </>
+                    )}
+                    {currentRule.multiplayer_mode === 'base_plus_extra' && (
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Extra Charge / Player (₹)</label>
+                        <input
+                          type="number"
+                          defaultValue={currentRule.extra_per_player || 50}
+                          onBlur={e => {
+                            const val = Number(e.target.value) || 0;
+                            const updated = { ...currentRule, extra_per_player: val };
+                            const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
+                            handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                          }}
+                          className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-text-secondary italic mt-1">ℹ️ Changes save automatically when you click outside the input box.</p>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Station Management */}
+          <div className="lg:col-span-5 flex flex-col gap-4 border-t lg:border-t-0 lg:border-l border-border-theme pt-6 lg:pt-0 lg:pl-8">
+            <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">Stations &amp; Tables</h3>
+            <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-2">
+              {data?.tables?.map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-bg-primary border border-border-theme text-xs">
+                  <div>
+                    <span className="font-mono font-bold text-accent">{t.id}</span>
+                    <span className="mx-2 text-text-secondary">•</span>
+                    <span className="font-bold text-text-primary">{t.name}</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold font-mono uppercase bg-bg-surface border border-border-theme text-primary">
+                    {t.type}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleAddStation} className="p-4 rounded-xl border border-border-theme bg-bg-primary/60 flex flex-col gap-3 mt-auto">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Add New Station / Table</span>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="ID (e.g. PS5-1)"
+                  required
+                  value={newStationId}
+                  onChange={e => setNewStationId(e.target.value.toUpperCase())}
+                  className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                />
+                <input
+                  type="text"
+                  placeholder="Name (PS5 Lounge)"
+                  required
+                  value={newStationName}
+                  onChange={e => setNewStationName(e.target.value)}
+                  className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                />
+              </div>
+              <select
+                value={newStationType}
+                onChange={e => setNewStationType(e.target.value)}
+                className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent capitalize min-h-[40px]"
+              >
+                {Object.keys(data?.pricingRules?.rules || { snooker: {}, pool: {}, ps5: {} }).map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <button type="submit" disabled={isUpdatingConfig || !newStationId} className="w-full bg-accent text-black font-extrabold py-2.5 rounded-lg hover:bg-accent/90 transition-colors text-xs uppercase shadow-md shadow-accent/10 min-h-[42px]">
+                {isUpdatingConfig ? 'Adding...' : '+ Create Station'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
         <h2 className="text-2xl font-bold mb-6">Launch Promotion</h2>
         <form onSubmit={handleSavePromo} className="max-w-md flex flex-col gap-4">
@@ -1398,6 +1929,47 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+
+      {/* Change PIN UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          <span>🔒</span> Security Settings
+        </h2>
+        <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
+          {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
+            <div className="relative">
+              <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showCurrentPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
+            <div className="relative">
+              <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showNewPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+            <p className="text-[10px] text-text-secondary mt-1">Must be exactly 4 digits.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
+            <div className="relative">
+              <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showConfirmPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+            {isChangingPassword ? 'Updating...' : 'Change PIN'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 
@@ -1541,7 +2113,8 @@ function DashboardContent() {
         </header>
 
         {/* Content Area */}
-        <div className="p-10 max-w-[1440px] mx-auto w-full flex flex-col gap-8 pb-20">
+        <div className="p-6 md:p-10 max-w-[1440px] mx-auto w-full flex flex-col gap-8 pb-20">
+          {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
           {sidebarTab === 'bookings' && renderBookings()}
@@ -1579,7 +2152,19 @@ function DashboardContent() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table</label>
-                <select required value={manualTable} onChange={e => setManualTable(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary">
+                <select
+                  required
+                  value={manualTable}
+                  onChange={e => {
+                    const selected = e.target.value;
+                    setManualTable(selected);
+                    const allowed = getAvailableGameTypesForTable(selected);
+                    if (allowed.length > 0 && !allowed.includes(manualGame)) {
+                      setManualGame(allowed[0]);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary min-h-[44px]"
+                >
                   <option value="">-- Choose an available table --</option>
                   {data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => (
                     <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
@@ -1587,15 +2172,11 @@ function DashboardContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type</label>
-                <select required value={manualGame} onChange={e => setManualGame(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize">
-                  {data.pricingRules?.rules && Object.keys(data.pricingRules.rules).length > 0 ? (
-                    Object.keys(data.pricingRules.rules).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))
-                  ) : (
-                    <option value="pool">Pool (Fallback)</option>
-                  )}
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports)</label>
+                <select required value={manualGame} onChange={e => setManualGame(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize min-h-[44px]">
+                  {getAvailableGameTypesForTable(manualTable).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -1604,6 +2185,86 @@ function DashboardContent() {
               </div>
               <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50">
                 {isStartingManual ? 'Starting...' : 'Start Session'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Booking Modal (Additive) */}
+      {isBookingModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button 
+              onClick={() => setIsBookingModalOpen(false)}
+              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <div className="p-8 border-b border-border-theme">
+              <h2 className="text-2xl font-bold">New Manual Booking</h2>
+              <p className="text-text-secondary mt-1 text-sm">Reserve a table directly from the admin command center.</p>
+            </div>
+            <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table *</label>
+                <select
+                  required
+                  value={bookingTable}
+                  onChange={e => {
+                    const selected = e.target.value;
+                    setBookingTable(selected);
+                    const allowed = getAvailableGameTypesForTable(selected);
+                    if (allowed.length > 0) {
+                      setBookingGame(allowed[0]);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary min-h-[44px]"
+                >
+                  <option value="">-- Choose a table --</option>
+                  {data?.tables?.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.type || t.id})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) *</label>
+                <select
+                  required
+                  value={bookingGame}
+                  onChange={e => setBookingGame(e.target.value)}
+                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize min-h-[44px]"
+                >
+                  {getAvailableGameTypesForTable(bookingTable).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name (Optional)</label>
+                <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Booking Date *</label>
+                <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time *</label>
+                <input type="time" required value={bookingStartTime} onChange={e => setBookingStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Expected Duration *</label>
+                <select required value={bookingDuration} onChange={e => setBookingDuration(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary">
+                  <option value="30">30 Minutes</option>
+                  <option value="60">1 Hour (60 Mins)</option>
+                  <option value="90">1 Hour 30 Mins (90 Mins)</option>
+                  <option value="120">2 Hours (120 Mins)</option>
+                  <option value="180">3 Hours (180 Mins)</option>
+                  <option value="240">4 Hours (240 Mins)</option>
+                </select>
+              </div>
+              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-lg shadow-accent/20">
+                {isCreatingBooking ? 'Saving Booking...' : 'Save Booking'}
               </button>
             </form>
           </div>

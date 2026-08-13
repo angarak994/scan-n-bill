@@ -70,6 +70,10 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             food_cost: data.food_cost,
             num_players: data.num_players,
             discount: data.discount,
+            paused_at: data.paused_at,
+            paused_duration_seconds: data.paused_duration_seconds || 0,
+            locked_rate: data.locked_rate,
+            locked_rate_name: data.locked_rate_name,
           };
         });
       }
@@ -98,14 +102,30 @@ export default function SessionClient({ initialState, business_id, table_id, gam
 
     const tick = () => {
       const now = Date.now();
-      const diffSecs = Math.max(0, Math.floor((now - startMs) / 1000));
-      setElapsedSeconds(diffSecs);
+      let totalPausedSecs = (session as any).paused_duration_seconds || 0;
+      if ((session as any).paused_at) {
+        totalPausedSecs += Math.max(0, Math.floor((now - new Date((session as any).paused_at).getTime()) / 1000));
+      }
+      const elapsedTotalSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+      const billableSecs = Math.max(0, elapsedTotalSecs - totalPausedSecs);
+      setElapsedSeconds(billableSecs);
       
-      const { cost } = calculateCost(startMs, now, session.game_type, session.pricingRules, session.num_players || 1, session.discount);
+      const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
+      const { cost } = calculateCost(
+        startMs, 
+        effectiveEndMs, 
+        session.game_type, 
+        session.pricingRules, 
+        session.num_players || 1, 
+        session.discount, 
+        (session as any).paused_duration_seconds || 0, 
+        (session as any).locked_rate, 
+        (session as any).locked_rate_name
+      );
       setCurrentCost(cost);
-      setCurrentActiveRate(getCurrentRate(session.game_type, now, session.pricingRules, session.num_players || 1).rate);
+      setCurrentActiveRate(getCurrentRate(session.game_type, effectiveEndMs, session.pricingRules, session.num_players || 1).rate);
 
-      if (diffSecs >= 3600 && !notifiedOneHour) {
+      if (billableSecs >= 3600 && !notifiedOneHour) {
         setNotifiedOneHour(true);
         setShowHourNotification(true);
       }
@@ -421,6 +441,11 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
                   {formatElapsed(elapsedSeconds)}
                 </p>
+                {(session as any).paused_at && (
+                  <span className="mt-2 px-3 py-1 rounded-md text-xs font-bold uppercase tracking-widest bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30">
+                    Paused
+                  </span>
+                )}
                 {session.food_cost ? (
                   <div className="flex flex-col items-center mt-4">
                     <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>

@@ -139,7 +139,23 @@ export async function endSession(table_id: string, businessId?: string) {
     console.error('Membership Lookup Error:', e);
   }
   
-  const { duration, cost: timeCost, baseCost, discountAmount, slabs_applied } = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, discount, 0, session.locked_rate, session.locked_rate_name);
+  let totalPausedSecs = session.paused_duration_seconds || 0;
+  if (session.paused_at) {
+    const ongoingPausedSecs = Math.max(0, Math.floor((now.getTime() - new Date(session.paused_at).getTime()) / 1000));
+    totalPausedSecs += ongoingPausedSecs;
+  }
+
+  const { duration, cost: timeCost, baseCost, discountAmount, slabs_applied } = calculateBilling(
+    startFull, 
+    endFull, 
+    session.game_type, 
+    pricingRules, 
+    session.num_players || 1, 
+    discount, 
+    totalPausedSecs, 
+    session.locked_rate, 
+    session.locked_rate_name
+  );
   
   let finalFoodCost = session.food_cost || 0;
   let foodDiscountAmount = 0;
@@ -164,6 +180,8 @@ export async function endSession(table_id: string, businessId?: string) {
     discount_amount: totalDiscountAmount,
     payment_status: 'Paid',
     completed_by: 'Club Owner', // Default to club owner for manual dashboard actions
+    paused_at: null,
+    paused_duration_seconds: totalPausedSecs,
   }, businessId);
 
   if ((session as any)._matchedMemberId) {
@@ -222,6 +240,7 @@ export async function endSession(table_id: string, businessId?: string) {
     duration, 
     cost: totalCost, 
     discounts: discount ? discount.percent : 0, 
+    paused_duration_seconds: totalPausedSecs,
     end_time 
   };
 }
@@ -279,6 +298,10 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       discount,
       food_cost: activeSession.food_cost || 0,
       num_players: activeSession.num_players || 1,
+      paused_at: activeSession.paused_at,
+      paused_duration_seconds: activeSession.paused_duration_seconds || 0,
+      locked_rate: activeSession.locked_rate,
+      locked_rate_name: activeSession.locked_rate_name,
     };
   }
 

@@ -37,7 +37,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Session is not paused' }, { status: 400 });
         }
         interventionType = 'resume';
-        const pausedSecs = Math.floor((new Date().getTime() - new Date(session.paused_at).getTime()) / 1000);
+        const pausedSecs = Math.max(0, Math.floor((new Date().getTime() - new Date(session.paused_at).getTime()) / 1000));
         dbUpdates = { 
           paused_at: null,
           paused_duration_seconds: (session.paused_duration_seconds || 0) + pausedSecs,
@@ -57,16 +57,23 @@ export async function POST(request: Request) {
         break;
       case 'force_end':
         interventionType = 'force_close';
-        // Calculate final bill
+        // Calculate final bill with total accumulated paused duration and locked rates
         const business = await businessManager.getBusiness(business_id);
         const activeDiscount = business?.active_discounts?.[session.table_id];
+        let totalPausedSeconds = session.paused_duration_seconds || 0;
+        if (session.paused_at) {
+          totalPausedSeconds += Math.max(0, Math.floor((new Date(now).getTime() - new Date(session.paused_at).getTime()) / 1000));
+        }
         const res = calculateBilling(
           session.start_time, 
           now, 
           session.game_type, 
           business?.pricing_rules, 
-          session.num_players, 
-          activeDiscount
+          session.num_players || 1, 
+          activeDiscount,
+          totalPausedSeconds,
+          session.locked_rate,
+          session.locked_rate_name
         );
         
         dbUpdates = {
@@ -78,6 +85,8 @@ export async function POST(request: Request) {
           base_cost: res.baseCost,
           discount_amount: res.discountAmount,
           closure_type: 'manual_force',
+          paused_at: null,
+          paused_duration_seconds: totalPausedSeconds,
           last_activity_at: now
         };
         break;

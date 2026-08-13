@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { calculateBilling } from '@/lib/billing';
+import { calculateBilling, formatTimeReadable } from '@/lib/billing';
 
 export function NotificationBell({ businessId }: { businessId: string }) {
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -128,7 +128,8 @@ export function LiveTotalOpenCounter({ activeSessions, pricingRules, currentDisc
           if (!tableDiscount && isPromoValid && activePromo) {
             tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
           }
-          const res = calculateBilling(startFull, now.toISOString(), session.game_type, pricingRules, 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+          const endFull = session.paused_at ? session.paused_at : now.toISOString();
+          const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
           return acc + res.cost;
         } catch { return acc; }
       }, 0);
@@ -197,7 +198,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
     if (!tableDiscount && isPromoValid && activePromo) {
       tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
     }
-    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
     liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
     liveCost = res.cost;
     liveSlab = res.slabs_applied;
@@ -217,7 +218,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
       <td className="p-4 md:p-5">
         <p className="text-base font-bold font-mono text-text-primary tabular-nums">{liveDuration}</p>
         <p className="text-xs text-text-secondary mt-1 tabular-nums">
-          {session.start_time.includes('T') ? toReadableIST(new Date(session.start_time)) : session.start_time}
+          {formatTimeReadable(session.start_time, true, session.date)}
         </p>
       </td>
       <td className="p-4 md:p-5">

@@ -11,6 +11,44 @@ export function parseDateString(dateStr: string): number {
   return new Date(cleanStr).getTime();
 }
 
+export function formatTimeReadable(timeStr?: string, includeToday: boolean = false, bookingDate?: string): string {
+  if (!timeStr) return '-';
+  try {
+    let clean = timeStr;
+    if (clean.includes('T') || clean.includes(', ') || clean.includes(' ')) {
+      const d = new Date(clean.includes('+') || clean.includes('Z') || clean.includes('GMT') ? clean : `${clean} +0530`);
+      if (!isNaN(d.getTime())) {
+        const formatter = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        clean = formatter.format(d).replace(' am', ' AM').replace(' pm', ' PM').toUpperCase();
+      }
+    } else if (clean.includes(':')) {
+      const parts = clean.split(':');
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (!isNaN(h) && !isNaN(m)) {
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        clean = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+      }
+    }
+    if (includeToday) {
+      const todayStr = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('T')[0];
+      const isToday = !bookingDate || bookingDate === todayStr || bookingDate === new Date().toISOString().split('T')[0] || bookingDate.toLowerCase().includes('today');
+      if (isToday) {
+        return `Today • ${clean}`;
+      }
+    }
+    return clean;
+  } catch {
+    return timeStr;
+  }
+}
+
 export function getCurrentRate(gameType: string, nowMs: number, pricing?: BusinessPricing, numPlayers: number = 1): { rate: number, slabName: string } {
   const game = gameType.toLowerCase();
   
@@ -82,14 +120,13 @@ export function calculateCost(
   lockedRate?: number,
   lockedRateName?: string
 ): { cost: number, baseCost: number, discountAmount: number, slabsApplied: string } {
-  let totalMs = endMs - startMs;
-  if (pausedDurationSecs > 0) {
-    totalMs = Math.max(0, totalMs - (pausedDurationSecs * 1000));
-  }
-  const durationMinutes = Math.floor(totalMs / 60000);
+  const elapsedMs = Math.max(0, endMs - startMs);
+  const pausedMs = Math.max(0, (pausedDurationSecs || 0) * 1000);
+  const billableMs = Math.max(0, elapsedMs - pausedMs);
+  const durationMinutes = Math.floor(billableMs / 60000);
 
   // First 5 minutes are completely free (Grace Period logic)
-  if (durationMinutes <= 5) {
+  if (durationMinutes <= 5 && billableMs <= 300000) {
     return { cost: 0, baseCost: 0, discountAmount: 0, slabsApplied: 'None (Grace Period)' };
   }
 
@@ -109,33 +146,47 @@ export function calculateCost(
     }
   }
 
-  let totalCost = 0;
+  let unpausedTotalCost = 0;
   const appliedSlabs = new Set<string>();
 
-  // Truncate endMs to the exact elapsed minute. This eliminates millisecond-level price jumps
-  // and completely resolves client vs server race conditions during "End Session" by ensuring
-  // 59 seconds of complete stability per minute.
-  const effectiveEndMs = startMs + (billedDurationMinutes * 60000);
-
+  // Evaluate rates across the exact full elapsed stay [startMs, endMs].
+  // This accurately captures dynamic rate transitions during the customer's real visits.
   let currentMs = startMs;
-  while (currentMs < effectiveEndMs) {
-    const nextMs = currentMs + 60 * 1000;
-    const chunkEndMs = Math.min(nextMs, effectiveEndMs);
-    const durationHours = (chunkEndMs - currentMs) / (1000 * 60 * 60);
-
-    let rate = 0; let slabName = '';
-    if (lockedRate !== undefined && lockedRate !== null) {
-      rate = lockedRate; slabName = lockedRateName || 'Dynamic Rate';
-    } else {
-      const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
-      rate = cr.rate; slabName = cr.slabName;
-    }
-    appliedSlabs.add(slabName);
-    
-    totalCost += durationHours * rate;
-    currentMs = nextMs;
-  }
+  const evaluationEndMs = Math.max(startMs, endMs);
   
+  if (evaluationEndMs > startMs) {
+    while (currentMs < evaluationEndMs) {
+      const nextMs = Math.min(currentMs + 60000, evaluationEndMs);
+      const chunkHours = (nextMs - currentMs) / 3600000;
+
+      let rate = 0; let slabName = '';
+      if (lockedRate !== undefined && lockedRate !== null) {
+        rate = Number(lockedRate); slabName = lockedRateName || 'Dynamic Rate';
+      } else {
+        const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
+        rate = cr.rate; slabName = cr.slabName;
+      }
+      appliedSlabs.add(slabName);
+      
+      unpausedTotalCost += chunkHours * rate;
+      currentMs = nextMs;
+    }
+  } else {
+    const cr = lockedRate !== undefined && lockedRate !== null
+      ? { rate: Number(lockedRate), slabName: lockedRateName || 'Dynamic Rate' }
+      : getCurrentRate(gameType, startMs, pricing, numPlayers);
+    appliedSlabs.add(cr.slabName);
+  }
+
+  // Proportional rate scaling: exactly maps active billable hours to the rate structure,
+  // preventing revenue loss, skipped time, or rounding drift when sessions are paused/resumed.
+  const elapsedHours = (evaluationEndMs - startMs) / 3600000;
+  const billedHours = billedDurationMinutes / 60;
+  let totalCost = 0;
+  if (elapsedHours > 0) {
+    totalCost = (unpausedTotalCost / elapsedHours) * billedHours;
+  }
+
   // Apply rounding rules
   const roundingMode = pricing?.globalSettings?.rounding_mode || 'nearest_5';
   let finalCost = totalCost;
@@ -189,11 +240,10 @@ export function calculateBilling(
 
   const { cost, baseCost, discountAmount, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
 
-  let totalSeconds = (endMs - startMs) / 1000;
-  if (pausedDurationSecs > 0) {
-    totalSeconds = Math.max(0, totalSeconds - pausedDurationSecs);
-  }
-  const durationMinutes = Math.floor(totalSeconds / 60);
+  const totalSeconds = Math.max(0, (endMs - startMs) / 1000);
+  const pausedSeconds = Math.max(0, pausedDurationSecs || 0);
+  const billableSeconds = Math.max(0, totalSeconds - pausedSeconds);
+  const durationMinutes = Math.floor(billableSeconds / 60);
 
   const hours = Math.floor(durationMinutes / 60);
   const mins = durationMinutes % 60;
