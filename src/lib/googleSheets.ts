@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import { businessManager } from './businessManager';
-
+import { formatTimeReadable, getCurrentISTDateStr } from './billing';
 const REQUIRED_SHEETS = [
   'Dashboard', 'Active Sessions', 'Completed Sessions', 'Players',
   'Memberships', 'Revenue', 'Promotions', 'Tables', 'QR Scans',
@@ -21,26 +21,35 @@ export async function getGoogleSheetsClient() {
   return google.sheets({ version: 'v4', auth: authClient as any });
 }
 
-export async function appendRow(sheetName: string, values: any[], businessId?: string) {
-  try {
-    let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-    if (businessId) {
-      const business = await businessManager.getBusiness(businessId);
-      if (business && business.google_sheet_id) spreadsheetId = business.google_sheet_id;
-    }
-    if (!spreadsheetId) return;
+export async function appendRow(sheetName: string, values: any[], businessId?: string, maxRetries = 3) {
+  let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    if (business && business.google_sheet_id) spreadsheetId = business.google_sheet_id;
+  }
+  if (!spreadsheetId) return;
 
-    const sheets = await getGoogleSheetsClient();
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${sheetName}!A1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [values]
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const sheets = await getGoogleSheetsClient();
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${sheetName}!A1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [values]
+        }
+      });
+      return; // Success
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(`[CRITICAL] Failed to append row to ${sheetName} after ${maxRetries} attempts:`, error);
+        // We log the error but we don't throw to avoid crashing the session logic.
+      } else {
+        console.warn(`[WARN] Google Sheets API failed, retrying (${attempt}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // Exponential-ish backoff
       }
-    });
-  } catch (error) {
-    console.error(`Failed to append row to ${sheetName}:`, error);
+    }
   }
 }
 
@@ -76,36 +85,25 @@ export async function logSessionStartToSheet(sessionData: any, businessId?: stri
 }
 
 export async function logSessionEndToSheet(sessionData: any, businessId?: string) {
-  // Calculate total elapsed time
-  let elapsedMinutes = 0;
-  if (sessionData.start_time && sessionData.end_time) {
-     elapsedMinutes = Math.floor((new Date(sessionData.end_time).getTime() - new Date(sessionData.start_time).getTime()) / 60000);
-  }
-  const totalElapsed = elapsedMinutes > 0 ? `${Math.floor(elapsedMinutes/60)}h ${elapsedMinutes%60}m` : '0m';
+  const durationStr = sessionData.duration || '0m';
   
-  // Calculate total paused time
-  const pausedMinutes = Math.floor((sessionData.paused_duration_seconds || 0) / 60);
-  const totalPaused = pausedMinutes > 0 ? `${pausedMinutes}m` : '0m';
+  // Format timestamps to readable IST for sheets
+  const startReadable = formatTimeReadable(sessionData.start_time);
+  const endReadable = formatTimeReadable(sessionData.end_time || new Date().toISOString());
 
+  // Session ID Date Customer Name Table No Game Type Start Time End Time Duration Applied Pricing Amount Status only this i want
   await appendRow('Completed Sessions', [
     sessionData.id || '',
-    sessionData.business_id || '',
+    sessionData.date || getCurrentISTDateStr(),
     sessionData.customer_name || '',
     sessionData.table_id || '',
-    sessionData.start_time || '',
-    sessionData.end_time || '',
-    sessionData.duration || '',
-    sessionData.cost || 0, // Revenue
-    sessionData.discounts || 0,
-    sessionData.cost || 0, // Final Amount
-    'COMPLETED',
-    // --- Extra Data Columns ---
-    sessionData.date || new Date().toISOString().split('T')[0], // Date
-    sessionData.game_type || '', // Game Type
-    sessionData.num_players || 1, // Number of players
-    totalElapsed, // Total Elapsed Time
-    totalPaused, // Total Paused Time
-    sessionData.applied_pricing || '' // Applicable Pricing/Rate
+    sessionData.game_type || '',
+    startReadable,
+    endReadable,
+    durationStr,
+    sessionData.applied_pricing || 'Fixed Rate',
+    sessionData.cost || 0,
+    'COMPLETED'
   ], businessId);
   
   await logActivityToSheet('END_SESSION', {

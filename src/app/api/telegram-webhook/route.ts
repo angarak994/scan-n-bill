@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
-import { calculateBilling, getCurrentRate, formatTimeReadable } from '@/lib/billing';
+import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
 import { handleSessionIntervention } from '@/lib/services/interventionService';
+import { startSession } from '@/lib/sessionManager';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -128,26 +129,11 @@ export async function POST(request: Request) {
           const playerName = text;
           
           // Start the session!
-          const now = new Date();
-          const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-          
-          const sessionData = {
-            business_id: business.id,
-            date: localDateStr,
-            customer_name: playerName,
-            table_id: tableId,
-            game_type: gameType,
-            num_players: numPlayers,
-            start_time: now.toISOString(),
-            status: 'ACTIVE',
-            last_activity_at: now.toISOString()
-          };
-
-          const { error } = await supabase.from('sessions').insert([sessionData]);
-          if (error) {
+          try {
+            const session = await startSession(tableId, gameType as any, playerName, business.id, numPlayers);
+            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`);
+          } catch (error: any) {
             await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`);
-          } else {
-            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`);
           }
           return NextResponse.json({ ok: true });
         }
@@ -209,8 +195,7 @@ export async function POST(request: Request) {
         await sendTelegramMessage(chatId, `🛑 <b>Select Table to Stop</b>`, { inline_keyboard: buttons });
       }
       else if (text === '💰 Today\'s Revenue') {
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const dateStr = getCurrentISTDateStr();
         
         const { data: completedSessions } = await supabase
           .from('sessions')
@@ -237,8 +222,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
       else if (text === '📅 Today\'s Bookings') {
-        const today = new Date();
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const dateStr = getCurrentISTDateStr();
         
         const { data: bookings } = await supabase
           .from('bookings')

@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { sessionRepository, Session } from './repositories/sessionRepository';
 import { GameType } from './pricing';
-import { calculateBilling } from './billing';
+import { calculateBilling, getCurrentISTDateStr } from './billing';
 import { businessManager } from './businessManager';
 import { supabase } from './supabaseClient';
 import { resolveRate } from './pricing';
@@ -43,7 +43,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
     }
   }
 
-  const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const dateStr = getCurrentISTDateStr(); // IST Date
   const timeStr = now.toISOString(); // Full ISO timestamp
   
   const session: Session = {

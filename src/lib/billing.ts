@@ -11,6 +11,12 @@ export function parseDateString(dateStr: string): number {
   return new Date(cleanStr).getTime();
 }
 
+export function getCurrentISTDateStr(): string {
+  const now = new Date();
+  const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  return istDate.toISOString().split('T')[0];
+}
+
 export function formatTimeReadable(timeStr?: string, includeToday: boolean = false, bookingDate?: string): string {
   if (!timeStr) return '-';
   try {
@@ -37,8 +43,8 @@ export function formatTimeReadable(timeStr?: string, includeToday: boolean = fal
       }
     }
     if (includeToday) {
-      const todayStr = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('T')[0];
-      const isToday = !bookingDate || bookingDate === todayStr || bookingDate === new Date().toISOString().split('T')[0] || bookingDate.toLowerCase().includes('today');
+      const todayStr = getCurrentISTDateStr();
+      const isToday = !bookingDate || bookingDate === todayStr || bookingDate.toLowerCase().includes('today');
       if (isToday) {
         return `Today • ${clean}`;
       }
