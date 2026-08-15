@@ -111,6 +111,14 @@ function DashboardContent() {
   const [promoDurationHours, setPromoDurationHours] = useState('2');
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
 
+  // Telegram & Reminder State
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [reminderInterval, setReminderInterval] = useState('60');
+  const [isUpdatingTelegram, setIsUpdatingTelegram] = useState(false);
+  const [overdueSession, setOverdueSession] = useState<any>(null);
+  const [dismissedReminders, setDismissedReminders] = useState<string[]>([]);
+
+
   // Change Password State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -161,7 +169,6 @@ function DashboardContent() {
   const [bookingDuration, setBookingDuration] = useState('60');
   const [bookingGame, setBookingGame] = useState('pool');
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
-  const [dismissedReminders, setDismissedReminders] = useState<Record<string, boolean>>({});
 
   // PS5 & Game Category Configuration State
   const [newStationId, setNewStationId] = useState('');
@@ -204,6 +211,38 @@ function DashboardContent() {
     return () => clearInterval(interval);
   }, [currentDay, isAuthorized]);
 
+  // Periodic Overdue Session Check
+  useEffect(() => {
+    if (!data || !data.activeSessions || !isAuthorized) return;
+    
+    const checkOverdue = () => {
+      const intervalMins = data.pricingRules?.globalSettings?.smart_reminder_interval_minutes || 60;
+      const now = new Date().getTime();
+      
+      const found = data.activeSessions.find((session: any) => {
+        if (session.paused_at) return false;
+        if (dismissedReminders.includes(session.id)) return false;
+        
+        const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+        const lastCheckedStr = session.last_checked_at || session.last_activity_at || startFull;
+        const lastCheckedAt = new Date(lastCheckedStr).getTime();
+        const mins = (now - lastCheckedAt) / 60000;
+        
+        return mins >= intervalMins;
+      });
+      
+      if (found && (!overdueSession || overdueSession.id !== found.id)) {
+        setOverdueSession(found);
+      } else if (!found && overdueSession) {
+        setOverdueSession(null);
+      }
+    };
+    
+    checkOverdue();
+    const interval = setInterval(checkOverdue, 15000);
+    return () => clearInterval(interval);
+  }, [data, isAuthorized, dismissedReminders, overdueSession]);
+
   const fetchData = async (pinToUse?: string, isBackground = false) => {
     try {
       if (!isBackground) setLoading(true);
@@ -222,6 +261,10 @@ function DashboardContent() {
         const json = await res.json();
         setData(json);
         if (json.businessId) setBusinessId(json.businessId);
+        if (json.pricingRules?.globalSettings) {
+          setTelegramChatId(json.pricingRules.globalSettings.telegram_chat_id || '');
+          setReminderInterval(String(json.pricingRules.globalSettings.smart_reminder_interval_minutes || 60));
+        }
         setIsAuthorized(true);
       }
     } catch (e) {
@@ -302,6 +345,9 @@ function DashboardContent() {
         body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId })
       });
       if (res.ok) {
+        if (action === 'confirm_playing') {
+          setOverdueSession(null);
+        }
         fetchData(undefined, true);
         if (action === 'transfer') toast.success('✓ Table transferred.');
       } else {
@@ -457,7 +503,7 @@ function DashboardContent() {
 
     const dueBookings = data.bookings.filter((b: any) => {
       if (b.status !== 'confirmed' || b.booking_date !== todayStr) return false;
-      if (dismissedReminders[b.id]) return false;
+      if (dismissedReminders.includes(b.id)) return false;
       if (!b.start_time) return false;
       const parts = b.start_time.split(':');
       const startMinutes = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
@@ -498,7 +544,7 @@ function DashboardContent() {
               </div>
               <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
                 <button
-                  onClick={() => setDismissedReminders(prev => ({ ...prev, [booking.id]: true }))}
+                  onClick={() => setDismissedReminders(prev => [...prev, booking.id])}
                   className="px-4 py-2.5 rounded-lg border border-border-theme text-text-secondary hover:text-text-primary text-xs sm:text-sm font-bold transition-colors min-h-[44px]"
                 >
                   Dismiss
@@ -777,6 +823,40 @@ function DashboardContent() {
       setPasswordError('Network error.');
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleUpdateTelegramSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdatingTelegram(true);
+    try {
+      const updatedPricingRules = {
+        ...data?.pricingRules,
+        globalSettings: {
+          ...data?.pricingRules?.globalSettings,
+          telegram_chat_id: telegramChatId,
+          smart_reminder_interval_minutes: Number(reminderInterval)
+        }
+      };
+
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+      if (res.ok) {
+        toast.success('Telegram settings updated!');
+        fetchData();
+      } else {
+        toast.error('Failed to update Telegram settings.');
+      }
+    } catch (err) {
+      toast.error('Network error.');
+    } finally {
+      setIsUpdatingTelegram(false);
     }
   };
 
@@ -1970,11 +2050,99 @@ function DashboardContent() {
           </button>
         </form>
       </div>
+
+      {/* Smart Reminders & Telegram UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          <span>🤖</span> Telegram & Smart Reminders
+        </h2>
+        <form onSubmit={handleUpdateTelegramSettings} className="max-w-md flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Telegram Chat ID</label>
+            <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" placeholder="e.g. 123456789" />
+            <p className="text-[10px] text-text-secondary mt-1">Send /start to the Telegram bot to get your Chat ID.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
+            <input type="number" min="1" value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" />
+            <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
+          </div>
+          <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+            {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
+      {/* Overdue Session Modal */}
+      {overdueSession && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-bg-card border border-warning/50 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="bg-warning/10 border-b border-warning/20 p-5">
+              <h3 className="text-xl font-bold flex items-center gap-3 text-warning">
+                <span className="text-2xl animate-bounce">⚠️</span> Confirmation Required
+              </h3>
+              <p className="text-sm text-text-secondary mt-1">This session has been running for a long time.</p>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                  <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Player</span>
+                  <span className="text-base font-bold">{overdueSession.customer_name}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                  <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Table</span>
+                  <span className="text-base font-bold text-accent font-mono">{overdueSession.table_id}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                  <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Game Type</span>
+                  <span className="text-base font-bold capitalize">{overdueSession.game_type}</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                  <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Started At</span>
+                  <span className="text-base font-bold font-mono">
+                    {formatTimeReadable(overdueSession.start_time, true, overdueSession.date)}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-8 flex flex-col gap-3">
+                <button 
+                  onClick={() => handleIntervention('confirm_playing', overdueSession.id)}
+                  className="w-full py-3.5 bg-success text-black font-extrabold text-sm uppercase rounded-xl hover:bg-success/90 transition-colors shadow-lg shadow-success/20"
+                >
+                  Yes, Still Playing
+                </button>
+                <button 
+                  onClick={() => {
+                    const startFull = overdueSession.start_time.includes('T') ? overdueSession.start_time : `${overdueSession.date}, ${overdueSession.start_time}`;
+                    const res = calculateBilling(startFull, new Date().toISOString(), overdueSession.game_type, data?.pricingRules, overdueSession.num_players || 1, undefined, overdueSession.paused_duration_seconds, overdueSession.locked_rate, overdueSession.locked_rate_name);
+                    
+                    if (confirm(`End session for ${overdueSession.customer_name}? Current bill: ${formatINR(res.cost)}`)) {
+                      handleIntervention('force_end', overdueSession.id, res.cost);
+                      setOverdueSession(null);
+                    }
+                  }}
+                  className="w-full py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
+                >
+                  End Session Now
+                </button>
+                <button 
+                  onClick={() => {
+                    setDismissedReminders(prev => [...prev, overdueSession.id]);
+                    setOverdueSession(null);
+                  }}
+                  className="w-full py-3 text-text-secondary font-bold text-sm hover:text-text-primary transition-colors"
+                >
+                  Ignore for now
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Sidebar (Desktop) */}
       <aside className="w-64 hidden lg:flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative">

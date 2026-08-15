@@ -204,6 +204,26 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
     liveSlab = res.slabs_applied;
   } catch (e) {}
 
+  const reminderIntervalMinutes = pricingRules?.globalSettings?.smart_reminder_interval_minutes || 60;
+  // If last_checked_at is available use it, else fallback to last_activity_at or startFull
+  const lastCheckedStr = session.last_checked_at || session.last_activity_at || startFull;
+  const lastCheckedAt = new Date(lastCheckedStr).getTime();
+  const minutesSinceLastCheck = (now.getTime() - lastCheckedAt) / 60000;
+  
+  const isOverdue = minutesSinceLastCheck >= reminderIntervalMinutes;
+  const isCriticallyOverdue = minutesSinceLastCheck >= (reminderIntervalMinutes + 15);
+
+  let statusUI = (
+    <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Active</span>
+  );
+  if (session.paused_at) {
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Paused</span>;
+  } else if (isCriticallyOverdue) {
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-error/50 text-error bg-error/10 uppercase shadow-sm animate-pulse">Confirmation Overdue</span>;
+  } else if (isOverdue) {
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Needs Confirmation</span>;
+  }
+
   return (
     <tr className={`border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group`}>
       <td className="p-4 md:p-5">
@@ -222,11 +242,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
         </p>
       </td>
       <td className="p-4 md:p-5">
-         {session.paused_at ? (
-           <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Paused</span>
-         ) : (
-           <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Active</span>
-         )}
+         {statusUI}
       </td>
       <td className="p-4 md:p-5">
         <div className="flex items-center gap-2">
