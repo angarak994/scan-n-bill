@@ -68,8 +68,10 @@ export async function POST(request: Request) {
           
           const buttons = [
             [
-              { text: '✅ Still Playing', callback_data: `confirm_${session.id}` },
-              { text: '🛑 End Session', callback_data: `end_${session.id}` }
+              { text: `✅ ${session.customer_name} is Still Playing`, callback_data: `confirm_${session.id}` }
+            ],
+            [
+              { text: `🛑 End ${session.customer_name}'s Session — ${session.table_id}`, callback_data: `end_${session.id}` }
             ]
           ];
           

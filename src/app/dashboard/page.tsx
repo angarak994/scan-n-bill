@@ -177,11 +177,25 @@ function DashboardContent() {
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [selectedGameRule, setSelectedGameRule] = useState('ps5');
   const reportDateRangeRef = useRef(reportDateRange);
+  const telegramLoadedRef = useRef(false);
 
   useEffect(() => {
     reportDateRangeRef.current = reportDateRange;
     if (isAuthorized) fetchData(undefined, true);
   }, [reportDateRange, isAuthorized]);
+
+  // Strictly initialize Telegram form state ONLY once when data is first loaded
+  useEffect(() => {
+    if (data && !telegramLoadedRef.current) {
+      telegramLoadedRef.current = true;
+      if (data.pricingRules?.globalSettings) {
+        setTelegramChatId(data.pricingRules.globalSettings.telegram_chat_id || '');
+        if (data.pricingRules.globalSettings.smart_reminder_interval_minutes) {
+          setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes));
+        }
+      }
+    }
+  }, [data]);
 
   // Initial load check
   useEffect(() => {
@@ -261,10 +275,6 @@ function DashboardContent() {
         const json = await res.json();
         setData(json);
         if (json.businessId) setBusinessId(json.businessId);
-        if (json.pricingRules?.globalSettings) {
-          setTelegramChatId(json.pricingRules.globalSettings.telegram_chat_id || '');
-          setReminderInterval(String(json.pricingRules.globalSettings.smart_reminder_interval_minutes || 60));
-        }
         setIsAuthorized(true);
       }
     } catch (e) {

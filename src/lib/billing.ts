@@ -119,7 +119,7 @@ export function calculateCost(
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string
-): { cost: number, baseCost: number, discountAmount: number, slabsApplied: string } {
+): { cost: number, baseCost: number, discountAmount: number, slabsApplied: string, breakdown?: { startMs: number; endMs: number; rate: number; cost: number; slabName: string }[] } {
   const elapsedMs = Math.max(0, endMs - startMs);
   const pausedMs = Math.max(0, (pausedDurationSecs || 0) * 1000);
   const billableMs = Math.max(0, elapsedMs - pausedMs);
@@ -148,6 +148,7 @@ export function calculateCost(
 
   let unpausedTotalCost = 0;
   const appliedSlabs = new Set<string>();
+  const breakdown: { startMs: number; endMs: number; rate: number; cost: number; slabName: string }[] = [];
 
   // Evaluate rates across the exact full elapsed stay [startMs, endMs].
   // This accurately captures dynamic rate transitions during the customer's real visits.
@@ -168,7 +169,16 @@ export function calculateCost(
       }
       appliedSlabs.add(slabName);
       
-      unpausedTotalCost += chunkHours * rate;
+      const chunkCost = chunkHours * rate;
+      unpausedTotalCost += chunkCost;
+      
+      if (breakdown.length > 0 && breakdown[breakdown.length - 1].slabName === slabName && breakdown[breakdown.length - 1].rate === rate) {
+        breakdown[breakdown.length - 1].endMs = nextMs;
+        breakdown[breakdown.length - 1].cost += chunkCost;
+      } else {
+        breakdown.push({ startMs: currentMs, endMs: nextMs, rate, cost: chunkCost, slabName });
+      }
+      
       currentMs = nextMs;
     }
   } else {
@@ -211,7 +221,7 @@ export function calculateCost(
     discountAmount = baseCost - finalCost;
   }
 
-  return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None' };
+  return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None', breakdown };
 }
 
 /**
@@ -238,7 +248,7 @@ export function calculateBilling(
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, baseCost, discountAmount, slabsApplied } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
+  const { cost, baseCost, discountAmount, slabsApplied, breakdown } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
 
   const totalSeconds = Math.max(0, (endMs - startMs) / 1000);
   const pausedSeconds = Math.max(0, pausedDurationSecs || 0);
@@ -251,5 +261,5 @@ export function calculateBilling(
   if (hours > 0) duration += `${hours} hr `;
   duration += `${mins} min`;
 
-  return { duration: duration.trim() || '0 min', cost, baseCost, discountAmount, slabs_applied: slabsApplied };
+  return { duration: duration.trim() || '0 min', cost, baseCost, discountAmount, slabs_applied: slabsApplied, breakdown };
 }
