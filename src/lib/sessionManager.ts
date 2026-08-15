@@ -241,7 +241,11 @@ export async function endSession(table_id: string, businessId?: string) {
     cost: totalCost, 
     discounts: discount ? discount.percent : 0, 
     paused_duration_seconds: totalPausedSecs,
-    end_time 
+    end_time,
+    date: session.date,
+    game_type: session.game_type,
+    num_players: session.num_players || 1,
+    applied_pricing: slabs_applied
   };
 }
 

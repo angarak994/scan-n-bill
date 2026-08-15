@@ -24,7 +24,12 @@ export async function POST(request: Request) {
          end_time: result.end_time || new Date().toISOString(),
          duration: result.duration,
          cost: result.cost,
-         discounts: result.discounts || 0
+         discounts: result.discounts || 0,
+         date: result.date,
+         game_type: result.game_type,
+         num_players: result.num_players,
+         paused_duration_seconds: result.paused_duration_seconds,
+         applied_pricing: result.applied_pricing
       });
     } catch (sheetError) {
       console.error('Google Sheets Sync Error:', sheetError);

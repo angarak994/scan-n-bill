@@ -46,6 +46,34 @@ async function getBusinessByChatId(chatId: string | number) {
   return businesses.find(b => String(b.pricing_rules?.globalSettings?.telegram_chat_id || '').trim() === String(chatId).trim()) || null;
 }
 
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const host = request.headers.get('x-forwarded-host') || url.host;
+    const protocol = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
+    const webhookUrl = `${protocol}://${host}/api/telegram-webhook`;
+
+    if (!TELEGRAM_BOT_TOKEN) {
+      return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
+    }
+
+    const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: webhookUrl,
+        drop_pending_updates: true
+      })
+    });
+    
+    const data = await res.json();
+    return NextResponse.json({ success: true, webhookUrl, telegramResponse: data });
+  } catch (error: any) {
+    console.error('Failed to set webhook:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
     return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
@@ -500,6 +528,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram Webhook Error:', error);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    // Always return 200 OK to Telegram to prevent it from retrying and suspending the webhook
+    return NextResponse.json({ ok: true, error_logged: true });
   }
 }

@@ -76,19 +76,36 @@ export async function logSessionStartToSheet(sessionData: any, businessId?: stri
 }
 
 export async function logSessionEndToSheet(sessionData: any, businessId?: string) {
-  // sessionData: { id, business_id, customer_name, table_id, start_time, end_time, duration, cost, final_amount, status }
+  // Calculate total elapsed time
+  let elapsedMinutes = 0;
+  if (sessionData.start_time && sessionData.end_time) {
+     elapsedMinutes = Math.floor((new Date(sessionData.end_time).getTime() - new Date(sessionData.start_time).getTime()) / 60000);
+  }
+  const totalElapsed = elapsedMinutes > 0 ? `${Math.floor(elapsedMinutes/60)}h ${elapsedMinutes%60}m` : '0m';
+  
+  // Calculate total paused time
+  const pausedMinutes = Math.floor((sessionData.paused_duration_seconds || 0) / 60);
+  const totalPaused = pausedMinutes > 0 ? `${pausedMinutes}m` : '0m';
+
   await appendRow('Completed Sessions', [
-    sessionData.id,
-    sessionData.business_id,
-    sessionData.customer_name,
-    sessionData.table_id,
-    sessionData.start_time,
-    sessionData.end_time,
-    sessionData.duration,
-    sessionData.cost, // Revenue
+    sessionData.id || '',
+    sessionData.business_id || '',
+    sessionData.customer_name || '',
+    sessionData.table_id || '',
+    sessionData.start_time || '',
+    sessionData.end_time || '',
+    sessionData.duration || '',
+    sessionData.cost || 0, // Revenue
     sessionData.discounts || 0,
-    sessionData.cost, // Final Amount
-    'COMPLETED'
+    sessionData.cost || 0, // Final Amount
+    'COMPLETED',
+    // --- Extra Data Columns ---
+    sessionData.date || new Date().toISOString().split('T')[0], // Date
+    sessionData.game_type || '', // Game Type
+    sessionData.num_players || 1, // Number of players
+    totalElapsed, // Total Elapsed Time
+    totalPaused, // Total Paused Time
+    sessionData.applied_pricing || '' // Applicable Pricing/Rate
   ], businessId);
   
   await logActivityToSheet('END_SESSION', {
