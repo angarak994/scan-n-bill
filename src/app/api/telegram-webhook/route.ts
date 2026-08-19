@@ -200,9 +200,9 @@ export async function POST(request: Request) {
         }
         
         for (const session of activeSessions) {
-          const isPaused = !!session.paused_at;
-          const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-          const endFull = isPaused ? session.paused_at : new Date().toISOString();
+          const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
+          const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+          const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString(); // Wait, let's write it cleaner below
           
           let billText = '₹0';
           let durationText = '0m';
@@ -443,14 +443,14 @@ export async function POST(request: Request) {
           return NextResponse.json({ ok: true });
         }
         
-        const isPaused = !!session.paused_at;
-        const startFull = ((session.start_time || '').includes('T') ? session.start_time : `${session.date}, ${session.start_time}`) as string;
-        const endFull = (isPaused ? session.paused_at : new Date().toISOString()) as string;
+        const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
+        const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+        const endFull = isPaused && typeof session.paused_at === 'string' ? session.paused_at : new Date().toISOString();
         
         let billText = '₹0';
         let billableDuration = '0m';
         try {
-          const res = calculateBilling(startFull as string, endFull as string, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+          const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
           billText = `₹${Math.round(res.cost)}`;
           billableDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
         } catch(e){}
@@ -523,16 +523,16 @@ export async function POST(request: Request) {
             } else if (action === 'force_end') {
               const updatedSession = await sessionRepository.findById(sessionId, business.id);
               if (updatedSession) {
-                const startFull = ((updatedSession.start_time || '').includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`) as string;
-                const endFull = (updatedSession.end_time || new Date().toISOString()) as string;
-                const formattedStart = formatTimeReadable(startFull as string);
-                const formattedEnd = formatTimeReadable(endFull as string);
+                const startFull = typeof updatedSession.start_time === 'string' && updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
+                const endFull = typeof updatedSession.end_time === 'string' && updatedSession.end_time.trim() !== '' ? updatedSession.end_time : new Date().toISOString();
+                const formattedStart = formatTimeReadable(startFull);
+                const formattedEnd = formatTimeReadable(endFull);
                 
                 let finalCost = 0;
                 let breakdownStr = '';
                 let rateText = '₹0/hour';
                 try {
-                  const res = calculateBilling(startFull as string, endFull as string, updatedSession.game_type, business.pricing_rules, updatedSession.num_players || 1, undefined, updatedSession.paused_duration_seconds, updatedSession.locked_rate, updatedSession.locked_rate_name);
+                  const res = calculateBilling(startFull, endFull, updatedSession.game_type, business.pricing_rules, updatedSession.num_players || 1, undefined, updatedSession.paused_duration_seconds, updatedSession.locked_rate, updatedSession.locked_rate_name);
                   finalCost = Math.round(res.cost);
                   
                   if ((res as any).breakdown && (res as any).breakdown.length > 1) {
@@ -550,7 +550,7 @@ export async function POST(request: Request) {
                 
                 const billText = `₹${finalCost}`;
                 
-                const totalMs = Math.max(0, new Date(endFull as string).getTime() - new Date(startFull as string).getTime());
+                const totalMs = Math.max(0, new Date(endFull).getTime() - new Date(startFull).getTime());
                 const totalDurationMins = Math.floor(totalMs / 60000);
                 const totalText = totalDurationMins > 0 ? `${Math.floor(totalDurationMins/60)}h ${totalDurationMins%60}m` : '0m';
                 
@@ -587,9 +587,9 @@ export async function POST(request: Request) {
                 let billText = '₹0';
                 let durationText = '0m';
                 try {
-                  const startFull = updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
-                  const isPaused = !!updatedSession.paused_at;
-                  const endFull = isPaused ? updatedSession.paused_at : new Date().toISOString();
+                  const isPaused = typeof updatedSession.paused_at === 'string' && updatedSession.paused_at.trim() !== '';
+                  const startFull = typeof updatedSession.start_time === 'string' && updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
+                  const endFull = typeof updatedSession.paused_at === 'string' && updatedSession.paused_at.trim() !== '' ? updatedSession.paused_at : new Date().toISOString();
                   const res = calculateBilling(startFull, endFull, updatedSession.game_type, business.pricing_rules, updatedSession.num_players || 1, undefined, updatedSession.paused_duration_seconds, updatedSession.locked_rate, updatedSession.locked_rate_name);
                   billText = `₹${Math.round(res.cost)}`;
                   durationText = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
