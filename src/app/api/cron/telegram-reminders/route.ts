@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       const allChatIds: string[] = [];
       if (primaryChatId) allChatIds.push(String(primaryChatId));
       secondaryOwners.forEach((o: any) => {
-        if (o.chatId && !allChatIds.includes(String(o.chatId))) allChatIds.push(String(o.chatId));
+        if (o.status !== 'revoked' && o.chatId && !allChatIds.includes(String(o.chatId))) allChatIds.push(String(o.chatId));
       });
 
       const intervalMins = gs?.smart_reminder_interval_minutes || 60;

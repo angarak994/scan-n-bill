@@ -101,23 +101,27 @@ const MAIN_MENU_KEYBOARD = {
   resize_keyboard: true,
 };
 
-async function getBusinessByChatId(chatId: string | number) {
+async function getBusinessContext(chatId: string | number) {
   const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
   if (!businesses) return null;
   
   const searchId = String(chatId).trim();
-  return businesses.find(b => {
+  for (const b of businesses) {
     const gs = b.pricing_rules?.globalSettings;
-    if (!gs) return false;
+    if (!gs) continue;
     
-    if (String(gs.telegram_chat_id || '').trim() === searchId) return true;
-    
-    if (Array.isArray(gs.authorized_telegram_owners)) {
-      return gs.authorized_telegram_owners.some((owner: any) => String(owner.chatId).trim() === searchId);
+    if (String(gs.telegram_chat_id || '').trim() === searchId) {
+       return { business: b, isRevoked: false };
     }
     
-    return false;
-  }) || null;
+    if (Array.isArray(gs.authorized_telegram_owners)) {
+      const owner = gs.authorized_telegram_owners.find((owner: any) => String(owner.chatId).trim() === searchId);
+      if (owner) {
+         return { business: b, isRevoked: owner.status === 'revoked' };
+      }
+    }
+  }
+  return null;
 }
 
 const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
@@ -172,7 +176,14 @@ export async function POST(request: Request) {
       const chatId = update.message.chat.id;
       const text = update.message.text.trim();
 
-      const business = await getBusinessByChatId(chatId);
+      const context = await getBusinessContext(chatId);
+
+      if (context?.isRevoked) {
+        await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(context.business.business_name)}</b> has been revoked by the primary owner.\n\nPlease contact the primary business owner if you believe this was a mistake.`);
+        return NextResponse.json({ ok: true });
+      }
+
+      const business = context?.business;
 
       if (text.startsWith('/start auth_')) {
         const token = text.replace('/start ', '').trim();
@@ -401,7 +412,8 @@ export async function POST(request: Request) {
             const newOwner = {
               chatId: String(chatId),
               name: update.callback_query.from?.first_name || update.callback_query.from?.username || String(chatId),
-              addedAt: new Date().toISOString()
+              addedAt: new Date().toISOString(),
+              status: 'granted'
             };
             
             let owners = Array.isArray(gs.authorized_telegram_owners) ? [...gs.authorized_telegram_owners] : [];
@@ -435,11 +447,19 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      const business = await getBusinessByChatId(chatId);
-      if (!business) {
+      const context = await getBusinessContext(chatId);
+      if (!context) {
         await sendTelegramMessage(chatId, '⚠️ Unauthorized.');
         return NextResponse.json({ ok: true });
       }
+
+      if (context.isRevoked) {
+        if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+        await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(context.business.business_name)}</b> has been revoked by the primary owner.\n\nPlease contact the primary business owner if you believe this was a mistake.`);
+        return NextResponse.json({ ok: true });
+      }
+
+      const business = context.business;
       
       const fallbackName = update.callback_query.from?.first_name || update.callback_query.from?.username || 'telegram_bot';
       const ownerName = getOwnerName(business, chatId, fallbackName);

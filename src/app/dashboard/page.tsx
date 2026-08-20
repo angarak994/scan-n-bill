@@ -872,8 +872,21 @@ function DashboardContent() {
     }
   };
 
-  const handleRemoveTelegramOwner = async (chatIdToRemove: string) => {
-    const updatedOwners = telegramOwners.filter(o => o.chatId !== chatIdToRemove);
+  const handleToggleTelegramOwnerAccess = async (chatIdToToggle: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'revoked' ? 'granted' : 'revoked';
+    
+    // Check if the user is attempting to revoke their own access (they shouldn't be here, but just in case)
+    if (String(chatIdToToggle) === String(telegramChatId)) return;
+
+    if (newStatus === 'revoked') {
+      const confirm = window.confirm(`⚠️ Revoke Telegram Access?\n\nThis user will no longer be able to use this business through the Telegram bot.`);
+      if (!confirm) return;
+    }
+
+    const updatedOwners = telegramOwners.map(o => 
+      o.chatId === chatIdToToggle ? { ...o, status: newStatus } : o
+    );
+    
     try {
       const updatedPricingRules = {
         ...data?.pricingRules,
@@ -2164,17 +2177,34 @@ function DashboardContent() {
                 </div>
               )}
               
-              {telegramOwners.map((owner, idx) => (
-                <div key={idx} className="flex justify-between items-center bg-bg-card p-3 rounded-lg border border-border-theme">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold">{owner.name}</span>
-                    <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
+              {telegramOwners.map((owner, idx) => {
+                const isRevoked = owner.status === 'revoked';
+                return (
+                  <div key={idx} className={`flex justify-between items-center bg-bg-card p-3 rounded-lg border ${isRevoked ? 'border-error/30 opacity-75' : 'border-border-theme'}`}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold flex items-center gap-2">
+                        {owner.name} 
+                        {isRevoked ? (
+                          <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
+                        ) : (
+                          <span className="text-[10px] bg-success/10 text-success px-1.5 py-0.5 rounded font-bold uppercase">🟢 Granted</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
+                      {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
+                    </div>
+                    {isRevoked ? (
+                      <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
+                        🔓 Grant Access
+                      </button>
+                    ) : (
+                      <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
+                        🔒 Revoke Access
+                      </button>
+                    )}
                   </div>
-                  <button onClick={() => handleRemoveTelegramOwner(owner.chatId)} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                    Revoke Access
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               
               {!telegramChatId && telegramOwners.length === 0 && (
                 <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
