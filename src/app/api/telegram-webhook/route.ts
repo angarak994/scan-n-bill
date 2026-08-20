@@ -181,29 +181,20 @@ export async function POST(request: Request) {
           const businessWithToken = businesses.find(b => b.pricing_rules?.globalSettings?.telegram_invite_token === token);
           
           if (businessWithToken) {
-             const gs = businessWithToken.pricing_rules.globalSettings;
-             const newOwner = {
-               chatId: String(chatId),
-               name: update.message.chat.first_name || update.message.chat.username || String(chatId),
-               addedAt: new Date().toISOString()
+             const businessName = escapeHtml(businessWithToken.business_name || "this business");
+             const confirmMarkup = {
+               inline_keyboard: [
+                 [
+                   { text: '✅ Confirm Access', callback_data: `confirm_auth_${token}` },
+                   { text: '❌ Cancel', callback_data: `cancel_auth` }
+                 ]
+               ]
              };
-             
-             let owners = Array.isArray(gs.authorized_telegram_owners) ? [...gs.authorized_telegram_owners] : [];
-             if (!owners.some(o => o.chatId === newOwner.chatId)) {
-               owners.push(newOwner);
-             }
-             
-             const updatedPricingRules = {
-               ...businessWithToken.pricing_rules,
-               globalSettings: {
-                 ...gs,
-                 authorized_telegram_owners: owners,
-                 telegram_invite_token: null
-               }
-             };
-             
-             await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', businessWithToken.id);
-             await sendTelegramMessage(chatId, `✅ <b>Owner Added</b>\n\n${escapeHtml(newOwner.name || "")} can now access this business.\n\n<b>QControl Dashboard</b>\n${escapeHtml(businessWithToken.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+             await sendTelegramMessage(
+               chatId,
+               `🔗 <b>Connect to ${businessName}?</b>\n\nYou will be able to manage sessions, bookings, billing, and other owner functions.`,
+               confirmMarkup
+             );
              return NextResponse.json({ ok: true });
           }
         }
@@ -399,6 +390,50 @@ export async function POST(request: Request) {
 
       // Immediately acknowledge the callback to remove the loading state in Telegram
       answerCallbackQuery(callbackQueryId).catch(console.error);
+
+      if (callbackData.startsWith('confirm_auth_')) {
+        const token = callbackData.replace('confirm_auth_', '');
+        const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
+        if (businesses) {
+          const businessWithToken = businesses.find(b => b.pricing_rules?.globalSettings?.telegram_invite_token === token);
+          if (businessWithToken) {
+            const gs = businessWithToken.pricing_rules.globalSettings;
+            const newOwner = {
+              chatId: String(chatId),
+              name: update.callback_query.from?.first_name || update.callback_query.from?.username || String(chatId),
+              addedAt: new Date().toISOString()
+            };
+            
+            let owners = Array.isArray(gs.authorized_telegram_owners) ? [...gs.authorized_telegram_owners] : [];
+            if (!owners.some(o => o.chatId === newOwner.chatId)) {
+              owners.push(newOwner);
+            }
+            
+            const updatedPricingRules = {
+              ...businessWithToken.pricing_rules,
+              globalSettings: {
+                ...gs,
+                authorized_telegram_owners: owners,
+                telegram_invite_token: null
+              }
+            };
+            
+            await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', businessWithToken.id);
+            if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+            await sendTelegramMessage(chatId, `✅ <b>Telegram Account Connected</b>\n\nYour Telegram account is now authorized for this business.\n\n<b>QControl Dashboard</b>\n${escapeHtml(businessWithToken.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+            return NextResponse.json({ ok: true });
+          }
+        }
+        if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+        await sendTelegramMessage(chatId, `❌ Invalid or expired invite link.`);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData === 'cancel_auth') {
+        if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+        await sendTelegramMessage(chatId, `❌ Link cancelled.`);
+        return NextResponse.json({ ok: true });
+      }
 
       const business = await getBusinessByChatId(chatId);
       if (!business) {
