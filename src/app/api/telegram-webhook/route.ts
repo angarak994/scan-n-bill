@@ -96,8 +96,32 @@ const MAIN_MENU_KEYBOARD = {
 async function getBusinessByChatId(chatId: string | number) {
   const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
   if (!businesses) return null;
-  return businesses.find(b => String(b.pricing_rules?.globalSettings?.telegram_chat_id || '').trim() === String(chatId).trim()) || null;
+  
+  const searchId = String(chatId).trim();
+  return businesses.find(b => {
+    const gs = b.pricing_rules?.globalSettings;
+    if (!gs) return false;
+    
+    if (String(gs.telegram_chat_id || '').trim() === searchId) return true;
+    
+    if (Array.isArray(gs.authorized_telegram_owners)) {
+      return gs.authorized_telegram_owners.some((owner: any) => String(owner.chatId).trim() === searchId);
+    }
+    
+    return false;
+  }) || null;
 }
+
+const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
+  const searchId = String(chatId).trim();
+  const gs = business?.pricing_rules?.globalSettings;
+  if (String(gs?.telegram_chat_id || '').trim() === searchId) return 'Primary_Owner';
+  if (Array.isArray(gs?.authorized_telegram_owners)) {
+    const owner = gs.authorized_telegram_owners.find((o: any) => String(o.chatId).trim() === searchId);
+    if (owner) return `Telegram_${owner.name.replace(/\s+/g, '_')}`;
+  }
+  return fallbackName;
+};
 
 export async function GET(request: Request) {
   try {
@@ -141,6 +165,44 @@ export async function POST(request: Request) {
       const text = update.message.text.trim();
 
       const business = await getBusinessByChatId(chatId);
+
+      if (text.startsWith('/start auth_')) {
+        const token = text.replace('/start ', '').trim();
+        const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
+        if (businesses) {
+          const businessWithToken = businesses.find(b => b.pricing_rules?.globalSettings?.telegram_invite_token === token);
+          
+          if (businessWithToken) {
+             const gs = businessWithToken.pricing_rules.globalSettings;
+             const newOwner = {
+               chatId: String(chatId),
+               name: update.message.chat.first_name || update.message.chat.username || String(chatId),
+               addedAt: new Date().toISOString()
+             };
+             
+             let owners = Array.isArray(gs.authorized_telegram_owners) ? [...gs.authorized_telegram_owners] : [];
+             if (!owners.some(o => o.chatId === newOwner.chatId)) {
+               owners.push(newOwner);
+             }
+             
+             const updatedPricingRules = {
+               ...businessWithToken.pricing_rules,
+               globalSettings: {
+                 ...gs,
+                 authorized_telegram_owners: owners,
+                 telegram_invite_token: null
+               }
+             };
+             
+             await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', businessWithToken.id);
+             await sendTelegramMessage(chatId, `✅ <b>Owner Added</b>\n\n${newOwner.name} can now access this business.\n\n<b>QControl Dashboard</b>\n${businessWithToken.business_name}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+             return NextResponse.json({ ok: true });
+          }
+        }
+        
+        await sendTelegramMessage(chatId, `❌ Invalid or expired invite link.`);
+        return NextResponse.json({ ok: true });
+      }
 
       if (text === '/start' || text === '/menu') {
         if (!business) {
@@ -335,6 +397,9 @@ export async function POST(request: Request) {
         await sendTelegramMessage(chatId, '⚠️ Unauthorized.');
         return NextResponse.json({ ok: true });
       }
+      
+      const fallbackName = update.callback_query.from?.first_name || update.callback_query.from?.username || 'telegram_bot';
+      const ownerName = getOwnerName(business, chatId, fallbackName);
 
       if (callbackData.startsWith('start_table_')) {
         const tableId = callbackData.replace('start_table_', '');
@@ -541,7 +606,7 @@ export async function POST(request: Request) {
               session_id: sessionId,
               business_id: business.id,
               amount_recovered: 0,
-              performed_by: 'telegram_bot'
+              performed_by: ownerName
             });
             
             answerCallbackQuery(callbackQueryId, `Success: ${actionPrefix}`).catch(console.error);

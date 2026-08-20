@@ -33,10 +33,19 @@ export async function POST(request: Request) {
     if (!businesses) return NextResponse.json({ success: true, message: 'No businesses found' });
 
     for (const business of businesses) {
-      const chatId = business.pricing_rules?.globalSettings?.telegram_chat_id;
-      const intervalMins = business.pricing_rules?.globalSettings?.smart_reminder_interval_minutes || 60;
+      const gs = business.pricing_rules?.globalSettings;
+      const primaryChatId = gs?.telegram_chat_id;
+      const secondaryOwners = gs?.authorized_telegram_owners || [];
       
-      if (!chatId) continue;
+      const allChatIds: string[] = [];
+      if (primaryChatId) allChatIds.push(String(primaryChatId));
+      secondaryOwners.forEach((o: any) => {
+        if (o.chatId && !allChatIds.includes(String(o.chatId))) allChatIds.push(String(o.chatId));
+      });
+
+      const intervalMins = gs?.smart_reminder_interval_minutes || 60;
+      
+      if (allChatIds.length === 0) continue;
 
       // 2. Fetch active sessions for this business
       const { data: sessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
@@ -75,7 +84,9 @@ export async function POST(request: Request) {
             ]
           ];
           
-          await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+          for (const cid of allChatIds) {
+            await sendTelegramMessage(cid, msg, { inline_keyboard: buttons });
+          }
 
           // Prevent spamming by updating last_activity_at so it doesn't alert again immediately
           // In a perfectly strict system we'd use a different column, but reusing this prevents repeat messages 

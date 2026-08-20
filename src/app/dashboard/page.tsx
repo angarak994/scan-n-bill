@@ -113,6 +113,9 @@ function DashboardContent() {
 
   // Telegram & Reminder State
   const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramOwners, setTelegramOwners] = useState<any[]>([]);
+  const [telegramInviteLink, setTelegramInviteLink] = useState('');
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [reminderInterval, setReminderInterval] = useState('60');
   const [isUpdatingTelegram, setIsUpdatingTelegram] = useState(false);
   const [overdueSession, setOverdueSession] = useState<any>(null);
@@ -184,12 +187,12 @@ function DashboardContent() {
     if (isAuthorized) fetchData(undefined, true);
   }, [reportDateRange, isAuthorized]);
 
-  // Strictly initialize Telegram form state ONLY once when data is first loaded
   useEffect(() => {
     if (data && !telegramLoadedRef.current) {
       telegramLoadedRef.current = true;
       if (data.pricingRules?.globalSettings) {
         setTelegramChatId(data.pricingRules.globalSettings.telegram_chat_id || '');
+        setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []);
         if (data.pricingRules.globalSettings.smart_reminder_interval_minutes) {
           setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes));
         }
@@ -833,6 +836,66 @@ function DashboardContent() {
       setPasswordError('Network error.');
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handleGenerateTelegramLink = async () => {
+    setIsGeneratingLink(true);
+    const token = 'auth_' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    try {
+      const updatedPricingRules = {
+        ...data?.pricingRules,
+        globalSettings: {
+          ...data?.pricingRules?.globalSettings,
+          telegram_invite_token: token
+        }
+      };
+
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+
+      if (res.ok) {
+        setTelegramInviteLink(`https://t.me/QControlBot?start=${token}`);
+        fetchData();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
+
+  const handleRemoveTelegramOwner = async (chatIdToRemove: string) => {
+    const updatedOwners = telegramOwners.filter(o => o.chatId !== chatIdToRemove);
+    try {
+      const updatedPricingRules = {
+        ...data?.pricingRules,
+        globalSettings: {
+          ...data?.pricingRules?.globalSettings,
+          authorized_telegram_owners: updatedOwners
+        }
+      };
+
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+
+      if (res.ok) {
+        setTelegramOwners(updatedOwners);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -2066,21 +2129,75 @@ function DashboardContent() {
         <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
           <span>🤖</span> Telegram & Smart Reminders
         </h2>
-        <form onSubmit={handleUpdateTelegramSettings} className="max-w-md flex flex-col gap-4">
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Telegram Chat ID</label>
-            <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" placeholder="e.g. 123456789" />
-            <p className="text-[10px] text-text-secondary mt-1">Send /start to the Telegram bot to get your Chat ID.</p>
+        
+        <div className="flex flex-col lg:flex-row gap-8">
+          <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Primary Chat ID</label>
+              <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" placeholder="e.g. 123456789" />
+              <p className="text-[10px] text-text-secondary mt-1">Send /start to the Telegram bot to get your Chat ID.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
+              <input type="number" min="1" value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" />
+              <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
+            </div>
+            <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+              {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
+            </button>
+          </form>
+
+          <div className="flex-1 max-w-md bg-bg-surface border border-border-theme rounded-xl p-5">
+            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+              👥 Manage Telegram Owners
+            </h3>
+            
+            <div className="space-y-3 mb-6">
+              {telegramChatId && (
+                <div className="flex justify-between items-center bg-bg-card p-3 rounded-lg border border-border-theme">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">Primary Owner</span>
+                    <span className="text-xs text-text-secondary font-mono">{telegramChatId}</span>
+                  </div>
+                  <span className="text-xs font-bold text-success bg-success/10 px-2 py-1 rounded">Active</span>
+                </div>
+              )}
+              
+              {telegramOwners.map((owner, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-bg-card p-3 rounded-lg border border-border-theme">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">{owner.name}</span>
+                    <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
+                  </div>
+                  <button onClick={() => handleRemoveTelegramOwner(owner.chatId)} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
+                    Revoke Access
+                  </button>
+                </div>
+              ))}
+              
+              {!telegramChatId && telegramOwners.length === 0 && (
+                <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
+              )}
+            </div>
+
+            <div className="border-t border-border-theme pt-4">
+              <button 
+                onClick={handleGenerateTelegramLink} 
+                disabled={isGeneratingLink}
+                className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30"
+              >
+                {isGeneratingLink ? 'Generating...' : '🔗 Generate Owner Link'}
+              </button>
+              
+              {telegramInviteLink && (
+                <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
+                  <p className="text-[10px] text-text-secondary mb-1">Share this link securely with the new owner:</p>
+                  <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
-            <input type="number" min="1" value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" />
-            <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
-          </div>
-          <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
-            {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );
