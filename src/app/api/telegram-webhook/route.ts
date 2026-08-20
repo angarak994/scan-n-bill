@@ -8,6 +8,13 @@ import { startSession } from '@/lib/sessionManager';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
+function escapeHtml(text: string) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
@@ -21,7 +28,9 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
         reply_markup: replyMarkup
       })
     });
-    return await res.json();
+    const data = await res.json();
+    if (!data.ok) console.error("Telegram API Error:", data);
+    return data;
   } catch (e) {
     console.error('Failed to send telegram message', e);
   }
@@ -90,7 +99,6 @@ const MAIN_MENU_KEYBOARD = {
     [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
   ],
   resize_keyboard: true,
-  is_persistent: true
 };
 
 async function getBusinessByChatId(chatId: string | number) {
@@ -195,7 +203,7 @@ export async function POST(request: Request) {
              };
              
              await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', businessWithToken.id);
-             await sendTelegramMessage(chatId, `✅ <b>Owner Added</b>\n\n${newOwner.name} can now access this business.\n\n<b>QControl Dashboard</b>\n${businessWithToken.business_name}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+             await sendTelegramMessage(chatId, `✅ <b>Owner Added</b>\n\n${escapeHtml(newOwner.name || "")} can now access this business.\n\n<b>QControl Dashboard</b>\n${escapeHtml(businessWithToken.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
              return NextResponse.json({ ok: true });
           }
         }
@@ -208,7 +216,7 @@ export async function POST(request: Request) {
         if (!business) {
           await sendTelegramMessage(chatId, `🎱 <b>QControl Bot</b>\n\nYour Telegram Chat ID is: <code>${chatId}</code>\n\nPlease enter this ID in your QControl Dashboard Settings (under <i>Telegram & Smart Reminders</i>) to authorize this device.`);
         } else {
-          await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${escapeHtml(business.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
         }
         return NextResponse.json({ ok: true });
       }
@@ -278,7 +286,7 @@ export async function POST(request: Request) {
           } catch(e){}
 
           const status = isPaused ? '⏸ Paused' : '▶️ Active';
-          const msg = `<b>${session.table_id}</b>\nPlayer: ${session.customer_name}\nGame: ${session.game_type}\nStatus: ${status}\nDuration: ${durationText}\nCurrent Bill: ${billText}`;
+          const msg = `<b>${session.table_id}</b>\nPlayer: ${escapeHtml(session.customer_name || "")}\nGame: ${session.game_type}\nStatus: ${status}\nDuration: ${durationText}\nCurrent Bill: ${billText}`;
           
           const buttons = [
             [
