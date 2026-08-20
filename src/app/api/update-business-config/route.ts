@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+
+async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
+  try {
+    if (!TELEGRAM_BOT_TOKEN) return;
+    const body: any = { chat_id: chatId, text: text, parse_mode: 'HTML' };
+    if (replyMarkup) body.reply_markup = replyMarkup;
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    console.error('Error sending telegram message:', e);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -26,6 +44,23 @@ export async function POST(request: Request) {
     if (error) {
       console.error('Error updating business config in Supabase:', error);
       throw error;
+    }
+    
+    // Proactively push the persistent keyboard if chat ID is configured
+    const chatId = pricing_rules?.globalSettings?.telegram_chat_id;
+    if (chatId) {
+      const { data: bData } = await supabase.from('businesses').select('business_name').eq('id', business_id).single();
+      if (bData) {
+        await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${bData.business_name}\n\n✅ Settings connected.\n\nPlease choose an action below:`, {
+          keyboard: [
+            [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
+            [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
+            [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
+          ],
+          resize_keyboard: true,
+          is_persistent: true
+        });
+      }
     }
 
     return NextResponse.json({ success: true, pricing_rules, tables });

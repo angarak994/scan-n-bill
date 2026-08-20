@@ -138,11 +138,12 @@ export async function POST(request: Request) {
         } else {
           await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, {
             keyboard: [
-              [{ text: '🎱 Start New Session' }, { text: '🛑 Stop Session' }],
-              [{ text: '📋 Active Tables' }, { text: '💰 Today\'s Revenue' }],
-              [{ text: '📅 Today\'s Bookings' }]
+              [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
+              [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
+              [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
             ],
-            resize_keyboard: true
+            resize_keyboard: true,
+            is_persistent: true
           });
         }
         return NextResponse.json({ ok: true });
@@ -182,7 +183,7 @@ export async function POST(request: Request) {
       }
 
       // Handle Main Menu Commands
-      if (text === '🎱 Start New Session') {
+      if (text === '▶️ Start Session') {
         const tables = business.tables || [];
         if (tables.length === 0) {
           await sendTelegramMessage(chatId, 'No tables configured for this business.');
@@ -192,7 +193,7 @@ export async function POST(request: Request) {
         const buttons = chunkArray(tableButtons, 3);
         await sendTelegramMessage(chatId, 'Select a table to start a new session:', { inline_keyboard: buttons });
       } 
-      else if (text === '📋 Active Tables') {
+      else if (text === '📋 Active Sessions') {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
           await sendTelegramMessage(chatId, 'No active sessions running right now.');
@@ -232,11 +233,37 @@ export async function POST(request: Request) {
           await sendTelegramMessage(chatId, 'No active sessions to stop.');
           return NextResponse.json({ ok: true });
         }
-        const sessionButtons = activeSessions.map(s => ({ text: s.table_id, callback_data: `stop_select_${s.id}` }));
-        const buttons = chunkArray(sessionButtons, 3);
-        await sendTelegramMessage(chatId, `🛑 <b>Select Table to Stop</b>`, { inline_keyboard: buttons });
+        const sessionButtons = activeSessions.map(s => {
+          let icon = '🎱';
+          if (s.game_type === 'ps5') icon = '🎮';
+          return { text: `${icon} ${s.table_id}`, callback_data: `stop_select_${s.id}` };
+        });
+        const buttons = chunkArray(sessionButtons, 2);
+        await sendTelegramMessage(chatId, `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`, { inline_keyboard: buttons });
       }
-      else if (text === '💰 Today\'s Revenue') {
+      
+      else if (text === '⏸ Paused Sessions') {
+        const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
+        if (!activeSessions || activeSessions.length === 0) {
+          await sendTelegramMessage(chatId, 'No active sessions right now.');
+          return NextResponse.json({ ok: true });
+        }
+        
+        const pausedSessions = activeSessions.filter(s => typeof s.paused_at === 'string' && s.paused_at.trim() !== '');
+        
+        if (pausedSessions.length === 0) {
+          await sendTelegramMessage(chatId, 'No paused sessions right now.');
+          return NextResponse.json({ ok: true });
+        }
+        
+        let msg = '⏸ <b>Paused Sessions</b>\n\n';
+        pausedSessions.forEach(session => {
+          const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+          msg += `<b>${session.table_id}</b>\nPlayer: ${session.customer_name}\nGame: ${session.game_type}\nStarted: ${formatTimeReadable(startFull)}\nPaused At: ${formatTimeReadable(session.paused_at)}\n\n`;
+        });
+        await sendTelegramMessage(chatId, msg);
+      }
+      else if (text === '💰 Today\'s Summary') {
         const dateStr = getCurrentISTDateStr();
         
         const { data: completedSessions } = await supabase
@@ -263,7 +290,7 @@ export async function POST(request: Request) {
         }
         return NextResponse.json({ ok: true });
       }
-      else if (text === '📅 Today\'s Bookings') {
+      else if (text === '📅 Book Table') {
         const dateStr = getCurrentISTDateStr();
         
         const { data: bookings } = await supabase
@@ -289,11 +316,12 @@ export async function POST(request: Request) {
         // Main Menu
         await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, {
           keyboard: [
-            [{ text: '🎱 Start New Session' }, { text: '🛑 Stop Session' }],
-            [{ text: '📋 Active Tables' }, { text: '💰 Today\'s Revenue' }],
-            [{ text: '📅 Today\'s Bookings' }]
+            [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
+            [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
+            [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
           ],
-          resize_keyboard: true
+          resize_keyboard: true,
+          is_persistent: true
         });
       }
     }
@@ -426,13 +454,17 @@ export async function POST(request: Request) {
           }
           return NextResponse.json({ ok: true });
         }
-        const sessionButtons = activeSessions.map(s => ({ text: s.table_id, callback_data: `stop_select_${s.id}` }));
-        const buttons = chunkArray(sessionButtons, 3);
+        const sessionButtons = activeSessions.map(s => {
+          let icon = '🎱';
+          if (s.game_type === 'ps5') icon = '🎮';
+          return { text: `${icon} ${s.table_id}`, callback_data: `stop_select_${s.id}` };
+        });
+        const buttons = chunkArray(sessionButtons, 2);
         
         if (messageId) {
-           await editTelegramMessageText(chatId, messageId, `🛑 <b>Select Table to Stop</b>`, { inline_keyboard: buttons });
+           await editTelegramMessageText(chatId, messageId, `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`, { inline_keyboard: buttons });
         } else {
-           await sendTelegramMessage(chatId, `🛑 <b>Select Table to Stop</b>`, { inline_keyboard: buttons });
+           await sendTelegramMessage(chatId, `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`, { inline_keyboard: buttons });
         }
       }
       else if (callbackData.startsWith('stop_select_')) {
@@ -461,16 +493,22 @@ export async function POST(request: Request) {
         const pausedText = pausedDurationMins > 0 ? `${pausedDurationMins}m` : '0m';
         const totalText = totalDurationMins > 0 ? `${Math.floor(totalDurationMins/60)}h ${totalDurationMins%60}m` : '0m';
         
-        const msg = `🎱 <b>Session Details</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Game:</b> ${session.game_type}\n<b>Player:</b> ${session.customer_name}\n<b>Started:</b> ${formatTimeReadable(startFull)}\n<b>Current Time:</b> ${formatTimeReadable(endFull)}\n<b>Total Duration:</b> ${totalText}\n<b>Paused Time:</b> ${pausedText}\n<b>Billable Time:</b> ${billableDuration}\n<b>Current Bill:</b> ${billText}`;
+        let msg = `🎱 <b>Session Details</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Player:</b> ${session.customer_name}\n<b>Game:</b> ${session.game_type}\n<b>Started:</b> ${formatTimeReadable(startFull)}\n<b>Current Time:</b> ${formatTimeReadable(endFull)}\n<b>Duration:</b> ${totalText}\n`;
+        if (pausedDurationMins > 0) msg += `<b>Paused Time:</b> ${pausedText}\n`;
+        msg += `<b>Billable Time:</b> ${billableDuration}\n<b>Current Bill:</b> ${billText}`;
         
         const buttons = [
           [
-            { text: `🛑 Stop Session`, callback_data: `end_${session.id}` },
+            { text: `🛑 Stop This Session`, callback_data: `end_${session.id}` },
             { text: `↩️ Back`, callback_data: `stop_menu_back` }
           ]
         ];
         
-        await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+        if (messageId) {
+          await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+        } else {
+          await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+        }
       }
       else if (callbackData.startsWith('pause_') || callbackData.startsWith('resume_') || callbackData.startsWith('end_') || callbackData.startsWith('confirm_')) {
         const actionMap: Record<string, string> = {
