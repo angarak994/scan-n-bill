@@ -861,7 +861,8 @@ function DashboardContent() {
       });
 
       if (res.ok) {
-        setTelegramInviteLink(`https://t.me/QControlBot?start=${token}`);
+        const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'Qcontr01_bot';
+        setTelegramInviteLink(`https://t.me/${botUsername}?start=${token}`);
         fetchData();
       }
     } catch (e) {
