@@ -2191,8 +2191,16 @@ function DashboardContent() {
               
               {telegramInviteLink && (
                 <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
-                  <p className="text-[10px] text-text-secondary mb-1">Share this link securely with the new owner:</p>
-                  <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
+                  <p className="text-[10px] text-text-secondary mb-2">Share this link securely with the new owner:</p>
+                  <div className="flex gap-2">
+                    <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(telegramInviteLink)}
+                      className="px-3 py-2 bg-accent/10 text-accent font-bold text-xs uppercase rounded hover:bg-accent/20 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
