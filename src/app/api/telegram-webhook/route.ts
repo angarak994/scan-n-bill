@@ -664,7 +664,7 @@ export async function POST(request: Request) {
 
           // Use the identical intervene logic as dashboard
           try {
-            await handleSessionIntervention({
+            const { dbUpdates } = await handleSessionIntervention({
               action,
               session_id: sessionId,
               business_id: business.id,
@@ -681,7 +681,7 @@ export async function POST(request: Request) {
                  await sendTelegramMessage(chatId, `✅ Marked ${session.customer_name} on ${session.table_id} as still playing.`, MAIN_MENU_KEYBOARD);
               }
             } else if (action === 'force_end') {
-              const updatedSession = await sessionRepository.findById(sessionId, business.id);
+              const updatedSession = { ...session, ...dbUpdates };
               if (updatedSession) {
                 const startFull = typeof updatedSession.start_time === 'string' && updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
                 const endFull = typeof updatedSession.end_time === 'string' && updatedSession.end_time.trim() !== '' ? updatedSession.end_time : new Date().toISOString();
@@ -742,7 +742,7 @@ export async function POST(request: Request) {
                 }
               }
             } else if (actionPrefix === 'resume' || actionPrefix === 'pause') {
-              const updatedSession = await sessionRepository.findById(sessionId, business.id);
+              const updatedSession = { ...session, ...dbUpdates };
               if (updatedSession) {
                 let billText = '₹0';
                 let durationText = '0m';

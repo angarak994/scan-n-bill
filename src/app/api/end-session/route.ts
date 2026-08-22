@@ -9,13 +9,13 @@ export async function POST(request: Request) {
     }
     const result = await endSession(table_id, business_id);
     
-    // Sync to Google Sheets
+    // Sync to Google Sheets asynchronously (fire-and-forget)
     try {
       const { logSessionEndToSheet } = require('@/lib/googleSheets');
       // endSession returns an object with duration, cost, end_time, etc.
       // But we need the full session data. endSession might not return table_id and customer_name.
       // Let's assume result contains what we need, if not we will fetch it.
-      await logSessionEndToSheet({
+      logSessionEndToSheet({
          id: result.session_id, // Usually endSession returns the session, or we might need to adjust endSession to return full object.
          business_id,
          customer_name: result.customer_name || 'Walk-In', // Fallbacks in case endSession returns partial data
@@ -30,9 +30,9 @@ export async function POST(request: Request) {
          num_players: result.num_players,
          paused_duration_seconds: result.paused_duration_seconds,
          applied_pricing: result.applied_pricing
-      });
-    } catch (sheetError) {
-      console.error('Google Sheets Sync Error:', sheetError);
+      }).catch((sheetError: any) => console.error('Google Sheets Sync Error (Async):', sheetError));
+    } catch (err) {
+      console.error('Failed to initiate Google Sheets sync:', err);
     }
 
     return NextResponse.json(result, { status: 200 });

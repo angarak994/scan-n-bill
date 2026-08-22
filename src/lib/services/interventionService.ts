@@ -122,35 +122,34 @@ export async function handleSessionIntervention(params: {
     performed_by
   }]);
 
-  try {
-    await logActivityToSheet(`${interventionType.toUpperCase()}_SESSION`, {
+  // Log intervention to Google Sheets asynchronously (fire-and-forget)
+  Promise.all([
+    logActivityToSheet(`${interventionType.toUpperCase()}_SESSION`, {
       user: performed_by === 'telegram_bot' ? 'Telegram Bot' : 'Club Owner',
       table: session.table_id,
       session: session_id,
       details: `Session ${interventionType}`
-    }, business_id);
+    }, business_id),
     
-    if (action === 'force_end') {
-      await logSessionEndToSheet({
-        id: session_id,
-        business_id,
-        customer_name: session.customer_name,
-        table_id: session.table_id,
-        start_time: session.start_time,
-        end_time: dbUpdates.end_time,
-        duration: dbUpdates.duration,
-        cost: dbUpdates.cost,
-        discounts: dbUpdates.discount_amount,
-        date: session.date,
-        game_type: session.game_type,
-        num_players: session.num_players,
-        paused_duration_seconds: dbUpdates.paused_duration_seconds,
-        applied_pricing: dbUpdates.applied_pricing
-      }, business_id);
-    }
-  } catch (e) {
-    console.error('Google Sheets Intervention Sync Error:', e);
-  }
+    action === 'force_end' 
+      ? logSessionEndToSheet({
+          id: session_id,
+          business_id,
+          customer_name: session.customer_name,
+          table_id: session.table_id,
+          start_time: session.start_time,
+          end_time: dbUpdates.end_time,
+          duration: dbUpdates.duration,
+          cost: dbUpdates.cost,
+          discounts: dbUpdates.discount_amount,
+          date: session.date,
+          game_type: session.game_type,
+          num_players: session.num_players,
+          paused_duration_seconds: dbUpdates.paused_duration_seconds,
+          applied_pricing: dbUpdates.applied_pricing
+        }, business_id)
+      : Promise.resolve()
+  ]).catch(e => console.error('Google Sheets Intervention Sync Error:', e));
 
   return { success: true, dbUpdates };
 }
