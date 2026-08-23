@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <style>
+    .ring { stroke: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .ring { stroke: #ffffff; }
+    }
+  </style>
+  <circle cx="240" cy="240" r="140" fill="none" class="ring" stroke-width="64" />
+  <circle cx="240" cy="240" r="48" fill="#10b981" />
+  <line x1="320" y1="320" x2="430" y2="430" stroke="#10b981" stroke-width="64" stroke-linecap="round" />
+</svg>
