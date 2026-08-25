@@ -118,21 +118,15 @@ async function getBusinessContext(chatId: string | number) {
     const gs = b.pricing_rules?.globalSettings;
     if (!gs) continue;
     
-    if (String(gs.telegram_chat_id || '').trim() === searchId) {
-       const mem = { business: b, isRevoked: false, isPrimary: true, isActiveContext: gs.primary_owner_active_context === true };
-       allActiveMemberships.push(mem);
-       if (mem.isActiveContext) activeMembership = mem;
-       continue;
-    }
-    
     if (Array.isArray(gs.authorized_telegram_owners)) {
       const owner = gs.authorized_telegram_owners.find((owner: any) => String(owner.chatId).trim() === searchId);
       if (owner) {
+         const isPrimary = owner.role === 'PRIMARY_OWNER';
          if (owner.status === 'revoked') {
-            const mem = { business: b, isRevoked: true, isPrimary: false, isActiveContext: owner.is_active_context === true };
+            const mem = { business: b, isRevoked: true, isPrimary, isActiveContext: owner.is_active_context === true };
             if (mem.isActiveContext) revokedContext = mem;
          } else {
-            const mem = { business: b, isRevoked: false, isPrimary: false, isActiveContext: owner.is_active_context === true };
+            const mem = { business: b, isRevoked: false, isPrimary, isActiveContext: owner.is_active_context === true };
             allActiveMemberships.push(mem);
             if (mem.isActiveContext) activeMembership = mem;
          }
@@ -155,13 +149,6 @@ async function switchBusinessContext(chatId: string | number, targetBusinessId: 
     let isChanged = false;
     const shouldBeActive = String(b.id) === String(targetBusinessId);
     
-    if (String(gs.telegram_chat_id || '').trim() === searchId) {
-       if (gs.primary_owner_active_context !== shouldBeActive) {
-           gs.primary_owner_active_context = shouldBeActive;
-           isChanged = true;
-       }
-    }
-    
     if (Array.isArray(gs.authorized_telegram_owners)) {
       const ownerIndex = gs.authorized_telegram_owners.findIndex((owner: any) => String(owner.chatId).trim() === searchId);
       if (ownerIndex > -1) {
@@ -181,7 +168,7 @@ async function switchBusinessContext(chatId: string | number, targetBusinessId: 
 const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
   const searchId = String(chatId).trim();
   const gs = business?.pricing_rules?.globalSettings;
-  if (String(gs?.telegram_chat_id || '').trim() === searchId) return 'Primary_Owner';
+
   if (Array.isArray(gs?.authorized_telegram_owners)) {
     const owner = gs.authorized_telegram_owners.find((o: any) => String(o.chatId).trim() === searchId);
     if (owner) return `Telegram_${owner.name.replace(/\s+/g, '_')}`;
@@ -230,7 +217,7 @@ export async function POST(request: Request) {
       const chatId = update.message.chat.id;
       const text = update.message.text.trim();
 
-      if (text.startsWith('/start auth_')) {
+      if (text.startsWith('/start ') && text.includes('_auth_')) {
         const token = text.replace('/start ', '').trim();
         const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
         if (businesses) {
@@ -263,7 +250,7 @@ export async function POST(request: Request) {
       const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
 
       if (ctx.revokedContext && !ctx.activeMembership) {
-        if (text !== '🏢 Switch Business' && !text.startsWith('switch_biz_') && !text.startsWith('/start auth_')) {
+        if (text !== '🏢 Switch Business' && !text.startsWith('switch_biz_') && !(text.startsWith('/start ') && text.includes('_auth_'))) {
           await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(ctx.revokedContext.business.business_name)}</b> has been revoked.\n\nYou no longer have access to this business.`, {
              reply_markup: {
                 keyboard: ctx.allActiveMemberships.length > 0 ? [[{ text: '🏢 Switch Business' }]] : [],
@@ -527,12 +514,21 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
         const token = callbackData.replace('confirm_auth_', '');
         const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
         if (businesses) {
-          const businessWithToken = businesses.find(b => b.pricing_rules?.globalSettings?.telegram_invite_token === token);
+          const businessWithToken = businesses.find(b => {
+             const t = b.pricing_rules?.globalSettings?.telegram_invite_token;
+             return typeof t === 'string' && (t === token || t.includes(token));
+          });
           if (businessWithToken) {
             const gs = businessWithToken.pricing_rules.globalSettings;
+            const storedToken = gs.telegram_invite_token;
+            let role = 'SECONDARY_OWNER';
+            if (storedToken && storedToken.startsWith('PRIMARY_OWNER_')) {
+                role = 'PRIMARY_OWNER';
+            }
             const newOwner = {
               chatId: String(chatId),
               name: update.callback_query.from?.first_name || update.callback_query.from?.username || String(chatId),
+              role,
               addedAt: new Date().toISOString(),
               status: 'granted'
             };

@@ -112,7 +112,6 @@ function DashboardContent() {
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
 
   // Telegram & Reminder State
-  const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramOwners, setTelegramOwners] = useState<any[]>([]);
   const [telegramInviteLink, setTelegramInviteLink] = useState('');
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
@@ -192,7 +191,7 @@ function DashboardContent() {
     if (data && !telegramLoadedRef.current) {
       telegramLoadedRef.current = true;
       if (data.pricingRules?.globalSettings) {
-        setTelegramChatId(data.pricingRules.globalSettings.telegram_chat_id || '');
+        
         setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []);
         if (data.pricingRules.globalSettings.smart_reminder_interval_minutes) {
           setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes));
@@ -864,9 +863,9 @@ function DashboardContent() {
     }
   };
 
-  const handleGenerateTelegramLink = async () => {
+  const handleGenerateTelegramLink = async (role: 'PRIMARY_OWNER' | 'SECONDARY_OWNER') => {
     setIsGeneratingLink(true);
-    const token = 'auth_' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const token = role + '_auth_' + Math.random().toString(36).substring(2, 8).toUpperCase();
     try {
       const updatedPricingRules = {
         ...data?.pricingRules,
@@ -900,8 +899,7 @@ function DashboardContent() {
   const handleToggleTelegramOwnerAccess = async (chatIdToToggle: string, currentStatus: string) => {
     const newStatus = currentStatus === 'revoked' ? 'granted' : 'revoked';
     
-    // Check if the user is attempting to revoke their own access (they shouldn't be here, but just in case)
-    if (String(chatIdToToggle) === String(telegramChatId)) return;
+
 
     if (newStatus === 'revoked') {
       const confirm = window.confirm(`⚠️ Revoke Telegram Access?\n\nThis user will no longer be able to use this business through the Telegram bot.`);
@@ -939,10 +937,6 @@ function DashboardContent() {
   };
 
   const handlePermanentDeleteOwner = async (chatIdToDelete: string) => {
-    if (String(chatIdToDelete) === String(telegramChatId)) {
-      toast.error("Cannot delete the primary owner.");
-      return;
-    }
 
     const confirm = window.confirm(`⚠️ Permanently Delete Owner?\n\nThis will permanently remove this owner from this business and cannot be undone.`);
     if (!confirm) return;
@@ -987,7 +981,6 @@ function DashboardContent() {
         ...data?.pricingRules,
         globalSettings: {
           ...data?.pricingRules?.globalSettings,
-          telegram_chat_id: telegramChatId,
           smart_reminder_interval_minutes: Number(reminderInterval)
         }
       };
@@ -2235,11 +2228,6 @@ function DashboardContent() {
         <div className="flex flex-col lg:flex-row gap-8">
           <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
             <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Primary Chat ID</label>
-              <input type="text" value={telegramChatId} onChange={e => setTelegramChatId(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" placeholder="e.g. 123456789" />
-              <p className="text-[10px] text-text-secondary mt-1">Send /start to the Telegram bot to get your Chat ID.</p>
-            </div>
-            <div>
               <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
               <input type="number" min="1" value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" />
               <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
@@ -2255,15 +2243,7 @@ function DashboardContent() {
             </h3>
             
             <div className="space-y-3 mb-6">
-              {telegramChatId && (
-                <div className="flex justify-between items-center bg-bg-card p-3 rounded-lg border border-border-theme">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold">Primary Owner</span>
-                    <span className="text-xs text-text-secondary font-mono">{telegramChatId}</span>
-                  </div>
-                  <span className="text-xs font-bold text-success bg-success/10 px-2 py-1 rounded">Active</span>
-                </div>
-              )}
+
               
               {telegramOwners.map((owner, idx) => {
                 const isRevoked = owner.status === 'revoked';
@@ -2272,6 +2252,7 @@ function DashboardContent() {
                     <div className="flex flex-col">
                       <span className="text-sm font-bold flex items-center gap-2">
                         {owner.name} 
+                        {owner.role === 'PRIMARY_OWNER' && <span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase" title="Primary Owner">👑 Primary</span>} 
                         {isRevoked ? (
                           <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
                         ) : (
@@ -2304,19 +2285,28 @@ function DashboardContent() {
                 );
               })}
               
-              {!telegramChatId && telegramOwners.length === 0 && (
+              {telegramOwners.length === 0 && (
                 <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
               )}
             </div>
 
             <div className="border-t border-border-theme pt-4">
-              <button 
-                onClick={handleGenerateTelegramLink} 
-                disabled={isGeneratingLink}
-                className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30"
-              >
-                {isGeneratingLink ? 'Generating...' : '🔗 Generate Owner Link'}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
+                  disabled={isGeneratingLink}
+                  className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
+                >
+                  {isGeneratingLink ? 'Generating...' : '👑 Connect as Primary Owner'}
+                </button>
+                <button 
+                  onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
+                  disabled={isGeneratingLink}
+                  className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
+                >
+                  {isGeneratingLink ? 'Generating...' : '🔗 Link Secondary Owner'}
+                </button>
+              </div>
               
               {telegramInviteLink && (
                 <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">

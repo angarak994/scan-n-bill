@@ -46,22 +46,6 @@ export async function POST(request: Request) {
       throw error;
     }
     
-    // Proactively push the persistent keyboard if chat ID is configured
-    const chatId = pricing_rules?.globalSettings?.telegram_chat_id;
-    if (chatId) {
-      const { data: bData } = await supabase.from('businesses').select('business_name').eq('id', business_id).single();
-      if (bData) {
-        await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${bData.business_name}\n\n✅ Settings connected.\n\nPlease choose an action below:`, {
-          keyboard: [
-            [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
-            [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
-            [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
-          ],
-          resize_keyboard: true,
-          is_persistent: true
-        });
-      }
-    }
 
     return NextResponse.json({ success: true, pricing_rules, tables });
   } catch (error: any) {

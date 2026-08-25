@@ -28,18 +28,16 @@ export async function POST(request: Request) {
   // In a real app, require a CRON_SECRET for security, but for now we let it run
 
   try {
-    // 1. Fetch all businesses that have a telegram_chat_id configured
+    // 1. Fetch all businesses
     const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name, active_discounts');
     if (!businesses) return NextResponse.json({ success: true, message: 'No businesses found' });
 
     for (const business of businesses) {
       const gs = business.pricing_rules?.globalSettings;
-      const primaryChatId = gs?.telegram_chat_id;
-      const secondaryOwners = gs?.authorized_telegram_owners || [];
+      const allOwners = gs?.authorized_telegram_owners || [];
       
       const allChatIds: string[] = [];
-      if (primaryChatId) allChatIds.push(String(primaryChatId));
-      secondaryOwners.forEach((o: any) => {
+      allOwners.forEach((o: any) => {
         if (o.status !== 'revoked' && o.chatId && !allChatIds.includes(String(o.chatId))) allChatIds.push(String(o.chatId));
       });
 
