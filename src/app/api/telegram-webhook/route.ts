@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
@@ -92,36 +93,89 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   );
 }
 
-const MAIN_MENU_KEYBOARD = {
-  keyboard: [
+function getMainMenuKeyboard(allActiveMembershipsCount: number = 0) {
+  const keyboard = [
     [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
     [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
     [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
-  ],
-  resize_keyboard: true,
-};
+  ];
+  if (allActiveMembershipsCount > 1) {
+    keyboard.push([{ text: '🏢 Switch Business' }]);
+  }
+  return { keyboard, resize_keyboard: true };
+}
 
 async function getBusinessContext(chatId: string | number) {
   const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
-  if (!businesses) return null;
+  if (!businesses) return { activeMembership: null, allActiveMemberships: [], revokedContext: null };
   
   const searchId = String(chatId).trim();
+  let revokedContext = null;
+  let allActiveMemberships: any[] = [];
+  let activeMembership = null;
+
   for (const b of businesses) {
     const gs = b.pricing_rules?.globalSettings;
     if (!gs) continue;
     
     if (String(gs.telegram_chat_id || '').trim() === searchId) {
-       return { business: b, isRevoked: false };
+       const mem = { business: b, isRevoked: false, isPrimary: true, isActiveContext: gs.primary_owner_active_context === true };
+       allActiveMemberships.push(mem);
+       if (mem.isActiveContext) activeMembership = mem;
+       continue;
     }
     
     if (Array.isArray(gs.authorized_telegram_owners)) {
       const owner = gs.authorized_telegram_owners.find((owner: any) => String(owner.chatId).trim() === searchId);
       if (owner) {
-         return { business: b, isRevoked: owner.status === 'revoked' };
+         if (owner.status === 'revoked') {
+            const mem = { business: b, isRevoked: true, isPrimary: false, isActiveContext: owner.is_active_context === true };
+            if (mem.isActiveContext) revokedContext = mem;
+         } else {
+            const mem = { business: b, isRevoked: false, isPrimary: false, isActiveContext: owner.is_active_context === true };
+            allActiveMemberships.push(mem);
+            if (mem.isActiveContext) activeMembership = mem;
+         }
       }
     }
   }
-  return null;
+
+  return { activeMembership, allActiveMemberships, revokedContext };
+}
+
+async function switchBusinessContext(chatId: string | number, targetBusinessId: string) {
+  const searchId = String(chatId).trim();
+  const { data: businesses } = await supabase.from('businesses').select('*');
+  if (!businesses) return;
+  
+  for (const b of businesses) {
+    const gs = b.pricing_rules?.globalSettings;
+    if (!gs) continue;
+    
+    let isChanged = false;
+    const shouldBeActive = String(b.id) === String(targetBusinessId);
+    
+    if (String(gs.telegram_chat_id || '').trim() === searchId) {
+       if (gs.primary_owner_active_context !== shouldBeActive) {
+           gs.primary_owner_active_context = shouldBeActive;
+           isChanged = true;
+       }
+    }
+    
+    if (Array.isArray(gs.authorized_telegram_owners)) {
+      const ownerIndex = gs.authorized_telegram_owners.findIndex((owner: any) => String(owner.chatId).trim() === searchId);
+      if (ownerIndex > -1) {
+         if (gs.authorized_telegram_owners[ownerIndex].is_active_context !== shouldBeActive) {
+             gs.authorized_telegram_owners[ownerIndex].is_active_context = shouldBeActive;
+             isChanged = true;
+         }
+      }
+    }
+    
+    if (isChanged) {
+       await supabase.from('businesses').update({ pricing_rules: b.pricing_rules }).eq('id', b.id);
+    }
+  }
 }
 
 const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
@@ -176,15 +230,6 @@ export async function POST(request: Request) {
       const chatId = update.message.chat.id;
       const text = update.message.text.trim();
 
-      const context = await getBusinessContext(chatId);
-
-      if (context?.isRevoked) {
-        await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(context.business.business_name)}</b> has been revoked by the primary owner.\n\nPlease contact the primary business owner if you believe this was a mistake.`);
-        return NextResponse.json({ ok: true });
-      }
-
-      const business = context?.business;
-
       if (text.startsWith('/start auth_')) {
         const token = text.replace('/start ', '').trim();
         const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
@@ -214,11 +259,76 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
+      const ctx = await getBusinessContext(chatId);
+      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
+
+      if (ctx.revokedContext && !ctx.activeMembership) {
+        if (text !== '🏢 Switch Business' && !text.startsWith('switch_biz_') && !text.startsWith('/start auth_')) {
+          await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(ctx.revokedContext.business.business_name)}</b> has been revoked.\n\nYou no longer have access to this business.`, {
+             reply_markup: {
+                keyboard: ctx.allActiveMemberships.length > 0 ? [[{ text: '🏢 Switch Business' }]] : [],
+                resize_keyboard: true
+             }
+          });
+          return NextResponse.json({ ok: true });
+        }
+      }
+
+      let business = ctx.activeMembership?.business;
+
+      if (!business && ctx.allActiveMemberships.length === 1) {
+          business = ctx.allActiveMemberships[0].business;
+          if (business) switchBusinessContext(chatId, business.id).catch(console.error);
+      }
+
+      if (text === '🏢 Switch Business' || (text === '/menu' && ctx.allActiveMemberships.length > 1)) {
+         if (ctx.allActiveMemberships.length > 1) {
+            const bizButtons = ctx.allActiveMemberships.map(m => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
+            await sendTelegramMessage(chatId, `🏢 <b>Select Business</b>\n\nWhich business would you like to manage?`, { inline_keyboard: bizButtons });
+            return NextResponse.json({ ok: true });
+         } else if (ctx.allActiveMemberships.length === 1) {
+            business = ctx.allActiveMemberships[0].business;
+            if (business) await switchBusinessContext(chatId, business.id);
+            // continue to normal menu
+         }
+      }
+      if (text === '/delete') {
+         const primaryMemberships = ctx.allActiveMemberships.filter((m: any) => m.isPrimary);
+         if (primaryMemberships.length === 0) {
+            await sendTelegramMessage(chatId, `❌ You must be a primary business owner to use this command.`);
+            return NextResponse.json({ ok: true });
+         }
+         
+         if (primaryMemberships.length === 1) {
+            // Directly show owners for this business
+            const b = primaryMemberships[0].business;
+            const owners = b.pricing_rules?.globalSettings?.authorized_telegram_owners || [];
+            const secondaryOwners = owners.filter((o: any) => o.status !== 'revoked' && String(o.chatId) !== String(chatId));
+            
+            if (secondaryOwners.length === 0) {
+               await sendTelegramMessage(chatId, `No other active owners found in <b>${escapeHtml(b.business_name)}</b>.`);
+               return NextResponse.json({ ok: true });
+            }
+            
+            const ownerButtons = secondaryOwners.map((o: any) => [{ text: `👤 ${o.name}`, callback_data: `delusr_${b.id}_${o.chatId}` }]);
+            await sendTelegramMessage(chatId, `👤 Select an owner to permanently remove from <b>${escapeHtml(b.business_name)}</b>:`, { inline_keyboard: ownerButtons });
+            return NextResponse.json({ ok: true });
+         }
+         
+         // Multiple primary businesses
+         const bizButtons = primaryMemberships.map((m: any) => [{ text: `🏢 ${m.business.business_name}`, callback_data: `delbiz_${m.business.id}` }]);
+         await sendTelegramMessage(chatId, `🗑️ <b>Delete Telegram Access</b>
+
+Select the business you want to manage:`, { inline_keyboard: bizButtons });
+         return NextResponse.json({ ok: true });
+      }
+
+
       if (text === '/start' || text === '/menu') {
         if (!business) {
           await sendTelegramMessage(chatId, `🎱 <b>QControl Bot</b>\n\nYour Telegram Chat ID is: <code>${chatId}</code>\n\nPlease enter this ID in your QControl Dashboard Settings (under <i>Telegram & Smart Reminders</i>) to authorize this device.`);
         } else {
-          await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${escapeHtml(business.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${escapeHtml(business.business_name || "")}\n\nPlease choose an action:`, mainMenu);
         }
         return NextResponse.json({ ok: true });
       }
@@ -248,9 +358,9 @@ export async function POST(request: Request) {
           // Start the session!
           try {
             const session = await startSession(tableId, gameType as any, playerName, business.id, numPlayers);
-            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`, MAIN_MENU_KEYBOARD);
+            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`, mainMenu);
           } catch (error: any) {
-            await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, MAIN_MENU_KEYBOARD);
+            await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
@@ -260,17 +370,28 @@ export async function POST(request: Request) {
       if (text === '▶️ Start Session') {
         const tables = business.tables || [];
         if (tables.length === 0) {
-          await sendTelegramMessage(chatId, 'No tables configured for this business.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'No tables configured for this business.', mainMenu);
           return NextResponse.json({ ok: true });
         }
-        const tableButtons = tables.map((t: any) => ({ text: t.id, callback_data: `start_table_${t.id}` }));
-        const buttons = chunkArray(tableButtons, 3);
-        await sendTelegramMessage(chatId, 'Select a table to start a new session:', { inline_keyboard: buttons });
+        
+        const { data: activeSessions } = await supabase.from('sessions').select('table_id').eq('business_id', business.id).eq('status', 'ACTIVE');
+        const activeTableIds = (activeSessions || []).map(s => s.table_id);
+        
+        const availableTables = tables.filter((t: any) => !activeTableIds.includes(t.id));
+        
+        if (availableTables.length === 0) {
+          await sendTelegramMessage(chatId, 'All tables are currently active.', mainMenu);
+          return NextResponse.json({ ok: true });
+        }
+
+        const tableButtons = availableTables.map((t: any) => ({ text: `🟢 ${t.id}`, callback_data: `start_table_${t.id}` }));
+        const buttons = chunkArray(tableButtons, 2);
+        await sendTelegramMessage(chatId, '▶️ Select an available table:', { inline_keyboard: buttons });
       } 
       else if (text === '📋 Active Sessions') {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No active sessions running right now.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'No active sessions running right now.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         
@@ -304,7 +425,7 @@ export async function POST(request: Request) {
       else if (text === '🛑 Stop Session') {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No active sessions to stop.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'No active sessions to stop.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         const sessionButtons = activeSessions.map(s => {
@@ -319,14 +440,14 @@ export async function POST(request: Request) {
       else if (text === '⏸ Paused Sessions') {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No active sessions right now.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'No active sessions right now.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         
         const pausedSessions = activeSessions.filter(s => typeof s.paused_at === 'string' && s.paused_at.trim() !== '');
         
         if (pausedSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No paused sessions right now.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'No paused sessions right now.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         
@@ -335,7 +456,7 @@ export async function POST(request: Request) {
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
           msg += `<b>${session.table_id}</b>\nPlayer: ${session.customer_name}\nGame: ${session.game_type}\nStarted: ${formatTimeReadable(startFull)}\nPaused At: ${formatTimeReadable(session.paused_at)}\n\n`;
         });
-        await sendTelegramMessage(chatId, msg, MAIN_MENU_KEYBOARD);
+        await sendTelegramMessage(chatId, msg, mainMenu);
       }
       else if (text === '💰 Today\'s Summary') {
         const dateStr = getCurrentISTDateStr();
@@ -348,7 +469,7 @@ export async function POST(request: Request) {
           .eq('date', dateStr);
           
         if (!completedSessions || completedSessions.length === 0) {
-          await sendTelegramMessage(chatId, `No completed sessions today (${dateStr}).`, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, `No completed sessions today (${dateStr}).`, mainMenu);
         } else {
           let totalRevenue = 0;
           let totalDurationMins = 0;
@@ -360,7 +481,7 @@ export async function POST(request: Request) {
           });
           
           const msg = `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
-          await sendTelegramMessage(chatId, msg, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, msg, mainMenu);
         }
         return NextResponse.json({ ok: true });
       }
@@ -376,19 +497,19 @@ export async function POST(request: Request) {
           .order('start_time', { ascending: true });
           
         if (!bookings || bookings.length === 0) {
-          await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, mainMenu);
         } else {
           let msg = `📅 <b>Today's Bookings</b> (${dateStr})\n\n`;
           bookings.forEach((b, index) => {
             msg += `${index + 1}. <b>${b.table_id}</b> @ ${b.start_time}\n   Name: ${b.customer_name}\n   Duration: ${b.duration_minutes}m\n\n`;
           });
-          await sendTelegramMessage(chatId, msg, MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, msg, mainMenu);
         }
         return NextResponse.json({ ok: true });
       }
       else {
         // Main Menu
-        await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+        await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, mainMenu);
       }
     }
 
@@ -431,8 +552,11 @@ export async function POST(request: Request) {
             };
             
             await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', businessWithToken.id);
+            await switchBusinessContext(chatId, businessWithToken.id);
+            const newCtx = await getBusinessContext(chatId);
+            const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length);
             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
-            await sendTelegramMessage(chatId, `✅ <b>Telegram Account Connected</b>\n\nYour Telegram account is now authorized for this business.\n\n<b>QControl Dashboard</b>\n${escapeHtml(businessWithToken.business_name || "")}\n\nPlease choose an action:`, MAIN_MENU_KEYBOARD);
+            await sendTelegramMessage(chatId, `✅ <b>Telegram Account Connected</b>\n\nYour Telegram account is now authorized for this business.\n\n<b>QControl Dashboard</b>\n${escapeHtml(businessWithToken.business_name || "")}\n\nPlease choose an action:`, newMainMenu);
             return NextResponse.json({ ok: true });
           }
         }
@@ -447,19 +571,154 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      const context = await getBusinessContext(chatId);
-      if (!context) {
-        await sendTelegramMessage(chatId, '⚠️ Unauthorized.');
-        return NextResponse.json({ ok: true });
+      const ctx = await getBusinessContext(chatId);
+      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
+      if (callbackData.startsWith('delbiz_')) {
+          const targetBizId = callbackData.replace('delbiz_', '');
+          const b = ctx.allActiveMemberships.find((m: any) => m.isPrimary && m.business.id === targetBizId)?.business;
+          
+          if (!b) {
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, '❌ Unauthorized.');
+             return NextResponse.json({ ok: true });
+          }
+          
+          const owners = b.pricing_rules?.globalSettings?.authorized_telegram_owners || [];
+          const secondaryOwners = owners.filter((o: any) => o.status !== 'revoked' && String(o.chatId) !== String(chatId));
+          
+          if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+          if (secondaryOwners.length === 0) {
+             await sendTelegramMessage(chatId, `No other active owners found in <b>${escapeHtml(b.business_name)}</b>.`);
+             return NextResponse.json({ ok: true });
+          }
+          
+          const ownerButtons = secondaryOwners.map((o: any) => [{ text: `👤 ${o.name}`, callback_data: `delusr_${b.id}_${o.chatId}` }]);
+          await sendTelegramMessage(chatId, `👤 Select an owner to permanently remove from <b>${escapeHtml(b.business_name)}</b>:`, { inline_keyboard: ownerButtons });
+          return NextResponse.json({ ok: true });
       }
 
-      if (context.isRevoked) {
+      if (callbackData.startsWith('delusr_')) {
+          const parts = callbackData.replace('delusr_', '').split('_');
+          const targetBizId = parts[0];
+          const targetChatId = parts[1];
+          const b = ctx.allActiveMemberships.find((m: any) => m.isPrimary && m.business.id === targetBizId)?.business;
+          
+          if (!b) {
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, '❌ Unauthorized.');
+             return NextResponse.json({ ok: true });
+          }
+          
+          const owners = b.pricing_rules?.globalSettings?.authorized_telegram_owners || [];
+          const targetOwner = owners.find((o: any) => String(o.chatId) === targetChatId);
+          
+          if (!targetOwner) {
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, '❌ Owner not found.');
+             return NextResponse.json({ ok: true });
+          }
+          
+          if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+          
+          const confirmKeyboard = {
+             inline_keyboard: [
+                [{ text: '❌ Cancel', callback_data: 'cancel_auth' }],
+                [{ text: '🗑️ Permanently Delete', callback_data: `confirmdel_${targetBizId}_${targetChatId}` }]
+             ]
+          };
+          
+          await sendTelegramMessage(chatId, `⚠️ <b>Permanently Remove Access?</b>
+
+Business: ${escapeHtml(b.business_name)}
+Owner: ${escapeHtml(targetOwner.name)}
+Telegram: <code>${targetChatId}</code>
+
+This will permanently remove this user's Telegram access to this business.
+
+This action cannot be undone automatically.`, confirmKeyboard);
+          return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('confirmdel_')) {
+          const parts = callbackData.replace('confirmdel_', '').split('_');
+          const targetBizId = parts[0];
+          const targetChatId = parts[1];
+          const b = ctx.allActiveMemberships.find((m: any) => m.isPrimary && m.business.id === targetBizId)?.business;
+          
+          if (!b) {
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, '❌ Unauthorized.');
+             return NextResponse.json({ ok: true });
+          }
+          
+          const owners = b.pricing_rules?.globalSettings?.authorized_telegram_owners || [];
+          const targetOwnerIndex = owners.findIndex((o: any) => String(o.chatId) === targetChatId);
+          
+          if (targetOwnerIndex > -1) {
+             const deletedOwner = owners[targetOwnerIndex];
+             owners.splice(targetOwnerIndex, 1);
+             
+             const updatedPricingRules = {
+               ...b.pricing_rules,
+               globalSettings: {
+                 ...b.pricing_rules.globalSettings,
+                 authorized_telegram_owners: owners
+               }
+             };
+             
+             await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', b.id);
+             
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, `✅ <b>Access permanently removed.</b>`);
+             
+             // Notify the deleted user
+             // Calculate their remaining active memberships to decide whether to show Switch Business button
+             const delCtx = await getBusinessContext(targetChatId);
+             let kb = [];
+             if (delCtx.allActiveMemberships.length > 0) {
+                 kb.push([{ text: '🏢 Switch Business' }]);
+             }
+             await sendTelegramMessage(targetChatId, `❌ <b>Access Permanently Removed</b>
+
+Your Telegram access to <b>${escapeHtml(b.business_name)}</b> has been permanently removed by the primary owner.
+
+You can still access other businesses associated with your Telegram account.`, { reply_markup: { keyboard: kb, resize_keyboard: true } });
+          } else {
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, '❌ Owner not found or already deleted.');
+          }
+          return NextResponse.json({ ok: true });
+      }
+
+
+      if (callbackData.startsWith('switch_biz_')) {
+          const targetBiz = callbackData.replace('switch_biz_', '');
+          await switchBusinessContext(chatId, targetBiz);
+          const newCtx = await getBusinessContext(chatId);
+          if (newCtx.activeMembership) {
+             const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length);
+             if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
+             await sendTelegramMessage(chatId, `✅ <b>Business Selected</b>\n\nYou are now managing:\n🏢 ${escapeHtml(newCtx.activeMembership.business.business_name)}`, newMainMenu);
+          }
+          return NextResponse.json({ ok: true });
+      }
+
+      if (ctx.revokedContext && !ctx.activeMembership) {
         if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
-        await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(context.business.business_name)}</b> has been revoked by the primary owner.\n\nPlease contact the primary business owner if you believe this was a mistake.`);
+        await sendTelegramMessage(chatId, `🔒 <b>Access Revoked</b>\n\nYour Telegram access to <b>${escapeHtml(ctx.revokedContext.business.business_name)}</b> has been revoked.\n\nYou no longer have access to this business.`);
         return NextResponse.json({ ok: true });
       }
 
-      const business = context.business;
+      let business = ctx.activeMembership?.business;
+      if (!business && ctx.allActiveMemberships.length === 1) {
+          business = ctx.allActiveMemberships[0].business;
+          if (business) switchBusinessContext(chatId, business.id).catch(console.error);
+      }
+
+      if (!business) {
+        await sendTelegramMessage(chatId, '⚠️ Unauthorized or no active business selected.');
+        return NextResponse.json({ ok: true });
+      }
       
       const fallbackName = update.callback_query.from?.first_name || update.callback_query.from?.username || 'telegram_bot';
       const ownerName = getOwnerName(business, chatId, fallbackName);
@@ -502,7 +761,7 @@ export async function POST(request: Request) {
               await sendTelegramMessage(chatId, `🎱 Select Game Type for Table: ${tableId}`, { inline_keyboard: buttons });
             }
         } else {
-            await sendTelegramMessage(chatId, `❌ No game types configured for this business.`, MAIN_MENU_KEYBOARD);
+            await sendTelegramMessage(chatId, `❌ No game types configured for this business.`, mainMenu);
         }
       }
       else if (callbackData.startsWith('start_game_')) {
@@ -563,7 +822,7 @@ export async function POST(request: Request) {
         if (messageId) {
           await editTelegramMessageText(chatId, messageId, '❌ Action cancelled.');
         } else {
-          await sendTelegramMessage(chatId, '❌ Action cancelled.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, '❌ Action cancelled.', mainMenu);
         }
       }
       else if (callbackData === 'stop_menu_back') {
@@ -572,7 +831,7 @@ export async function POST(request: Request) {
           if (messageId) {
              await editTelegramMessageText(chatId, messageId, 'No active sessions to stop.', { inline_keyboard: [] });
           } else {
-             await sendTelegramMessage(chatId, 'No active sessions to stop.', MAIN_MENU_KEYBOARD);
+             await sendTelegramMessage(chatId, 'No active sessions to stop.', mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
@@ -593,7 +852,7 @@ export async function POST(request: Request) {
         const sessionId = callbackData.replace('stop_select_', '');
         const session = await sessionRepository.findById(sessionId, business.id);
         if (!session || session.status !== 'ACTIVE') {
-          await sendTelegramMessage(chatId, 'Session is not active or not found.', MAIN_MENU_KEYBOARD);
+          await sendTelegramMessage(chatId, 'Session is not active or not found.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         
@@ -678,7 +937,7 @@ export async function POST(request: Request) {
               if (messageId) {
                  editTelegramMessageText(chatId, messageId, `✅ Marked ${session.customer_name} on ${session.table_id} as still playing.`);
               } else {
-                 await sendTelegramMessage(chatId, `✅ Marked ${session.customer_name} on ${session.table_id} as still playing.`, MAIN_MENU_KEYBOARD);
+                 await sendTelegramMessage(chatId, `✅ Marked ${session.customer_name} on ${session.table_id} as still playing.`, mainMenu);
               }
             } else if (action === 'force_end') {
               const updatedSession = { ...session, ...dbUpdates };
@@ -732,13 +991,13 @@ export async function POST(request: Request) {
                 if (messageId) {
                   await editTelegramMessageText(chatId, messageId, msg);
                 } else {
-                  await sendTelegramMessage(chatId, msg, MAIN_MENU_KEYBOARD);
+                  await sendTelegramMessage(chatId, msg, mainMenu);
                 }
               } else {
                 if (messageId) {
                   await editTelegramMessageText(chatId, messageId, `🛑 Session Ended successfully.`);
                 } else {
-                  await sendTelegramMessage(chatId, `🛑 Session Ended successfully.`, MAIN_MENU_KEYBOARD);
+                  await sendTelegramMessage(chatId, `🛑 Session Ended successfully.`, mainMenu);
                 }
               }
             } else if (actionPrefix === 'resume' || actionPrefix === 'pause') {
@@ -777,19 +1036,19 @@ export async function POST(request: Request) {
                 if (messageId) {
                    await editTelegramMessageText(chatId, messageId, `✅ Session ${actionPrefix}d.`);
                 } else {
-                   await sendTelegramMessage(chatId, `✅ Session ${actionPrefix}d.`, MAIN_MENU_KEYBOARD);
+                   await sendTelegramMessage(chatId, `✅ Session ${actionPrefix}d.`, mainMenu);
                 }
               }
             } else {
               if (messageId) {
                  await editTelegramMessageText(chatId, messageId, `✅ Session ${actionPrefix}d.`);
               } else {
-                 await sendTelegramMessage(chatId, `✅ Session ${actionPrefix}d.`, MAIN_MENU_KEYBOARD);
+                 await sendTelegramMessage(chatId, `✅ Session ${actionPrefix}d.`, mainMenu);
               }
             }
           } catch(e: any) {
              console.error('Intervention Error:', e);
-             await sendTelegramMessage(chatId, `❌ Failed: ${e.message || 'Error executing action'}`, MAIN_MENU_KEYBOARD);
+             await sendTelegramMessage(chatId, `❌ Failed: ${e.message || 'Error executing action'}`, mainMenu);
           }
         }
       }

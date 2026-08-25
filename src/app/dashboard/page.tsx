@@ -178,6 +178,7 @@ function DashboardContent() {
   const [newStationName, setNewStationName] = useState('');
   const [newStationType, setNewStationType] = useState('ps5');
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+  const [stationToDelete, setStationToDelete] = useState<{id: string, name: string} | null>(null);
   const [selectedGameRule, setSelectedGameRule] = useState('ps5');
   const reportDateRangeRef = useRef(reportDateRange);
   const telegramLoadedRef = useRef(false);
@@ -506,6 +507,30 @@ function DashboardContent() {
     await handleSaveConfig(undefined, updatedTables);
     setNewStationId('');
     setNewStationName('');
+  };
+
+  const confirmDeleteStation = (t: any) => {
+    if (!data) return;
+    const hasActiveSession = data.activeSessions?.some((s: any) => s.table_id === t.id && s.status === 'ACTIVE');
+    if (hasActiveSession) {
+      toast.error(`Cannot delete "${t.name}": Active session in progress.`);
+      return;
+    }
+    const hasActiveBooking = data.bookings?.some((b: any) => b.table_id === t.id && b.status === 'confirmed');
+    if (hasActiveBooking) {
+      toast.error(`Cannot delete "${t.name}": Has confirmed booking.`);
+      return;
+    }
+    setStationToDelete({ id: t.id, name: t.name });
+  };
+
+  const handleDeleteStation = async () => {
+    if (!stationToDelete || !data) return;
+    const existing = data.tables || [];
+    const updatedTables = existing.filter((t: any) => t.id !== stationToDelete.id);
+    await handleSaveConfig(undefined, updatedTables);
+    toast.success(`Station "${stationToDelete.name}" deleted successfully.`);
+    setStationToDelete(null);
   };
 
   const renderBookingReminders = () => {
@@ -913,6 +938,47 @@ function DashboardContent() {
     }
   };
 
+  const handlePermanentDeleteOwner = async (chatIdToDelete: string) => {
+    if (String(chatIdToDelete) === String(telegramChatId)) {
+      toast.error("Cannot delete the primary owner.");
+      return;
+    }
+
+    const confirm = window.confirm(`⚠️ Permanently Delete Owner?\n\nThis will permanently remove this owner from this business and cannot be undone.`);
+    if (!confirm) return;
+
+    const updatedOwners = telegramOwners.filter(o => String(o.chatId) !== String(chatIdToDelete));
+    
+    try {
+      const updatedPricingRules = {
+        ...data?.pricingRules,
+        globalSettings: {
+          ...data?.pricingRules?.globalSettings,
+          authorized_telegram_owners: updatedOwners
+        }
+      };
+
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+
+      if (res.ok) {
+        setTelegramOwners(updatedOwners);
+        toast.success('Owner permanently deleted.');
+      } else {
+        toast.error('Failed to delete owner.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error deleting owner.');
+    }
+  };
+
   const handleUpdateTelegramSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUpdatingTelegram(true);
@@ -1020,7 +1086,7 @@ function DashboardContent() {
 
   // Calculate stats
   const activeCount = data.activeSessions.length;
-  const totalTables = data.tables?.length || 18;
+  const totalTables = data.tables?.length ?? 0;
   const occupancyPercent = totalTables > 0 ? Math.round((activeCount / totalTables) * 100) : 0;
   const totalSessions = activeCount + data.completedSessions.length;
   
@@ -1718,16 +1784,27 @@ function DashboardContent() {
           {/* Rule Configuration */}
           <div className="lg:col-span-7 flex flex-col gap-4">
             <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">Configure Pricing Schedules &amp; Rates</h3>
-            <div className="flex gap-2 flex-wrap mb-2">
-              {Object.keys(data?.pricingRules?.rules || {}).map(game => (
-                <button
-                  key={game}
-                  onClick={() => setSelectedGameRule(game)}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-extrabold capitalize font-mono transition-all min-h-[38px] ${selectedGameRule === game ? 'bg-primary text-white shadow-md shadow-primary/30 scale-105' : 'bg-bg-primary text-text-secondary border border-border-theme hover:border-text-secondary'}`}
-                >
-                  {game === 'ps5' ? '🎮 PS5' : `🎱 ${game}`}
-                </button>
-              ))}
+            <div className="flex w-full overflow-x-auto custom-scrollbar p-1 bg-bg-surface border border-border-theme rounded-xl mb-4 gap-1 shadow-inner" role="tablist">
+              {Object.keys(data?.pricingRules?.rules || {}).map(game => {
+                const isActive = selectedGameRule === game;
+                return (
+                  <button
+                    key={game}
+                    onClick={() => setSelectedGameRule(game)}
+                    className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 outline-none whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent ${
+                      isActive 
+                        ? 'bg-accent/10 text-accent border border-accent/30 ring-1 ring-accent/50 shadow-sm' 
+                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-primary/50 border border-transparent'
+                    }`}
+                    aria-pressed={isActive}
+                    role="tab"
+                  >
+                    {isActive && <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
+                    {!isActive && <span className="text-[14px] opacity-70">{game === 'ps5' ? '🎮' : '🎱'}</span>}
+                    <span>{game === 'ps5' ? 'PS5' : game}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {(() => {
@@ -1882,9 +1959,20 @@ function DashboardContent() {
                     <span className="mx-2 text-text-secondary">•</span>
                     <span className="font-bold text-text-primary">{t.name}</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold font-mono uppercase bg-bg-surface border border-border-theme text-primary">
-                    {t.type}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-extrabold font-mono uppercase bg-bg-surface border border-border-theme text-primary">
+                      {t.type}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => confirmDeleteStation(t)}
+                      className="p-1 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                      title="Delete Station"
+                      aria-label="Delete Station"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2193,15 +2281,25 @@ function DashboardContent() {
                       <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
                       {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
                     </div>
-                    {isRevoked ? (
-                      <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
-                        🔓 Grant Access
+                    <div className="flex items-center gap-2">
+                      {isRevoked ? (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
+                          🔓 Grant Access
+                        </button>
+                      ) : (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
+                          🔒 Revoke Access
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handlePermanentDeleteOwner(owner.chatId)}
+                        className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                        title="Permanently Delete Owner"
+                        aria-label="Permanently Delete Owner"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                       </button>
-                    ) : (
-                      <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                        🔒 Revoke Access
-                      </button>
-                    )}
+                    </div>
                   </div>
                 );
               })}
@@ -2701,6 +2799,34 @@ function DashboardContent() {
                   <IconLogout /> Logout
                 </a>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Station Confirmation Modal */}
+      {stationToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold mb-2">Delete {stationToDelete.name}?</h3>
+            <p className="text-text-secondary text-sm mb-6">
+              Are you sure you want to delete this station? This action cannot be undone.
+            </p>
+            <div className="flex items-center gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setStationToDelete(null)}
+                className="flex-1 px-4 py-2 bg-bg-card border border-border-theme text-text-primary rounded-lg font-bold text-sm hover:bg-bg-primary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteStation}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
