@@ -114,7 +114,7 @@ function DashboardContent() {
   // Telegram & Reminder State
   const [telegramOwners, setTelegramOwners] = useState<any[]>([]);
   const [telegramInviteLink, setTelegramInviteLink] = useState('');
-  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [generatingLinkRole, setGeneratingLinkRole] = useState<string | null>(null);
   const [reminderInterval, setReminderInterval] = useState('60');
   const [isUpdatingTelegram, setIsUpdatingTelegram] = useState(false);
   const [overdueSession, setOverdueSession] = useState<any>(null);
@@ -864,7 +864,7 @@ function DashboardContent() {
   };
 
   const handleGenerateTelegramLink = async (role: 'PRIMARY_OWNER' | 'SECONDARY_OWNER') => {
-    setIsGeneratingLink(true);
+    setGeneratingLinkRole(role);
     const token = role + '_auth_' + Math.random().toString(36).substring(2, 8).toUpperCase();
     try {
       const updatedPricingRules = {
@@ -892,7 +892,7 @@ function DashboardContent() {
     } catch (e) {
       console.error(e);
     } finally {
-      setIsGeneratingLink(false);
+      setGeneratingLinkRole(null);
     }
   };
 
@@ -2294,17 +2294,17 @@ function DashboardContent() {
               <div className="flex flex-col gap-2">
                 <button 
                   onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
-                  disabled={isGeneratingLink}
+                  disabled={generatingLinkRole === 'PRIMARY_OWNER'}
                   className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
                 >
-                  {isGeneratingLink ? 'Generating...' : '👑 Connect as Primary Owner'}
+                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : '👑 Connect as Primary Owner'}
                 </button>
                 <button 
                   onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
-                  disabled={isGeneratingLink}
+                  disabled={generatingLinkRole === 'SECONDARY_OWNER'}
                   className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
                 >
-                  {isGeneratingLink ? 'Generating...' : '🔗 Link Secondary Owner'}
+                  {generatingLinkRole === 'SECONDARY_OWNER' ? 'Generating...' : '🔗 Link Secondary Owner'}
                 </button>
               </div>
               

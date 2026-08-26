@@ -541,6 +541,8 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       }
     }
 
+const processedCallbacks = new Set<string>();
+
     // 2. Handle Callback Queries (Button Clicks)
     if (update.callback_query) {
       const callbackData = update.callback_query.data;
@@ -548,8 +550,24 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       const messageId = update.callback_query.message.message_id;
       const callbackQueryId = update.callback_query.id;
 
+      if (processedCallbacks.has(callbackQueryId)) {
+        return NextResponse.json({ ok: true });
+      }
+      processedCallbacks.add(callbackQueryId);
+      setTimeout(() => processedCallbacks.delete(callbackQueryId), 5000);
+
       // Immediately acknowledge the callback to remove the loading state in Telegram
       answerCallbackQuery(callbackQueryId).catch(console.error);
+      
+      // Optimistically update the button to Processing... to prevent duplicate clicks and provide instant feedback
+      const slowActions = ['start_table_', 'start_game_', 'ps5_players_', 'ps5_start_', 'stop_select_', 'switch_biz_', 'delbiz_', 'delusr_'];
+      if (slowActions.some(prefix => callbackData.startsWith(prefix))) {
+         if (messageId) {
+             editTelegramMessageReplyMarkup(chatId, messageId, {
+                inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'ignore' }]]
+             }).catch(console.error);
+         }
+      }
 
       if (callbackData === 'cancel_auth') {
         if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });

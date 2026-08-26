@@ -17,11 +17,22 @@ export class ApiError extends Error {
   }
 }
 
+// In-memory locks to prevent race conditions during rapid simultaneous requests
+const activeTableLocks = new Set<string>();
+
 export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1) {
-  const existingSession = await sessionRepository.findActiveByTable(table_id, businessId);
-  if (existingSession) {
-    throw new ApiError(400, 'A session is already active for this table');
+  const lockKey = `${businessId || 'global'}_${table_id}`;
+  if (activeTableLocks.has(lockKey)) {
+    throw new ApiError(409, 'Action in progress, please wait.');
   }
+  
+  try {
+    activeTableLocks.add(lockKey);
+    
+    const existingSession = await sessionRepository.findActiveByTable(table_id, businessId);
+    if (existingSession) {
+      throw new ApiError(400, 'A session is already active for this table');
+    }
 
   if (!customer_name || customer_name.trim() === '') {
     throw new ApiError(400, 'Customer Name is mandatory');
@@ -66,6 +77,9 @@ export async function startSession(table_id: string, game_type: GameType, custom
 
   await sessionRepository.create(session, businessId);
   return session;
+  } finally {
+    activeTableLocks.delete(lockKey);
+  }
 }
 
 export async function endSession(table_id: string, businessId?: string) {
