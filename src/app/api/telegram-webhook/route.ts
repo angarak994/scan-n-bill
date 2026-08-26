@@ -254,7 +254,8 @@ export async function POST(request: Request) {
               name: update.message.from?.first_name || update.message.from?.username || String(chatId),
               role: roleEnum,
               addedAt: new Date().toISOString(),
-              status: 'granted'
+              status: 'granted',
+              is_active_context: true
             };
             
             // Remove any previously revoked instance for this chatId
