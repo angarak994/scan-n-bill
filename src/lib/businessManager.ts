@@ -16,6 +16,7 @@ export interface BusinessData {
   menu_items?: { name: string; price: number }[];
   active_discounts?: Record<string, { percent: number; applyToFood: boolean }>;
   goals?: any;
+  has_logged_in?: boolean;
 }
 
 export const businessManager = {

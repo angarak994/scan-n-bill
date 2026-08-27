@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { createClient } from '@supabase/supabase-js';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText } from './components';
+import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
 
 // Setup Supabase Client for Realtime
@@ -75,7 +76,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, goals?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -98,6 +99,7 @@ function DashboardContent() {
   const [memberships, setMemberships] = useState<any[]>([]);
   const [isMembershipsLoading, setIsMembershipsLoading] = useState(false);
   const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
+  const [showCelebration, setShowCelebration] = useState(false);
   
   // Edit Session State
   const [editSession, setEditSession] = useState<any>(null);
@@ -279,6 +281,9 @@ function DashboardContent() {
         setData(json);
         if (json.businessId) setBusinessId(json.businessId);
         setIsAuthorized(true);
+        if (json.has_logged_in === false && !showCelebration) {
+          setShowCelebration(true);
+        }
       }
     } catch (e) {
       toast.error('Network error. Unable to fetch dashboard data.');
@@ -2461,7 +2466,9 @@ function DashboardContent() {
             <div>
               {sidebarTab === 'overview' ? (
                 <div>
-                  <h2 className="text-xl lg:text-2xl font-black text-text-primary">Welcome back</h2>
+                  <h2 className="text-xl lg:text-2xl font-black text-text-primary">
+                    {data?.has_logged_in === false ? `Welcome to Qcontrol, ${data?.ownerName?.split(' ')[0] || ''} 👋` : `Welcome back, ${data?.ownerName?.split(' ')[0] || ''}`}
+                  </h2>
                   <p className="text-xs lg:text-sm text-text-secondary mt-1 hidden sm:block">Complete control over your business. Everything you need, all in one place.</p>
                 </div>
               ) : (
@@ -2847,6 +2854,18 @@ function DashboardContent() {
           </button>
         </div>
       </div>
+
+      {/* First Login Celebration Modal */}
+      {showCelebration && data?.ownerName && (
+        <WelcomeCelebration 
+          ownerName={data.ownerName} 
+          onComplete={() => {
+            setShowCelebration(false);
+            // Optimistically update the UI so the greeting changes instantly
+            setData(prev => prev ? { ...prev, has_logged_in: true } : prev);
+          }} 
+        />
+      )}
     </div>
   );
 }

@@ -118,6 +118,7 @@ export async function GET(request: Request) {
       businessId,
       businessName: business.business_name,
       ownerName: business.owner_name,
+      has_logged_in: business.has_logged_in,
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 }
     });
   } catch (error: any) {
