@@ -96,7 +96,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
         }`}
       >
         <div className="mx-auto w-16 h-16 bg-gradient-to-br from-accent/30 to-accent/5 rounded-2xl flex items-center justify-center mb-6 shadow-[inset_0_0_20px_rgba(141,213,182,0.2)] border border-accent/20 rotate-3">
-          <span className="text-3xl transform -rotate-3 hover:scale-110 transition-transform origin-bottom-right">👋</span>
+          <span className="text-3xl transform -rotate-3 hover:scale-110 transition-transform origin-bottom-right"></span>
         </div>
         
         <h2 className="text-2xl font-black text-text-primary tracking-tight mb-2">

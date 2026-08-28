@@ -62,3 +62,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create membership' }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie || !sessionCookie.businessId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json({ error: 'Membership ID is required' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('memberships')
+      .delete()
+      .eq('id', id)
+      .eq('business_id', sessionCookie.businessId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Memberships DELETE error:', error);
+    return NextResponse.json({ error: 'Failed to delete membership' }, { status: 500 });
+  }
+}

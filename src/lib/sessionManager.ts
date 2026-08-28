@@ -38,6 +38,15 @@ export async function startSession(table_id: string, game_type: GameType, custom
     throw new ApiError(400, 'Customer Name is mandatory');
   }
 
+  // Force game type from configuration mapping
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    const tableConfig = business?.tables?.find(t => t.id === table_id);
+    if (tableConfig && tableConfig.game_type) {
+      game_type = tableConfig.game_type as GameType;
+    }
+  }
+
   const now = new Date();
   
   // Resolve rate
@@ -326,11 +335,18 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let pricingRules;
   let menuItems;
   let discount;
+  let configuredGameType = 'pool';
   if (businessId) {
     const business = await businessManager.getBusiness(businessId);
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
+    
+    const tableConfig = business?.tables?.find(t => t.id === table_id);
+    if (tableConfig && tableConfig.game_type) {
+      configuredGameType = tableConfig.game_type;
+    }
+
     // Fetch active promotion
     const { data: activePromos } = await supabase
       .from('promotions')
@@ -352,5 +368,6 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     pricingRules,
     menuItems,
     discount,
+    game_type: configuredGameType,
   };
 }

@@ -119,7 +119,8 @@ export async function GET(request: Request) {
       businessName: business.business_name,
       ownerName: business.owner_name,
       has_logged_in: business.has_logged_in,
-      goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 }
+      goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
+      google_sheet_id: business.google_sheet_id
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);

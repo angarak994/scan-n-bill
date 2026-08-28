@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { logActivityToSheet, syncBookingToSheet } from '@/lib/googleSheets';
+import { businessManager } from '@/lib/businessManager';
 
 export async function POST(request: Request) {
   try {
@@ -80,6 +81,10 @@ export async function POST(request: Request) {
     }
 
     // 3. Insert manual booking into database
+    const business = await businessManager.getBusiness(business_id);
+    const tableConfig = business?.tables?.find(t => t.id === table_id);
+    const enforcedGameType = tableConfig?.game_type || game_type || 'pool';
+
     const { data: newBooking, error: insertError } = await supabase
       .from('bookings')
       .insert({
@@ -87,7 +92,6 @@ export async function POST(request: Request) {
         customer_name: nameToSave,
         customer_phone: customer_phone || 'Manual / Walk-In',
         table_id: table_id,
-        game_type: game_type || 'pool',
         booking_date: booking_date,
         start_time: formattedStartTime,
         duration_minutes: durationNum,

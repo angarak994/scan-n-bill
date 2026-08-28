@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { Toaster } from 'react-hot-toast';
 
 const hankenGrotesk = Hanken_Grotesk({
   variable: "--font-hanken-grotesk",
@@ -46,6 +47,13 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-bg-primary text-text-primary transition-colors duration-200">
         {children}
+        <Toaster 
+          position="top-center"
+          toastOptions={{
+            className: '!bg-bg-surface !text-text-primary !border !border-border-theme !shadow-2xl',
+            style: { zIndex: 9999 }
+          }}
+        />
       </body>
     </html>
   );

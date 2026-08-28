@@ -76,7 +76,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -100,6 +100,18 @@ function DashboardContent() {
   const [isMembershipsLoading, setIsMembershipsLoading] = useState(false);
   const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
   const [showCelebration, setShowCelebration] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   
   // Edit Session State
   const [editSession, setEditSession] = useState<any>(null);
@@ -133,6 +145,7 @@ function DashboardContent() {
   const [showCurrentPin, setShowCurrentPin] = useState(false);
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
@@ -168,6 +181,7 @@ function DashboardContent() {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [bookingTable, setBookingTable] = useState('');
   const [bookingCustomer, setBookingCustomer] = useState('');
+  const [bookingError, setBookingError] = useState('');
   const [bookingDate, setBookingDate] = useState(getLocalDateStr());
   const [bookingStartTime, setBookingStartTime] = useState('');
   const [bookingDuration, setBookingDuration] = useState('60');
@@ -429,8 +443,10 @@ function DashboardContent() {
         body: JSON.stringify({ table_id: manualTable, game_type: manualGame, customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
       });
       if (res.ok) {
+        setIsManualModalOpen(false);
         setManualTable('');
         setManualCustomer('');
+        setManualNotes('');
         fetchData(undefined, true);
         toast.success('✓ Session created successfully.');
       } else {
@@ -579,7 +595,7 @@ function DashboardContent() {
                   </p>
                   {isOccupied && (
                     <p className="text-xs font-bold text-danger mt-2 flex items-center gap-1.5 bg-danger/10 px-2.5 py-1 rounded border border-danger/30 w-fit">
-                      <span>⚠️</span> Warning: Table {booking.table_id} is currently occupied! A reserved booking is waiting to start.
+                      Warning: Table {booking.table_id} is currently occupied! A reserved booking is waiting to start.
                     </p>
                   )}
                 </div>
@@ -609,7 +625,11 @@ function DashboardContent() {
 
   const handleCreateManualBooking = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bookingTable || !bookingDate || !bookingStartTime || !businessId) return;
+    setBookingError('');
+    if (!bookingTable || !bookingDate || !bookingStartTime || !businessId || !bookingGame) {
+      setBookingError('Please fill in all required fields (Table, Date, Time, Game Type).');
+      return;
+    }
     setIsCreatingBooking(true);
     try {
       const res = await fetch('/api/bookings/create', {
@@ -631,6 +651,7 @@ function DashboardContent() {
         setBookingTable('');
         setBookingCustomer('');
         setBookingStartTime('');
+        setBookingDate(getLocalDateStr());
         setBookingDuration('60');
         fetchData(undefined, true);
         toast.success('✓ Manual booking created.');
@@ -677,6 +698,27 @@ function DashboardContent() {
       toast.error("We couldn't create the membership. Please try again.");
     }
   };
+
+  const handleDeleteMembership = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete the customer profile for ${name}? Historical data will not be deleted.`)) return;
+    try {
+      const res = await fetch('/api/memberships', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        toast.success(`✓ Customer profile for ${name} deleted.`);
+        fetchMemberships();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to delete membership.");
+      }
+    } catch (err: any) {
+      toast.error("We couldn't delete the membership. Please try again.");
+    }
+  };
+
 
   useEffect(() => {
     if (sidebarTab === 'customers') {
@@ -737,10 +779,23 @@ function DashboardContent() {
     }
   };
 
-  const handleLogout = (e: React.MouseEvent) => {
+  const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
+    setIsLogoutModalOpen(true);
+  };
+
+  const confirmLogout = async () => {
     setEnteredPin('');
     setIsAuthorized(false);
+    
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Logout error', err);
+    }
+    
+    // Hard redirect to clear all frontend state and go to landing page
+    window.location.replace('/');
   };
 
   const handleApplyDiscount = async (e: React.FormEvent) => {
@@ -907,7 +962,7 @@ function DashboardContent() {
 
 
     if (newStatus === 'revoked') {
-      const confirm = window.confirm(`⚠️ Revoke Telegram Access?\n\nThis user will no longer be able to use this business through the Telegram bot.`);
+      const confirm = window.confirm(`Revoke Telegram Access?\n\nThis user will no longer be able to use this business through the Telegram bot.`);
       if (!confirm) return;
     }
 
@@ -943,7 +998,7 @@ function DashboardContent() {
 
   const handlePermanentDeleteOwner = async (chatIdToDelete: string) => {
 
-    const confirm = window.confirm(`⚠️ Permanently Delete Owner?\n\nThis will permanently remove this owner from this business and cannot be undone.`);
+    const confirm = window.confirm(`Permanently Delete Owner?\n\nThis will permanently remove this owner from this business and cannot be undone.`);
     if (!confirm) return;
 
     const updatedOwners = telegramOwners.filter(o => String(o.chatId) !== String(chatIdToDelete));
@@ -1179,13 +1234,16 @@ function DashboardContent() {
             ) : data.dailyRevenue < data.goals.daily_revenue ? (
               <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - data.dailyRevenue} isPrivacyMode={isPrivacyMode} /> remaining to reach today's target</p>
             ) : (
-              <p className="text-[10px] text-success text-right mt-1 font-bold">Daily target achieved! 🎉</p>
+              <p className="text-[10px] text-success text-right mt-1 font-bold">Daily target achieved!</p>
             )}
           </div>
         </div>
 
         {/* Active Tables Card */}
-        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+        <div 
+          onClick={() => setSidebarTab('tables')}
+          className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300 cursor-pointer hover:border-accent/50"
+        >
           <div className="flex justify-between items-start mb-2 sm:mb-4">
             <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
             <div className="flex items-center gap-2">
@@ -1450,8 +1508,8 @@ function DashboardContent() {
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Period Revenue</p>
-              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={revenueToday} isPrivacyMode={isPrivacyMode} /></p>
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Revenue</p>
+              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={revenueToday} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Sessions Completed</p>
@@ -1463,7 +1521,7 @@ function DashboardContent() {
             </div>
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Avg Rev / Session</p>
-              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(revenueToday / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /></p>
+              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(revenueToday / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
           </div>
         </div>
@@ -1697,7 +1755,16 @@ function DashboardContent() {
                     <td className="p-5"><span className="text-sm font-mono">₹{m.total_spend || 0}</span></td>
                     <td className="p-5"><span className="text-sm font-mono text-text-primary">{m.expiry_date ? m.expiry_date.split('T')[0] : 'N/A'}</span></td>
                     <td className="p-5">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
+                        <button 
+                          onClick={() => handleDeleteMembership(m.id, m.name)}
+                          className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                          title="Delete Customer Profile"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1757,7 +1824,7 @@ function DashboardContent() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
-              <span>🎮</span> Game Categories &amp; PS5 Support
+              Game Categories &amp; PS5 Support
             </h2>
             <p className="text-text-secondary text-xs sm:text-sm mt-1">
               Configure dynamic pricing, time slots, schedules, and multiplayer rules for all sports including PS5.
@@ -1798,7 +1865,7 @@ function DashboardContent() {
                     role="tab"
                   >
                     {isActive && <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
-                    {!isActive && <span className="text-[14px] opacity-70">{game === 'ps5' ? '🎮' : '🎱'}</span>}
+                    {!isActive && <span className="text-[14px] opacity-70"></span>}
                     <span>{game === 'ps5' ? 'PS5' : game}</span>
                   </button>
                 );
@@ -2186,7 +2253,7 @@ function DashboardContent() {
       {/* Change PIN UI */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
         <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          <span>🔒</span> Security Settings
+          Security Settings
         </h2>
         <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
           {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
@@ -2257,7 +2324,7 @@ function DashboardContent() {
                     <div className="flex flex-col">
                       <span className="text-sm font-bold flex items-center gap-2">
                         {owner.name} 
-                        {owner.role === 'PRIMARY_OWNER' && <span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase" title="Primary Owner">👑 Primary</span>} 
+                        {owner.role === 'PRIMARY_OWNER' && <span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase" title="Primary Owner">Primary</span>} 
                         {isRevoked ? (
                           <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
                         ) : (
@@ -2274,7 +2341,7 @@ function DashboardContent() {
                         </button>
                       ) : (
                         <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                          🔒 Revoke Access
+                          Revoke Access
                         </button>
                       )}
                       <button
@@ -2302,7 +2369,7 @@ function DashboardContent() {
                   disabled={generatingLinkRole === 'PRIMARY_OWNER'}
                   className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
                 >
-                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : '👑 Connect as Primary Owner'}
+                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : 'Connect as Primary Owner'}
                 </button>
                 <button 
                   onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
@@ -2342,7 +2409,7 @@ function DashboardContent() {
           <div className="bg-bg-card border border-warning/50 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
             <div className="bg-warning/10 border-b border-warning/20 p-5">
               <h3 className="text-xl font-bold flex items-center gap-3 text-warning">
-                <span className="text-2xl animate-bounce">⚠️</span> Confirmation Required
+                Confirmation Required
               </h3>
               <p className="text-sm text-text-secondary mt-1">This session has been running for a long time.</p>
             </div>
@@ -2426,9 +2493,6 @@ function DashboardContent() {
           <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconCustomers /> Customers
           </button>
-          <button onClick={() => setSidebarTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconSettings /> Settings
-          </button>
         </nav>
 
         <div className="p-4 flex flex-col gap-2 border-t border-border-theme/50">
@@ -2436,17 +2500,11 @@ function DashboardContent() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
             New Session
           </button>
-          <button onClick={() => setIsQRModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-3 bg-accent text-white font-bold rounded-lg text-sm transition-colors hover:bg-accent/90 mb-4 shadow-[0_0_15px_rgba(141,213,182,0.3)]">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-            Quick Scan
-          </button>
+
           
           <button onClick={() => setSidebarTab('support')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconSupport /> Support
           </button>
-          <a href="#" onClick={handleLogout} className="flex items-center gap-3 px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm font-medium">
-            <IconLogout /> Logout
-          </a>
         </div>
       </aside>
 
@@ -2467,7 +2525,7 @@ function DashboardContent() {
               {sidebarTab === 'overview' ? (
                 <div>
                   <h2 className="text-xl lg:text-2xl font-black text-text-primary">
-                    {data?.has_logged_in === false ? `Welcome to Qcontrol, ${data?.ownerName?.split(' ')[0] || ''} 👋` : `Welcome back, ${data?.ownerName?.split(' ')[0] || ''}`}
+                    {data?.has_logged_in === false ? `Welcome to Qcontrol, ${data?.ownerName?.split(' ')[0] || ''}` : `Welcome back, ${data?.ownerName?.split(' ')[0] || ''}`}
                   </h2>
                   <p className="text-xs lg:text-sm text-text-secondary mt-1 hidden sm:block">Complete control over your business. Everything you need, all in one place.</p>
                 </div>
@@ -2481,6 +2539,19 @@ function DashboardContent() {
           </div>
           <div className="flex items-center gap-6">
             <div className="flex gap-4 text-text-secondary items-center">
+              <button
+                onClick={() => {
+                  if (!data?.google_sheet_id) {
+                    toast.error('Google Sheet is not configured for this business.');
+                    return;
+                  }
+                  window.open(`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`, '_blank');
+                }}
+                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift"
+                title="Open Google Sheet"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              </button>
               <button
                 onClick={togglePrivacy}
                 className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
@@ -2526,17 +2597,49 @@ function DashboardContent() {
                 </svg>
               </button>
               {businessId && <NotificationBell businessId={businessId} />}
-              <button onClick={() => setSidebarTab('settings')} className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
             </div>
             <div className="h-8 w-px bg-border-theme"></div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center text-accent font-bold border border-accent/30 shadow-inner">
-                {data?.ownerName ? data.ownerName.charAt(0).toUpperCase() : 'O'}
-              </div>
-              <div>
-                <p className="text-sm font-semibold leading-tight">{data?.ownerName || 'Club Owner'}</p>
-                <p className="text-xs text-text-secondary">Owner</p>
-              </div>
+            <div className="relative" ref={profileDropdownRef}>
+              <button 
+                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                className="flex items-center gap-3 outline-none focus:outline-none hover:opacity-80 transition-opacity"
+              >
+                <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center text-accent font-bold border border-accent/30 shadow-inner">
+                  {data?.ownerName ? data.ownerName.charAt(0).toUpperCase() : 'O'}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <p className="text-sm font-semibold leading-tight">{data?.ownerName || 'Club Owner'}</p>
+                  <p className="text-xs text-text-secondary">Owner</p>
+                </div>
+                <svg className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${isProfileDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              
+              {/* Profile Dropdown Menu */}
+              {isProfileDropdownOpen && (
+                <div className="absolute right-0 mt-3 w-48 bg-bg-surface border border-border-theme rounded-xl shadow-2xl overflow-hidden z-50 py-2 origin-top-right animate-in fade-in zoom-in-95 duration-100">
+                  <button 
+                    onClick={() => {
+                      setSidebarTab('settings');
+                      setIsProfileDropdownOpen(false);
+                    }} 
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors text-left"
+                  >
+                    <IconSettings />
+                    Settings
+                  </button>
+                  <div className="h-px bg-border-theme my-1"></div>
+                  <button 
+                    onClick={(e) => {
+                      setIsProfileDropdownOpen(false);
+                      handleLogout(e);
+                    }} 
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                  >
+                    <IconLogout />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -2635,6 +2738,7 @@ function DashboardContent() {
               <p className="text-text-secondary mt-1 text-sm">Reserve a table directly from the admin command center.</p>
             </div>
             <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-4">
+              {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table *</label>
                 <select
@@ -2658,16 +2762,9 @@ function DashboardContent() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) *</label>
-                <select
-                  required
-                  value={bookingGame}
-                  onChange={e => setBookingGame(e.target.value)}
-                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize min-h-[44px]"
-                >
-                  {getAvailableGameTypesForTable(bookingTable).map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                <div className="w-full px-4 py-3 bg-bg-primary/50 border border-border-theme rounded-lg text-sm text-text-secondary capitalize cursor-not-allowed">
+                  {bookingGame || 'Select a table first'}
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name (Optional)</label>
@@ -2778,9 +2875,6 @@ function DashboardContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-              <button onClick={() => { setSidebarTab('settings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconSettings /> Settings
-              </button>
               <button onClick={() => { setSidebarTab('support'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
                 <IconSupport /> Support
               </button>
@@ -2788,14 +2882,33 @@ function DashboardContent() {
               <button onClick={() => { setIsManualModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2">
                 New Session
               </button>
-              <button onClick={() => { setIsQRModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-accent text-white font-bold rounded-lg text-sm">
-                Quick Scan
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+            <div className="w-16 h-16 bg-accent/20 text-accent rounded-full flex items-center justify-center mx-auto mb-4">
+              <IconLogout />
+            </div>
+            <h3 className="text-xl font-bold text-text-primary mb-2">Are you sure you want to log out?</h3>
+            <div className="flex gap-3 w-full mt-6">
+              <button 
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="flex-1 py-3 text-text-secondary font-bold text-sm bg-bg-card border border-border-theme rounded-lg hover:text-text-primary transition-colors"
+              >
+                Cancel
               </button>
-              <div className="mt-auto pt-4">
-                <a href="#" onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 text-text-secondary text-sm font-medium">
-                  <IconLogout /> Logout
-                </a>
-              </div>
+              <button 
+                onClick={confirmLogout}
+                className="flex-1 py-3 bg-danger text-white font-bold text-sm rounded-lg hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -2866,6 +2979,15 @@ function DashboardContent() {
           }} 
         />
       )}
+      {/* Quick Scan FAB */}
+      <button 
+        onClick={() => setIsQRModalOpen(true)}
+        className="fixed bottom-24 lg:bottom-10 right-6 lg:right-10 w-14 h-14 bg-accent text-bg-primary rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(141,213,182,0.4)] hover:scale-105 hover:bg-accent/90 transition-all z-40 group"
+        title="Quick Scan"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+      </button>
+
     </div>
   );
 }

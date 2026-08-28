@@ -58,7 +58,7 @@ export default function Home() {
               <p className="text-text-secondary text-xs sm:text-sm">Customers book instantly via WhatsApp. No human required.</p>
             </div>
             <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme transition-transform hover:-translate-y-1 hover:shadow-xl duration-300">
-              <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2"><span className="text-xl">⏱️</span> QR Smart Timers</h3>
+              <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">QR Smart Timers</h3>
               <p className="text-text-secondary text-xs sm:text-sm">Customers scan a QR code to start their session. Billing is exact.</p>
             </div>
             <div className="bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme transition-transform hover:-translate-y-1 hover:shadow-xl duration-300">

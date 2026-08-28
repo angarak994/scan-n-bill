@@ -286,29 +286,19 @@ export default function SessionClient({ initialState, business_id, table_id, gam
         {session.status === 'idle' && (
           <>
             <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-2 shadow-inner">
-              <span className="text-4xl">🎱</span>
+              <span className="text-4xl"></span>
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Table: {session.table_id}</h1>
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Service / Game Type</label>
-                <select 
-                  value={session.game_type}
-                  onChange={(e) => setSession(prev => ({ ...prev, game_type: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all capitalize"
-                >
-                  {session.pricingRules?.rules && Object.keys(session.pricingRules.rules).length > 0 ? (
-                    Object.keys(session.pricingRules.rules).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))
-                  ) : (
-                    <option value={session.game_type}>{session.game_type}</option>
-                  )}
-                </select>
+                <div className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-gray-100 dark:bg-gray-700/50 text-gray-900 dark:text-white/80 shadow-sm font-semibold capitalize opacity-80 cursor-not-allowed">
+                  {session.game_type}
+                </div>
               </div>
               {session.discount && session.discount.percent > 0 && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
-                  🎉 Happy Hour: {session.discount.percent}% OFF
+                  Happy Hour: {session.discount.percent}% OFF
                 </div>
               )}
             </div>
