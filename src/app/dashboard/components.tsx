@@ -1,5 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { calculateBilling, formatTimeReadable } from '@/lib/billing';
+export function Tooltip({ text, children }: { text: string, children: React.ReactNode }) {
+  return (
+    <div className="group relative inline-flex justify-center items-center">
+      {children}
+      <div className="absolute bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-text-primary text-bg-primary text-[10px] font-bold rounded shadow-lg whitespace-nowrap z-[9999] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+        {text}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-text-primary"></div>
+      </div>
+    </div>
+  );
+}
+
+export function CustomSelect({ value, onChange, options, className, placeholder }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], className?: string, placeholder?: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const selectedLabel = options.find(o => o.value === value)?.label || placeholder || value;
+
+  return (
+    <div className="relative w-full" ref={ref}>
+      <button type="button" onClick={() => setIsOpen(!isOpen)} className={`flex justify-between items-center w-full text-left bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary px-4 py-3 min-h-[44px] ${className || ''}`}>
+        <span className="truncate">{selectedLabel}</span>
+        <svg className={`w-4 h-4 text-text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+      </button>
+      {isOpen && (
+        <div className="absolute top-full left-0 w-full mt-1 bg-bg-surface border border-border-theme rounded-lg shadow-xl z-[9999] max-h-60 overflow-y-auto overflow-x-hidden custom-scrollbar">
+          {options.map((opt, i) => (
+            <div key={i} onClick={() => { onChange(opt.value); setIsOpen(false); }} className={`px-4 py-3 text-sm cursor-pointer hover:bg-bg-primary transition-colors ${value === opt.value ? 'text-accent font-bold bg-accent/5' : 'text-text-primary'}`}>
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TimePicker({ value, onChange }: { value: string, onChange: (val: string) => void }) {
+  const [hh, mm] = (value || '12:00').split(':');
+  let hourNum = parseInt(hh || '12');
+  const isPm = hourNum >= 12;
+  const hour12 = hourNum % 12 || 12;
+  const hourStr = hour12.toString().padStart(2, '0');
+  
+  const updateTime = (h12: string, min: string, pm: boolean) => {
+    let h24 = parseInt(h12);
+    if (pm && h24 < 12) h24 += 12;
+    if (!pm && h24 === 12) h24 = 0;
+    onChange(`${h24.toString().padStart(2, '0')}:${min.padStart(2, '0')}`);
+  };
+
+  const hourOpts = Array.from({length: 12}, (_, i) => ({ value: (i+1).toString().padStart(2, '0'), label: (i+1).toString().padStart(2, '0') }));
+  const minOpts = ['00', '15', '30', '45'].map(m => ({ value: m, label: m }));
+  const periodOpts = [{value: 'AM', label: 'AM'}, {value: 'PM', label: 'PM'}];
+
+  return (
+    <div className="flex gap-2 w-full">
+      <CustomSelect className="flex-1" value={hourStr} onChange={(v) => updateTime(v, mm, isPm)} options={hourOpts} />
+      <div className="flex items-center text-text-secondary font-bold">:</div>
+      <CustomSelect className="flex-1" value={mm || '00'} onChange={(v) => updateTime(hourStr, v, isPm)} options={minOpts} />
+      <CustomSelect className="flex-1 min-w-[80px]" value={isPm ? 'PM' : 'AM'} onChange={(v) => updateTime(hourStr, mm, v === 'PM')} options={periodOpts} />
+    </div>
+  );
+}
 
 export function NotificationBell({ businessId }: { businessId: string }) {
   const [notifications, setNotifications] = useState<any[]>([]);

@@ -6,7 +6,7 @@ export function parseDateString(dateStr: string): number {
   if (!dateStr) return NaN;
   let cleanStr = dateStr.replace(/^'/, '').trim();
   if (!cleanStr.includes('+') && !cleanStr.includes('Z') && !cleanStr.includes('GMT')) {
-    cleanStr = `${cleanStr} +0530`;
+    cleanStr = `${cleanStr}+05:30`;
   }
   return new Date(cleanStr).getTime();
 }

@@ -5,6 +5,8 @@ import { endSession } from '@/lib/sessionManager';
 import { supabase } from '@/lib/supabaseClient';
 import { getSession } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 function toReadableDate(date: Date): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Kolkata',

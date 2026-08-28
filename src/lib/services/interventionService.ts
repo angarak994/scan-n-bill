@@ -1,8 +1,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
-import { calculateBilling } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
-import { logActivityToSheet, logSessionEndToSheet } from '@/lib/googleSheets';
+import { endSession } from '@/lib/sessionManager';
 
 export async function handleSessionIntervention(params: {
   action: string;
@@ -61,37 +60,10 @@ export async function handleSessionIntervention(params: {
       break;
     case 'force_end':
       interventionType = 'force_close';
-      const business = await businessManager.getBusiness(business_id);
-      const activeDiscount = business?.active_discounts?.[session.table_id];
-      let totalPausedSeconds = session.paused_duration_seconds || 0;
-      if (session.paused_at) {
-        totalPausedSeconds += Math.max(0, Math.floor((new Date(now).getTime() - new Date(session.paused_at).getTime()) / 1000));
-      }
-      const res = calculateBilling(
-        session.start_time, 
-        now, 
-        session.game_type, 
-        business?.pricing_rules, 
-        session.num_players || 1, 
-        activeDiscount,
-        totalPausedSeconds,
-        session.locked_rate,
-        session.locked_rate_name
-      );
-      
-      dbUpdates = {
-        status: 'COMPLETED',
-        end_time: now,
-        duration: res.duration,
-        applied_pricing: res.slabs_applied,
-        cost: res.cost,
-        base_cost: res.baseCost,
-        discount_amount: res.discountAmount,
-        closure_type: 'manual_force',
-        paused_at: null,
-        paused_duration_seconds: totalPausedSeconds,
-        last_activity_at: now
-      };
+      // The heavy lifting (billing, loyalty, promos, google sheets, booking state) 
+      // is now entirely delegated to the unified endSession() manager.
+      const endSessionResult = await endSession(session.table_id, business_id);
+      dbUpdates = { _bypass_update: true }; // Flag to prevent duplicate update
       break;
     case 'confirm_playing':
       interventionType = 'confirm_playing';
@@ -104,7 +76,9 @@ export async function handleSessionIntervention(params: {
   }
 
   if (action === 'force_end') {
-    await sessionRepository.update(session_id, dbUpdates, business_id);
+    if (!dbUpdates._bypass_update) {
+      await sessionRepository.update(session_id, dbUpdates, business_id);
+    }
   } else {
     const { error: updateError } = await supabase
       .from('sessions')

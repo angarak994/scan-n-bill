@@ -5,7 +5,7 @@ import { useEffect, useState, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { createClient } from '@supabase/supabase-js';
-import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText } from './components';
+import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker } from './components';
 import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
 
@@ -94,11 +94,13 @@ function DashboardContent() {
   const [manualCustomer, setManualCustomer] = useState('');
   const [manualTable, setManualTable] = useState('');
   const [manualGame, setManualGame] = useState('pool');
+  const [manualPlayers, setManualPlayers] = useState('1');
   const [manualNotes, setManualNotes] = useState('');
   const [isStartingManual, setIsStartingManual] = useState(false);
   const [memberships, setMemberships] = useState<any[]>([]);
   const [isMembershipsLoading, setIsMembershipsLoading] = useState(false);
   const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
+  const [isCreatingMember, setIsCreatingMember] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
@@ -186,6 +188,7 @@ function DashboardContent() {
   const [bookingStartTime, setBookingStartTime] = useState('');
   const [bookingDuration, setBookingDuration] = useState('60');
   const [bookingGame, setBookingGame] = useState('pool');
+  const [bookingPlayers, setBookingPlayers] = useState('1');
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
 
   // PS5 & Game Category Configuration State
@@ -440,13 +443,14 @@ function DashboardContent() {
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id: manualTable, game_type: manualGame, customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
+        body: JSON.stringify({ table_id: manualTable, game_type: manualGame, num_players: Number(manualPlayers), customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
       });
       if (res.ok) {
         setIsManualModalOpen(false);
         setManualTable('');
         setManualCustomer('');
         setManualNotes('');
+        setManualPlayers('1');
         fetchData(undefined, true);
         toast.success('✓ Session created successfully.');
       } else {
@@ -642,7 +646,8 @@ function DashboardContent() {
           booking_date: bookingDate,
           start_time: bookingStartTime,
           duration_minutes: Number(bookingDuration) || 60,
-          game_type: bookingGame
+          game_type: bookingGame,
+          num_players: Number(bookingPlayers)
         })
       });
       const result = await res.json();
@@ -653,6 +658,7 @@ function DashboardContent() {
         setBookingStartTime('');
         setBookingDate(getLocalDateStr());
         setBookingDuration('60');
+        setBookingPlayers('1');
         fetchData(undefined, true);
         toast.success('✓ Manual booking created.');
       } else {
@@ -680,6 +686,8 @@ function DashboardContent() {
 
   const handleCreateMembership = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreatingMember) return;
+    setIsCreatingMember(true);
     try {
       const res = await fetch('/api/memberships', {
         method: 'POST',
@@ -696,6 +704,8 @@ function DashboardContent() {
       }
     } catch (e) {
       toast.error("We couldn't create the membership. Please try again.");
+    } finally {
+      setIsCreatingMember(false);
     }
   };
 
@@ -1427,7 +1437,9 @@ function DashboardContent() {
                 {(data.bookings || []).length === 0 ? (
                   <tr><td colSpan={5} className="p-12 text-center text-text-secondary text-base">Ready to grow your business? Schedule your first booking today.</td></tr>
                 ) : (
-                  (data.bookings || []).map((booking: any) => (
+                  (data.bookings || []).map((booking: any) => {
+                    const isOccupied = data.activeSessions?.some((s: any) => s.table_id === booking.table_id && s.status === 'ACTIVE');
+                    return (
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
                       <td className="p-4 md:p-5">
                         <p className="text-base font-bold text-text-primary">{booking.customer_name}</p>
@@ -1446,12 +1458,26 @@ function DashboardContent() {
                         {booking.status === 'active' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-secondary/50 text-secondary bg-secondary/10 uppercase shadow-sm">Active Session</span>}
                         {booking.status === 'completed' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-border-theme text-text-secondary bg-bg-surface uppercase shadow-sm">Completed</span>}
                         {booking.status === 'cancelled' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-danger/50 text-danger bg-danger/10 uppercase shadow-sm">Cancelled</span>}
+                        {booking.status === 'no_show' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-orange-500/50 text-orange-600 bg-orange-500/10 uppercase shadow-sm">No Show</span>}
                       </td>
                       <td className="p-4 md:p-5 text-right">
                         {booking.status === 'confirmed' && (
                           <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')} className="px-4 py-2 text-sm font-bold text-danger border border-danger/30 rounded-lg hover:bg-danger hover:text-white transition-colors shadow-sm">Cancel</button>
-                            <button onClick={() => handleStartBooking(booking.id)} className="px-4 py-2 text-sm font-bold text-black bg-accent rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20 border border-transparent">Start Session</button>
+                            <Tooltip text="Mark as No Show">
+                              <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-4 py-2 text-sm font-bold text-orange-600 border border-orange-500/30 rounded-lg hover:bg-orange-500 hover:text-white transition-colors shadow-sm">No Show</button>
+                            </Tooltip>
+                            <Tooltip text="Cancel Booking">
+                              <button onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')} className="px-4 py-2 text-sm font-bold text-danger border border-danger/30 rounded-lg hover:bg-danger hover:text-white transition-colors shadow-sm">Cancel</button>
+                            </Tooltip>
+                            <Tooltip text={isOccupied ? 'End current active session on table before starting' : 'Start Session'}>
+                              <button 
+                                onClick={() => !isOccupied && handleStartBooking(booking.id)} 
+                                disabled={isOccupied}
+                                className="px-4 py-2 text-sm font-bold text-black bg-accent rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20 border border-transparent disabled:opacity-50 disabled:bg-bg-surface disabled:text-text-secondary disabled:border-border-theme disabled:shadow-none"
+                              >
+                                Start Session
+                              </button>
+                            </Tooltip>
                           </div>
                         )}
                         {booking.status === 'active' && (
@@ -1461,7 +1487,8 @@ function DashboardContent() {
                         )}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1757,13 +1784,14 @@ function DashboardContent() {
                     <td className="p-5">
                       <div className="flex items-center gap-3">
                         <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
-                        <button 
-                          onClick={() => handleDeleteMembership(m.id, m.name)}
-                          className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
-                          title="Delete Customer Profile"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
+                        <Tooltip text="Delete Profile">
+                          <button 
+                            onClick={() => handleDeleteMembership(m.id, m.name)}
+                            className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>
@@ -1778,11 +1806,11 @@ function DashboardContent() {
         <h2 className="text-2xl font-bold mb-6">Register New Member</h2>
         <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
           <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name</label>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name <span className="text-danger">*</span></label>
             <input required type="text" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="John Doe" />
           </div>
           <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number</label>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number <span className="text-danger">*</span></label>
             <input required type="tel" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono" placeholder="9876543210" />
           </div>
           <div className="col-span-2">
@@ -1790,26 +1818,35 @@ function DashboardContent() {
             <input type="email" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="john@example.com" />
           </div>
           <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Membership Tier</label>
-            <select value={newMember.tier} onChange={e => setNewMember({...newMember, tier: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-bold text-accent">
-              <option value="Standard">Standard</option>
-              <option value="Pro">Pro</option>
-              <option value="VIP">VIP</option>
-              <option value="Elite">Elite</option>
-            </select>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Membership Tier <span className="text-danger">*</span></label>
+            <CustomSelect 
+              value={newMember.tier} 
+              onChange={v => setNewMember({...newMember, tier: v})} 
+              className="font-bold text-accent"
+              options={[
+                {value: "Standard", label: "Standard"},
+                {value: "Pro", label: "Pro"},
+                {value: "VIP", label: "VIP"},
+                {value: "Elite", label: "Elite"}
+              ]}
+            />
           </div>
           <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Months)</label>
-            <select value={newMember.duration} onChange={e => setNewMember({...newMember, duration: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm">
-              <option value="1">1 Month</option>
-              <option value="3">3 Months</option>
-              <option value="6">6 Months</option>
-              <option value="12">12 Months (1 Year)</option>
-            </select>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Months) <span className="text-danger">*</span></label>
+            <CustomSelect 
+              value={newMember.duration} 
+              onChange={v => setNewMember({...newMember, duration: v})} 
+              options={[
+                {value: "1", label: "1 Month"},
+                {value: "3", label: "3 Months"},
+                {value: "6", label: "6 Months"},
+                {value: "12", label: "12 Months (1 Year)"}
+              ]}
+            />
           </div>
           <div className="col-span-2 mt-2">
-            <button type="submit" className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors">
-              Register Member
+            <button type="submit" disabled={isCreatingMember} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {isCreatingMember ? 'Registering...' : 'Register Member'}
             </button>
           </div>
         </form>
@@ -1883,36 +1920,36 @@ function DashboardContent() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Pricing Model</label>
-                      <select
+                      <CustomSelect
                         value={currentRule.type || 'fixed'}
-                        onChange={e => {
-                          const newType = e.target.value;
-                          const updated = { ...currentRule, type: newType };
+                        onChange={v => {
+                          const updated = { ...currentRule, type: v };
                           const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                           handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                         }}
-                        className="w-full px-3 py-2.5 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
-                      >
-                        <option value="fixed">Flat Rate (Fixed ₹/hr)</option>
-                        <option value="time_based">Schedule / Time Slots (Day &amp; Evening)</option>
-                      </select>
+                        options={[
+                          {value: "fixed", label: "Flat Rate (Fixed ₹/hr)"},
+                          {value: "time_based", label: "Schedule / Time Slots (Day & Evening)"}
+                        ]}
+                        className="py-2.5 min-h-[40px] text-xs font-bold"
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Multiplayer Mode</label>
-                      <select
+                      <CustomSelect
                         value={currentRule.multiplayer_mode || 'none'}
-                        onChange={e => {
-                          const mode = e.target.value;
-                          const updated = { ...currentRule, multiplayer_mode: mode };
+                        onChange={v => {
+                          const updated = { ...currentRule, multiplayer_mode: v };
                           const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                           handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                         }}
-                        className="w-full px-3 py-2.5 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
-                      >
-                        <option value="none">Standard Table Rate (No Multiplier)</option>
-                        <option value="multiply">Multiply Rate by Players</option>
-                        <option value="base_plus_extra">Base Rate + Extra per Additional Player</option>
-                      </select>
+                        options={[
+                          {value: "none", label: "Disabled (Single rate)"},
+                          {value: "multiply", label: "Multiply Rate by Players"},
+                          {value: "base_plus_extra", label: "Base Rate + Extra per Additional Player"}
+                        ]}
+                        className="py-2.5 min-h-[40px] text-xs font-bold"
+                      />
                     </div>
                     {currentRule.type === 'fixed' ? (
                       <div>
@@ -2028,15 +2065,16 @@ function DashboardContent() {
                     <span className="px-2 py-0.5 rounded text-[10px] font-extrabold font-mono uppercase bg-bg-surface border border-border-theme text-primary">
                       {t.type}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => confirmDeleteStation(t)}
-                      className="p-1 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
-                      title="Delete Station"
-                      aria-label="Delete Station"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+                    <Tooltip text="Delete Station">
+                      <button
+                        type="button"
+                        onClick={() => confirmDeleteStation(t)}
+                        className="p-1 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                        aria-label="Delete Station"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               ))}
@@ -2062,15 +2100,12 @@ function DashboardContent() {
                   className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
                 />
               </div>
-              <select
+              <CustomSelect
                 value={newStationType}
-                onChange={e => setNewStationType(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent capitalize min-h-[40px]"
-              >
-                {Object.keys(data?.pricingRules?.rules || { snooker: {}, pool: {}, ps5: {} }).map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+                onChange={v => setNewStationType(v)}
+                options={Object.keys(data?.pricingRules?.rules || { snooker: {}, pool: {}, ps5: {} }).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
+                className="py-2 min-h-[40px] text-xs font-bold capitalize"
+              />
               <button type="submit" disabled={isUpdatingConfig || !newStationId} className="w-full bg-accent text-black font-extrabold py-2.5 rounded-lg hover:bg-accent/90 transition-colors text-xs uppercase shadow-md shadow-accent/10 min-h-[42px]">
                 {isUpdatingConfig ? 'Adding...' : '+ Create Station'}
               </button>
@@ -2083,7 +2118,7 @@ function DashboardContent() {
         <h2 className="text-2xl font-bold mb-6">Launch Promotion</h2>
         <form onSubmit={handleSavePromo} className="max-w-md flex flex-col gap-4">
           <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Promotion Title</label>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Promotion Title <span className="text-danger">*</span></label>
             <input 
               type="text" 
               required
@@ -2094,7 +2129,7 @@ function DashboardContent() {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount Percent (%)</label>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount Percent (%) <span className="text-danger">*</span></label>
             <input 
               type="number" 
               required min="1" max="100"
@@ -2104,7 +2139,7 @@ function DashboardContent() {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Hours)</label>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Hours) <span className="text-danger">*</span></label>
             <input 
               type="number" 
               required min="1" max="72"
@@ -2129,17 +2164,13 @@ function DashboardContent() {
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
         <h2 className="text-2xl font-bold mb-6">Manual Table Discounts</h2>
         <form onSubmit={handleApplyDiscount} className="max-w-md flex flex-col gap-4">
-          <select 
+          <CustomSelect 
             value={selectedTable}
-            onChange={e => setSelectedTable(e.target.value)}
-            className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-semibold text-text-primary"
-            required
-          >
-            <option value="">-- Select Table --</option>
-            {data.tables?.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
+            onChange={v => setSelectedTable(v)}
+            placeholder="-- Select Table --"
+            options={data.tables?.map(t => ({value: t.id, label: t.name})) || []}
+            className="font-semibold"
+          />
           <input 
             type="number" 
             min="1" max="100"
@@ -2324,7 +2355,7 @@ function DashboardContent() {
                     <div className="flex flex-col">
                       <span className="text-sm font-bold flex items-center gap-2">
                         {owner.name} 
-                        {owner.role === 'PRIMARY_OWNER' && <span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase" title="Primary Owner">Primary</span>} 
+                        {owner.role === 'PRIMARY_OWNER' && <Tooltip text="Primary Owner"><span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase cursor-help">Primary</span></Tooltip>} 
                         {isRevoked ? (
                           <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
                         ) : (
@@ -2344,14 +2375,15 @@ function DashboardContent() {
                           Revoke Access
                         </button>
                       )}
-                      <button
-                        onClick={() => handlePermanentDeleteOwner(owner.chatId)}
-                        className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
-                        title="Permanently Delete Owner"
-                        aria-label="Permanently Delete Owner"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+                      <Tooltip text="Permanently Delete Owner">
+                        <button
+                          onClick={() => handlePermanentDeleteOwner(owner.chatId)}
+                          className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                          aria-label="Permanently Delete Owner"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
                 );
@@ -2539,63 +2571,65 @@ function DashboardContent() {
           </div>
           <div className="flex items-center gap-6">
             <div className="flex gap-4 text-text-secondary items-center">
-              <button
-                onClick={() => {
-                  if (!data?.google_sheet_id) {
-                    toast.error('Google Sheet is not configured for this business.');
-                    return;
-                  }
-                  window.open(`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`, '_blank');
-                }}
-                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift"
-                title="Open Google Sheet"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-              </button>
-              <button
-                onClick={togglePrivacy}
-                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
-                title="Toggle Privacy Mode"
-              >
-                {isPrivacyMode ? <IconEyeOff /> : <IconEye />}
-              </button>
-              <button 
-                onClick={() => {
-                  const switchTheme = () => {
-                    const isDark = document.documentElement.classList.contains('dark');
-                    if (isDark) {
-                      document.documentElement.classList.remove('dark');
-                      localStorage.setItem('theme', 'light');
-                    } else {
-                      document.documentElement.classList.add('dark');
-                      localStorage.setItem('theme', 'dark');
+              <Tooltip text="Open Google Sheet">
+                <button
+                  onClick={() => {
+                    if (!data?.google_sheet_id) {
+                      toast.error('Google Sheet is not configured for this business.');
+                      return;
                     }
-                  };
+                    window.open(`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`, '_blank');
+                  }}
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                </button>
+              </Tooltip>
+              <Tooltip text="Toggle Privacy Mode">
+                <button
+                  onClick={togglePrivacy}
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
+                >
+                  {isPrivacyMode ? <IconEyeOff /> : <IconEye />}
+                </button>
+              </Tooltip>
+              <Tooltip text="Toggle Theme">
+                <button 
+                  onClick={() => {
+                    const switchTheme = () => {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      if (isDark) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('theme', 'light');
+                      } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('theme', 'dark');
+                      }
+                    };
 
-                  if (!document.startViewTransition) {
-                    // Fallback for browsers without View Transitions API
-                    document.documentElement.classList.add('theme-transition-fallback');
-                    switchTheme();
-                    setTimeout(() => {
-                      document.documentElement.classList.remove('theme-transition-fallback');
-                    }, 350);
-                    return;
-                  }
-                  
-                  document.startViewTransition(() => {
-                    switchTheme();
-                  });
-                }}
-                className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
-                title="Toggle Theme"
-              >
-                <svg className="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                <svg className="w-5 h-5 block dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              </button>
+                    if (!document.startViewTransition) {
+                      document.documentElement.classList.add('theme-transition-fallback');
+                      switchTheme();
+                      setTimeout(() => {
+                        document.documentElement.classList.remove('theme-transition-fallback');
+                      }, 350);
+                      return;
+                    }
+                    
+                    document.startViewTransition(() => {
+                      switchTheme();
+                    });
+                  }}
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
+                >
+                  <svg className="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <svg className="w-5 h-5 block dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                </button>
+              </Tooltip>
               {businessId && <NotificationBell businessId={businessId} />}
             </div>
             <div className="h-8 w-px bg-border-theme"></div>
@@ -2679,38 +2713,45 @@ function DashboardContent() {
             </div>
             <form onSubmit={handleManualStart} className="p-8 flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name <span className="text-danger">*</span></label>
                 <input type="text" required value={manualCustomer} onChange={e => setManualCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table</label>
-                <select
-                  required
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                <CustomSelect
                   value={manualTable}
-                  onChange={e => {
-                    const selected = e.target.value;
-                    setManualTable(selected);
-                    const allowed = getAvailableGameTypesForTable(selected);
+                  onChange={v => {
+                    setManualTable(v);
+                    const allowed = getAvailableGameTypesForTable(v);
                     if (allowed.length > 0 && !allowed.includes(manualGame)) {
                       setManualGame(allowed[0]);
                     }
                   }}
-                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary min-h-[44px]"
-                >
-                  <option value="">-- Choose an available table --</option>
-                  {data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
-                  ))}
-                </select>
+                  placeholder="-- Choose an available table --"
+                  options={data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
+                  className="min-h-[44px]"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports)</label>
-                <select required value={manualGame} onChange={e => setManualGame(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary capitalize min-h-[44px]">
-                  {getAvailableGameTypesForTable(manualTable).map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) <span className="text-danger">*</span></label>
+                <CustomSelect 
+                  value={manualGame} 
+                  onChange={v => setManualGame(v)} 
+                  options={getAvailableGameTypesForTable(manualTable).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
+                  className="capitalize min-h-[44px]" 
+                />
               </div>
+              {manualGame === 'ps5' && (
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Number of Players <span className="text-danger">*</span></label>
+                  <CustomSelect 
+                    value={manualPlayers} 
+                    onChange={v => setManualPlayers(v)} 
+                    options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
+                    className="min-h-[44px]" 
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
                 <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Special requests..." />
@@ -2740,28 +2781,23 @@ function DashboardContent() {
             <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-4">
               {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table *</label>
-                <select
-                  required
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                <CustomSelect
                   value={bookingTable}
-                  onChange={e => {
-                    const selected = e.target.value;
-                    setBookingTable(selected);
-                    const allowed = getAvailableGameTypesForTable(selected);
+                  onChange={v => {
+                    setBookingTable(v);
+                    const allowed = getAvailableGameTypesForTable(v);
                     if (allowed.length > 0) {
                       setBookingGame(allowed[0]);
                     }
                   }}
-                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary min-h-[44px]"
-                >
-                  <option value="">-- Choose a table --</option>
-                  {data?.tables?.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.type || t.id})</option>
-                  ))}
-                </select>
+                  placeholder="-- Choose a table --"
+                  options={data?.tables?.map(t => ({ value: t.id, label: `${t.name} (${t.type || t.id})` })) || []}
+                  className="min-h-[44px]"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) *</label>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) <span className="text-danger">*</span></label>
                 <div className="w-full px-4 py-3 bg-bg-primary/50 border border-border-theme rounded-lg text-sm text-text-secondary capitalize cursor-not-allowed">
                   {bookingGame || 'Select a table first'}
                 </div>
@@ -2770,24 +2806,39 @@ function DashboardContent() {
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name (Optional)</label>
                 <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
               </div>
+              {bookingGame === 'ps5' && (
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Number of Players <span className="text-danger">*</span></label>
+                  <CustomSelect 
+                    value={bookingPlayers} 
+                    onChange={v => setBookingPlayers(v)} 
+                    options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
+                    className="min-h-[44px]" 
+                  />
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Booking Date *</label>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Booking Date <span className="text-danger">*</span></label>
                 <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time *</label>
-                <input type="time" required value={bookingStartTime} onChange={e => setBookingStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time <span className="text-danger">*</span></label>
+                <TimePicker value={bookingStartTime} onChange={v => setBookingStartTime(v)} />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Expected Duration *</label>
-                <select required value={bookingDuration} onChange={e => setBookingDuration(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary">
-                  <option value="30">30 Minutes</option>
-                  <option value="60">1 Hour (60 Mins)</option>
-                  <option value="90">1 Hour 30 Mins (90 Mins)</option>
-                  <option value="120">2 Hours (120 Mins)</option>
-                  <option value="180">3 Hours (180 Mins)</option>
-                  <option value="240">4 Hours (240 Mins)</option>
-                </select>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Expected Duration <span className="text-danger">*</span></label>
+                <CustomSelect 
+                  value={bookingDuration} 
+                  onChange={v => setBookingDuration(v)} 
+                  options={[
+                    {value: "30", label: "30 Minutes"},
+                    {value: "60", label: "1 Hour (60 Mins)"},
+                    {value: "90", label: "1 Hour 30 Mins (90 Mins)"},
+                    {value: "120", label: "2 Hours (120 Mins)"},
+                    {value: "180", label: "3 Hours (180 Mins)"},
+                    {value: "240", label: "4 Hours (240 Mins)"}
+                  ]}
+                />
               </div>
               <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-lg shadow-accent/20">
                 {isCreatingBooking ? 'Saving Booking...' : 'Save Booking'}
