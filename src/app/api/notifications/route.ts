@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const businessId = searchParams.get('b');
+
+    if (sessionCookie.businessId !== businessId) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!businessId) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
@@ -30,8 +40,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, notification_id, business_id } = body;
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!business_id) return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
 

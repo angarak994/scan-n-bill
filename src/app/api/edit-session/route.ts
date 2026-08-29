@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { session_id, business_id, customer_name, start_time, notes } = await request.json();
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!session_id || !business_id) {
       return NextResponse.json({ error: 'Missing session_id or business_id' }, { status: 400 });

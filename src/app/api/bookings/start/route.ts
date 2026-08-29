@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
-import { startSession } from '@/lib/sessionManager';
 import { logActivityToSheet, logSessionStartToSheet } from '@/lib/googleSheets';
-import { GameType } from '@/lib/pricing';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { booking_id, business_id } = body;
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!booking_id || !business_id) {
       return NextResponse.json({ error: 'Missing booking_id or business_id' }, { status: 400 });
@@ -43,14 +51,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Table is currently occupied by an active session' }, { status: 400 });
     }
 
-    // 3. Create active session using the unified lifecycle method
-    const session = await startSession(
-      booking.table_id,
-      (booking.game_type || 'pool') as GameType,
-      booking.customer_name,
-      business_id,
-      booking.num_players || 1
-    );
+    // 3. Create active session
+    const startTimeLocal = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
+    
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .insert({
+        business_id: business_id,
+        table_id: booking.table_id,
+        customer_name: booking.customer_name,
+        game_type: booking.game_type || 'pool', // Dynamic inheritance with fallback
+        status: 'ACTIVE',
+        start_time: startTimeLocal,
+        date: todayStr
+      })
+      .select()
+      .single();
+
+    if (sessionError || !session) {
+      throw new Error(sessionError?.message || 'Failed to create session');
+    }
 
     // 4. Update booking status
     const { error: updateError } = await supabase

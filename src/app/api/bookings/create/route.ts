@@ -2,11 +2,21 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { logActivityToSheet, syncBookingToSheet } from '@/lib/googleSheets';
 import { businessManager } from '@/lib/businessManager';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { business_id, table_id, customer_name, customer_phone, booking_date, start_time, duration_minutes, game_type } = body;
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!business_id || !table_id || !booking_date || !start_time || !duration_minutes) {
       return NextResponse.json({ error: 'Missing required booking parameters' }, { status: 400 });

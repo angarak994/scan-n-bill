@@ -226,31 +226,6 @@ export async function endSession(table_id: string, businessId?: string) {
     }
   }
 
-  // 6. Native Google Sheets Sync (Unified)
-  try {
-    const { logSessionEndToSheet } = require('./googleSheets');
-    // Map the resolved data to the structure the sheet expects
-    const sheetData = {
-      id: session.id,
-      business_id: businessId,
-      customer_name: session.customer_name || 'Walk-In',
-      table_id: session.table_id,
-      start_time: startFull,
-      end_time: end_time,
-      duration: duration,
-      cost: totalCost,
-      discounts: totalDiscountAmount || 0,
-      date: session.date,
-      game_type: session.game_type,
-      num_players: session.num_players,
-      paused_duration_seconds: totalPausedSecs,
-      applied_pricing: slabs_applied
-    };
-    logSessionEndToSheet(sheetData).catch((err: any) => console.error('Unified Google Sheets Sync Error (Async):', err));
-  } catch (err) {
-    console.error('Failed to initiate unified Google Sheets sync:', err);
-  }
-
   if ((session as any)._appliedPromoId) {
     try {
       const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', (session as any)._appliedPromoId).single();
