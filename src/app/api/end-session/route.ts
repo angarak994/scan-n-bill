@@ -1,9 +1,20 @@
 import { NextResponse } from 'next/server';
 import { endSession } from '@/lib/sessionManager';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { table_id, business_id } = await request.json();
+    
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
+
     if (!table_id) {
       return NextResponse.json({ error: 'table_id is required' }, { status: 400 });
     }
@@ -30,22 +41,11 @@ export async function POST(request: Request) {
          num_players: result.num_players,
          paused_duration_seconds: result.paused_duration_seconds,
          applied_pricing: result.applied_pricing
-      }).catch((sheetError: any) => console.error('Google Sheets Sync Error (Async):', sheetError));
+      }, business_id).catch((sheetError: any) => console.error('Google Sheets Sync Error (Async):', sheetError));
     } catch (err) {
       console.error('Failed to initiate Google Sheets sync:', err);
     }
 
-    return NextResponse.json(result, { status: 200 });
-  } catch (err: unknown) {
-    const error = err as Error & { statusCode?: number };
-    return NextResponse.json({ error: error.message }, { status: error.statusCode ?? 500 });
-  }
-}
-
-    if (!table_id) {
-      return NextResponse.json({ error: 'table_id is required' }, { status: 400 });
-    }
-    const result = await endSession(table_id, business_id);
     return NextResponse.json(result, { status: 200 });
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };

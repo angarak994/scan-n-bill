@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
     // 5. Log to Google Sheets
     try {
-      await logSessionStartToSheet(session);
+      await logSessionStartToSheet(session, business_id);
       await logActivityToSheet('BOOKING_STARTED', {
         user: 'System',
         table: booking.table_id,

@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     // Sync to Google Sheets
     try {
       const { logSessionStartToSheet } = require('@/lib/googleSheets');
-      await logSessionStartToSheet(result);
+      await logSessionStartToSheet(result, business_id);
     } catch (sheetError) {
       console.error('Google Sheets Sync Error:', sheetError);
     }
