@@ -42,7 +42,10 @@ export async function startSession(table_id: string, game_type: GameType, custom
   if (businessId) {
     const business = await businessManager.getBusiness(businessId);
     const tableConfig = business?.tables?.find(t => t.id === table_id);
-    if (tableConfig && tableConfig.game_type) {
+    if (!tableConfig) {
+      throw new ApiError(403, 'Invalid table or business mapping.');
+    }
+    if (tableConfig.game_type) {
       game_type = tableConfig.game_type as GameType;
     }
   }
@@ -298,11 +301,13 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let pricingRules;
     let menuItems;
     let discount;
+    let businessName = 'Qcontrol Business';
     if (businessId) {
       const business = await businessManager.getBusiness(businessId);
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
+      businessName = business?.name || businessName;
       // Fetch active promotion
       const { data: activePromos } = await supabase
         .from('promotions')
@@ -335,6 +340,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       paused_duration_seconds: activeSession.paused_duration_seconds || 0,
       locked_rate: activeSession.locked_rate,
       locked_rate_name: activeSession.locked_rate_name,
+      businessName,
     };
   }
 
@@ -342,11 +348,13 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let menuItems;
   let discount;
   let configuredGameType = 'pool';
+  let businessName = 'Qcontrol Business';
   if (businessId) {
     const business = await businessManager.getBusiness(businessId);
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
+    businessName = business?.name || businessName;
     
     const tableConfig = business?.tables?.find(t => t.id === table_id);
     if (tableConfig && tableConfig.game_type) {
@@ -375,5 +383,6 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     menuItems,
     discount,
     game_type: configuredGameType,
+    businessName,
   };
 }

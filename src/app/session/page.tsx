@@ -30,8 +30,9 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
       initialState = { 
         status: 'idle', 
         table_id, 
-        game_type: game_type || 'unknown', 
-        pricingRules: data.pricingRules 
+        game_type: data.game_type || game_type || 'unknown', 
+        pricingRules: data.pricingRules,
+        businessName: data.businessName 
       };
     } else if (data.status === 'active') {
       if (!scanNonce) {
@@ -40,6 +41,7 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
           id: data.id,
           table_id: data.table_id,
           game_type: data.game_type,
+          businessName: data.businessName,
         };
       } else {
         initialState = {
@@ -51,6 +53,7 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
           date: data.date,
           start_time: data.start_time,
           pricingRules: data.pricingRules,
+          businessName: data.businessName,
         };
       }
     }

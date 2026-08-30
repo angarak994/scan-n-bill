@@ -6,9 +6,9 @@ import { calculateCost, getCurrentRate } from '../../lib/billing';
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean } }
-  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: { percent: number; applyToFood: boolean } }
-  | { status: 'prompt_end'; id: string; table_id: string; game_type: string }
+  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean }; businessName?: string }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: { percent: number; applyToFood: boolean }; businessName?: string }
+  | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string }
   | { status: 'completed'; duration: string; cost: number; end_time: string }
   | { status: 'error'; message: string };
 
@@ -285,17 +285,24 @@ export default function SessionClient({ initialState, business_id, table_id, gam
         
         {session.status === 'idle' && (
           <>
-            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-2 shadow-inner">
-              <span className="text-4xl"></span>
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-900/20 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-2 shadow-inner border border-blue-200/50 dark:border-blue-800/30">
+              {session.game_type === 'snooker' || session.game_type === 'pool' || session.game_type === 'billiards' ? (
+                <svg className="w-10 h-10 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" strokeWidth="2" fill="currentColor" fillOpacity="0.1"/><circle cx="12" cy="12" r="3" strokeWidth="2"/><text x="12" y="13.5" fontSize="6" textAnchor="middle" fill="currentColor" strokeWidth="0" fontWeight="bold">8</text></svg>
+              ) : session.game_type === 'ps5' || session.game_type === 'console' ? (
+                <svg className="w-10 h-10 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.794 13.841c.21-.689.373-1.428.472-2.203.097-.775.146-1.554.146-2.338 0-4.02-3.134-7.3-7.152-7.3-4.017 0-7.151 3.28-7.151 7.3 0 .784.049 1.563.146 2.338.099.775.263 1.514.472 2.203a30.297 30.297 0 001.696 4.385c.664 1.348 1.442 2.593 2.302 3.693a9.92 9.92 0 002.535 2.158c.844.475 1.765.733 2.709.733s1.865-.258 2.709-.733a9.92 9.92 0 002.535-2.158c.86-1.1 1.638-2.345 2.302-3.693a30.297 30.297 0 001.696-4.385z"/></svg>
+              ) : (
+                <svg className="w-10 h-10 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><circle cx="12" cy="12" r="9" strokeWidth="2"/></svg>
+              )}
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Table: {session.table_id}</h1>
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Service / Game Type</label>
-                <div className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-gray-100 dark:bg-gray-700/50 text-gray-900 dark:text-white/80 shadow-sm font-semibold capitalize opacity-80 cursor-not-allowed">
-                  {session.game_type}
-                </div>
+              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">Welcome to</p>
+              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Qcontrol'}</h1>
+              <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 font-medium">
+                <span>Table {session.table_id}</span>
+                <span>•</span>
+                <span className="capitalize">{session.game_type}</span>
               </div>
+            </div>
               {session.discount && session.discount.percent > 0 && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
                   Happy Hour: {session.discount.percent}% OFF
@@ -354,6 +361,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               </svg>
             </div>
             <div>
+              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Session is Active</h1>
               <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Table: {session.table_id}</p>
             </div>
@@ -416,6 +424,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             </div>
             
             <div>
+              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
               <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
               <div className="flex flex-col gap-1 mb-4">
                 <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
