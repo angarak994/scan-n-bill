@@ -294,7 +294,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 <svg className="w-10 h-10 drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><circle cx="12" cy="12" r="9" strokeWidth="2"/></svg>
               )}
             </div>
-            <div>
+            <div className="w-full flex flex-col items-center">
               <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">Welcome to</p>
               <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Qcontrol'}</h1>
               <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 font-medium">
@@ -302,7 +302,6 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 <span>•</span>
                 <span className="capitalize">{session.game_type}</span>
               </div>
-            </div>
               {session.discount && session.discount.percent > 0 && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
                   Happy Hour: {session.discount.percent}% OFF
