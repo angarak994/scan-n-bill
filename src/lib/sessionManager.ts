@@ -91,7 +91,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 }
 
-export async function endSession(table_id: string, businessId?: string) {
+export async function endSession(table_id: string, businessId?: string, source: string = 'System') {
   const session = await sessionRepository.findActiveByTable(table_id, businessId);
   if (!session || !session.id) {
     throw new ApiError(404, 'No active session found for this table');
@@ -193,6 +193,13 @@ export async function endSession(table_id: string, businessId?: string) {
   const totalBaseCost = baseCost + (session.food_cost || 0);
   const totalDiscountAmount = discountAmount + foodDiscountAmount;
 
+  let finalSource = source;
+  // Check if session is linked to a booking to override source
+  const { data: linkedBooking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
+  if (linkedBooking) {
+    finalSource = 'Manual Booking';
+  }
+
   await sessionRepository.update(session.id, {
     end_time,
     status: 'COMPLETED',
@@ -202,7 +209,7 @@ export async function endSession(table_id: string, businessId?: string) {
     base_cost: totalBaseCost,
     discount_amount: totalDiscountAmount,
     payment_status: 'Paid',
-    completed_by: 'Club Owner', // Default to club owner for manual dashboard actions
+    completed_by: finalSource,
     paused_at: null,
     paused_duration_seconds: totalPausedSecs,
   }, businessId);
@@ -241,14 +248,13 @@ export async function endSession(table_id: string, businessId?: string) {
 
   // Sync booking status if this session was started from a booking
   try {
-    const { data: booking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
-    if (booking) {
-      await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', booking.id);
+    if (linkedBooking) {
+      await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', linkedBooking.id);
       const { logActivityToSheet } = require('./googleSheets');
       await logActivityToSheet('BOOKING_COMPLETED', {
-        user: 'System',
-        table: booking.table_id,
-        details: `Booking ${booking.id} completed via Session ${session.id}`
+        user: finalSource,
+        table: linkedBooking.table_id,
+        details: `Booking ${linkedBooking.id} completed via Session ${session.id}`
       }, businessId);
     }
   } catch (e) {

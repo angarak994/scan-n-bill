@@ -79,6 +79,11 @@ export async function handleSessionIntervention(params: {
         session.locked_rate_name
       );
       
+      let sourceLabel = 'System';
+      if (performed_by === 'telegram_bot') {
+        sourceLabel = 'Qbot';
+      }
+      
       dbUpdates = {
         status: 'COMPLETED',
         end_time: now,
@@ -88,6 +93,7 @@ export async function handleSessionIntervention(params: {
         base_cost: res.baseCost,
         discount_amount: res.discountAmount,
         closure_type: 'manual_force',
+        completed_by: sourceLabel,
         paused_at: null,
         paused_duration_seconds: totalPausedSeconds,
         last_activity_at: now
@@ -146,7 +152,8 @@ export async function handleSessionIntervention(params: {
           game_type: session.game_type,
           num_players: session.num_players,
           paused_duration_seconds: dbUpdates.paused_duration_seconds,
-          applied_pricing: dbUpdates.applied_pricing
+          applied_pricing: dbUpdates.applied_pricing,
+          completed_by: dbUpdates.completed_by
         }, business_id)
       : Promise.resolve()
   ]).catch(e => console.error('Google Sheets Intervention Sync Error:', e));

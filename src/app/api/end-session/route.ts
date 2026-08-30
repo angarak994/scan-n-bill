@@ -5,20 +5,21 @@ import { getSession } from '@/lib/auth';
 export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
-    if (!sessionCookie) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { table_id, business_id } = await request.json();
+    const body = await request.json();
+    const { table_id, business_id } = body;
+    let source = 'QR';
     
-    if (sessionCookie.businessId !== business_id) {
-      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    if (sessionCookie) {
+      if (sessionCookie.businessId !== business_id) {
+        return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+      }
+      source = 'System';
     }
 
     if (!table_id) {
       return NextResponse.json({ error: 'table_id is required' }, { status: 400 });
     }
-    const result = await endSession(table_id, business_id);
+    const result = await endSession(table_id, business_id, source);
     
     // Sync to Google Sheets asynchronously (fire-and-forget)
     try {
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
          game_type: result.game_type,
          num_players: result.num_players,
          paused_duration_seconds: result.paused_duration_seconds,
-         applied_pricing: result.applied_pricing
+         applied_pricing: result.applied_pricing,
+         completed_by: result.completed_by || source
       }, business_id).catch((sheetError: any) => console.error('Google Sheets Sync Error (Async):', sheetError));
     } catch (err) {
       console.error('Failed to initiate Google Sheets sync:', err);

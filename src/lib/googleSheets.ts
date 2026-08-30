@@ -91,7 +91,7 @@ export async function logSessionEndToSheet(sessionData: any, businessId?: string
   const startReadable = formatTimeReadable(sessionData.start_time);
   const endReadable = formatTimeReadable(sessionData.end_time || new Date().toISOString());
 
-  // Session ID Date Customer Name Table No Game Type Start Time End Time Duration Applied Pricing Amount Status only this i want
+  // Session ID Date Customer Name Table No Game Type Start Time End Time Duration Applied Pricing Amount Status Completed By
   await appendRow('Completed Sessions', [
     sessionData.id || '',
     sessionData.date || getCurrentISTDateStr(),
@@ -103,7 +103,8 @@ export async function logSessionEndToSheet(sessionData: any, businessId?: string
     durationStr,
     sessionData.applied_pricing || 'Fixed Rate',
     sessionData.cost || 0,
-    'COMPLETED'
+    'COMPLETED',
+    sessionData.completed_by || 'Unknown'
   ], businessId);
   
   await logActivityToSheet('END_SESSION', {

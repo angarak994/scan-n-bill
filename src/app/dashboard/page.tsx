@@ -1723,7 +1723,9 @@ function DashboardContent() {
                         </span>
                       </td>
                       <td className="p-4">
-                        <p className="text-xs text-text-secondary">{session.completed_by || 'System'}</p>
+                        <span className="px-2 py-1 rounded bg-bg-surface border border-border-theme text-xs font-medium text-text-secondary">
+                          {session.completed_by || 'System'}
+                        </span>
                       </td>
                     </tr>
                   );
