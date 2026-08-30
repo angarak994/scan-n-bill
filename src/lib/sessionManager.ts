@@ -307,7 +307,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
-      businessName = business?.name || businessName;
+      businessName = business?.business_name || businessName;
       // Fetch active promotion
       const { data: activePromos } = await supabase
         .from('promotions')
@@ -354,7 +354,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
-    businessName = business?.name || businessName;
+    businessName = business?.business_name || businessName;
     
     const tableConfig = business?.tables?.find(t => t.id === table_id);
     if (tableConfig && tableConfig.game_type) {
