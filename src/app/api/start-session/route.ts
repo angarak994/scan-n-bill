@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { startSession } from '@/lib/sessionManager';
 import { GameType } from '@/lib/pricing';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { table_id, game_type, customer_name, business_id, num_players } = await request.json();
+    
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
     
     if (!table_id || !game_type || !customer_name) {
       return NextResponse.json({ error: 'table_id, game_type, and customer_name are required' }, { status: 400 });

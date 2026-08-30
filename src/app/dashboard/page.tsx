@@ -212,7 +212,7 @@ function DashboardContent() {
       if (data.pricingRules?.globalSettings) {
         
         setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []);
-        if (data.pricingRules.globalSettings.smart_reminder_interval_minutes) {
+        if (data.pricingRules.globalSettings.smart_reminder_interval_minutes !== undefined) {
           setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes));
         }
       }
@@ -252,7 +252,14 @@ function DashboardContent() {
     if (!data || !data.activeSessions || !isAuthorized) return;
     
     const checkOverdue = () => {
-      const intervalMins = data.pricingRules?.globalSettings?.smart_reminder_interval_minutes || 60;
+      const intervalVal = data.pricingRules?.globalSettings?.smart_reminder_interval_minutes;
+      const intervalMins = intervalVal !== undefined ? intervalVal : 60;
+      
+      if (intervalMins === 0) {
+        if (overdueSession) setOverdueSession(null);
+        return;
+      }
+      
       const now = new Date().getTime();
       
       const found = data.activeSessions.find((session: any) => {
@@ -2332,7 +2339,14 @@ function DashboardContent() {
           <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
             <div>
               <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
-              <input type="number" min="1" value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent" />
+              <select value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent">
+                <option value="0">Disabled / No Reminders</option>
+                <option value="30">30 Minutes</option>
+                <option value="45">45 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="90">90 Minutes</option>
+                <option value="120">120 Minutes</option>
+              </select>
               <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
             </div>
             <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">

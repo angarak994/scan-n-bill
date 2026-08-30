@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         table: session.table_id,
         session: session_id,
         details: `Changed details: ${customer_name ? 'Name ' : ''}${start_time ? 'StartTime ' : ''}${notes ? 'Notes' : ''}`
-      });
+      }, business_id);
     } catch (e) {}
 
     return NextResponse.json({ success: true });

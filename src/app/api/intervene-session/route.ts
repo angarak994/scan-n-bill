@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { handleSessionIntervention } from '@/lib/services/interventionService';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, session_id, business_id, amount_recovered, transfer_table_id } = body;
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     await handleSessionIntervention({
       action,

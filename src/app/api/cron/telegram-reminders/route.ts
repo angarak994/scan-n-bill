@@ -41,7 +41,10 @@ export async function POST(request: Request) {
         if (o.status !== 'revoked' && o.chatId && !allChatIds.includes(String(o.chatId))) allChatIds.push(String(o.chatId));
       });
 
-      const intervalMins = gs?.smart_reminder_interval_minutes || 60;
+      const intervalVal = gs?.smart_reminder_interval_minutes;
+      const intervalMins = intervalVal !== undefined ? intervalVal : 60;
+      
+      if (intervalMins === 0) continue;
       
       if (allChatIds.length === 0) continue;
 

@@ -276,14 +276,16 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
     liveSlab = res.slabs_applied;
   } catch (e) {}
 
-  const reminderIntervalMinutes = pricingRules?.globalSettings?.smart_reminder_interval_minutes || 60;
+  const intervalVal = pricingRules?.globalSettings?.smart_reminder_interval_minutes;
+  const reminderIntervalMinutes = intervalVal !== undefined ? intervalVal : 60;
+  
   // If last_checked_at is available use it, else fallback to last_activity_at or startFull
   const lastCheckedStr = session.last_checked_at || session.last_activity_at || startFull;
   const lastCheckedAt = new Date(lastCheckedStr).getTime();
   const minutesSinceLastCheck = (now.getTime() - lastCheckedAt) / 60000;
   
-  const isOverdue = minutesSinceLastCheck >= reminderIntervalMinutes;
-  const isCriticallyOverdue = minutesSinceLastCheck >= (reminderIntervalMinutes + 15);
+  const isOverdue = reminderIntervalMinutes > 0 && minutesSinceLastCheck >= reminderIntervalMinutes;
+  const isCriticallyOverdue = reminderIntervalMinutes > 0 && minutesSinceLastCheck >= (reminderIntervalMinutes + 15);
 
   let statusUI = (
     <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Active</span>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { getSession } from '@/lib/auth';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -21,8 +22,17 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
+    if (!sessionCookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { business_id, pricing_rules, tables } = body;
+
+    if (sessionCookie.businessId !== business_id) {
+      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+    }
 
     if (!business_id) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
