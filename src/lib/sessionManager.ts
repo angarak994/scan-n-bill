@@ -277,7 +277,8 @@ export async function endSession(table_id: string, businessId?: string, source: 
     date: session.date,
     game_type: session.game_type,
     num_players: session.num_players || 1,
-    applied_pricing: slabs_applied
+    applied_pricing: slabs_applied,
+    completed_by: finalSource
   };
 }
 
