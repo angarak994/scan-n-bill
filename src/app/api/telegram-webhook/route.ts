@@ -534,7 +534,7 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
         } else {
           let msg = `📅 <b>Today's Bookings</b> (${dateStr})\n\n`;
           bookings.forEach((b, index) => {
-            msg += `${index + 1}. <b>${b.table_id}</b> @ ${b.start_time}\n   Name: ${b.customer_name}\n   Duration: ${b.duration_minutes}m\n\n`;
+            msg += `${index + 1}. <b>${b.table_id}</b> @ ${b.start_time}\n   Name: ${b.customer_name}\n   Duration: ${b.duration_minutes}m\n   Game: ${b.game_type || 'pool'}\n   Players: ${b.num_players || 1}\n\n`;
           });
           await sendTelegramMessage(chatId, msg, mainMenu);
         }
@@ -937,7 +937,7 @@ You can still access other businesses associated with your Telegram account.`, {
               session_id: sessionId,
               business_id: business.id,
               amount_recovered: 0,
-              performed_by: ownerName
+              performed_by: 'Qbot'
             });
             
             answerCallbackQuery(callbackQueryId, `Success: ${actionPrefix}`).catch(console.error);

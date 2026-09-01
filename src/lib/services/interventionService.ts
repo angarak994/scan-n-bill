@@ -80,7 +80,7 @@ export async function handleSessionIntervention(params: {
       );
       
       let sourceLabel = 'System';
-      if (performed_by === 'telegram_bot') {
+      if (performed_by === 'telegram_bot' || performed_by === 'Qbot') {
         sourceLabel = 'Qbot';
       }
       
@@ -131,7 +131,7 @@ export async function handleSessionIntervention(params: {
   // Log intervention to Google Sheets asynchronously (fire-and-forget)
   Promise.all([
     logActivityToSheet(`${interventionType.toUpperCase()}_SESSION`, {
-      user: performed_by === 'telegram_bot' ? 'Telegram Bot' : 'Club Owner',
+      user: (performed_by === 'telegram_bot' || performed_by === 'Qbot') ? 'Qbot' : 'Club Owner',
       table: session.table_id,
       session: session_id,
       details: `Session ${interventionType}`
