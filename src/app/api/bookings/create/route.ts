@@ -95,6 +95,13 @@ export async function POST(request: Request) {
     const tableConfig = business?.tables?.find(t => t.id === table_id);
     const enforcedGameType = tableConfig?.game_type || game_type || 'pool';
 
+    if (enforcedGameType === 'ps5') {
+      const num_players = Number(body.num_players);
+      if (!num_players || num_players < 1 || num_players > 4) {
+        return NextResponse.json({ error: 'PS5 bookings must have between 1 and 4 players.' }, { status: 400 });
+      }
+    }
+
     const { data: newBooking, error: insertError } = await supabase
       .from('bookings')
       .insert({
@@ -107,7 +114,9 @@ export async function POST(request: Request) {
         duration_minutes: durationNum,
         end_time: end_time,
         status: 'confirmed',
-        source: 'manual'
+        source: 'manual',
+        game_type: enforcedGameType,
+        num_players: body.num_players ? Number(body.num_players) : 1
       })
       .select()
       .single();

@@ -354,7 +354,12 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
 
       if (text === '/start' || text === '/menu') {
         if (!business) {
-          await sendTelegramMessage(chatId, `👋 <b>Welcome to Qcontrol.</b>\n\nPlease use a valid business connection link to connect your Telegram account.`);
+          if (ctx.allActiveMemberships.length > 0) {
+            const bizButtons = ctx.allActiveMemberships.map(m => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
+            await sendTelegramMessage(chatId, `🏢 <b>Select Business</b>\n\nWhich business would you like to manage?`, { inline_keyboard: bizButtons });
+          } else {
+            await sendTelegramMessage(chatId, `👋 <b>Welcome to Qcontrol.</b>\n\nPlease use a valid business connection link to connect your Telegram account.`);
+          }
         } else {
           await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${escapeHtml(business.business_name || "")}\n\nPlease choose an action:`, mainMenu);
         }

@@ -2135,7 +2135,20 @@ function DashboardContent() {
               onChange={e => setPromoTitle(e.target.value)}
               className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
               placeholder="e.g. Afternoon Elite"
+              list="promo-suggestions"
             />
+            <datalist id="promo-suggestions">
+              <option value="Weekend Special" />
+              <option value="Happy Hours" />
+              <option value="Game Night" />
+              <option value="Weekend Gaming Deal" />
+              <option value="Early Bird Offer" />
+              <option value="Student Special" />
+              <option value="Festive Offer" />
+              <option value="Loyalty Reward" />
+              <option value="Evening Special" />
+              <option value="Monthly Membership Offer" />
+            </datalist>
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount Percent (%) <span className="text-danger">*</span></label>

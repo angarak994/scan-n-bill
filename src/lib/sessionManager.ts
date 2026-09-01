@@ -50,6 +50,10 @@ export async function startSession(table_id: string, game_type: GameType, custom
     }
   }
 
+  if (game_type === 'ps5' && (num_players < 1 || num_players > 4)) {
+    throw new ApiError(400, 'PS5 sessions must have between 1 and 4 players.');
+  }
+
   const now = new Date();
   
   // Resolve rate
