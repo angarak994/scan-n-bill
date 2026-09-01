@@ -95,7 +95,20 @@ export async function GET(request: Request) {
       .gte('created_at', startOfDayUTC);
 
     const manualClosuresToday = interventions?.length || 0;
-    const { data: bookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate).lte('booking_date', endDate);
+    const { data: rawBookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate).lte('booking_date', endDate);
+
+    const bookings = (rawBookings || []).map(b => {
+      if (b.customer_name && b.customer_name.includes('___')) {
+        const parts = b.customer_name.split('___');
+        return {
+          ...b,
+          customer_name: parts[0],
+          game_type: parts[1],
+          num_players: Number(parts[2])
+        };
+      }
+      return b;
+    });
 
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
 

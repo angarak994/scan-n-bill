@@ -521,7 +521,7 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       else if (text === '📅 Book Table') {
         const dateStr = getCurrentISTDateStr();
         
-        const { data: bookings } = await supabase
+        const { data: rawBookings } = await supabase
           .from('bookings')
           .select('*')
           .eq('business_id', business.id)
@@ -529,6 +529,19 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
           .eq('status', 'confirmed')
           .order('start_time', { ascending: true });
           
+        const bookings = (rawBookings || []).map(b => {
+          if (b.customer_name && b.customer_name.includes('___')) {
+            const parts = b.customer_name.split('___');
+            return {
+              ...b,
+              customer_name: parts[0],
+              game_type: parts[1],
+              num_players: Number(parts[2])
+            };
+          }
+          return b;
+        });
+
         if (!bookings || bookings.length === 0) {
           await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, mainMenu);
         } else {
@@ -995,7 +1008,7 @@ You can still access other businesses associated with your Telegram account.`, {
                   msg += `<b>Rate:</b> ${rateText}\n💰 <b>Final Bill:</b> ${billText}\n\n`;
                 }
                 
-                msg += `Table is now <b>Available</b>.\n<i>(Closed by: Qbot)</i>`;
+                msg += `Table is now <b>Available</b>.`;
                 
                 if (messageId) {
                   await editTelegramMessageText(chatId, messageId, msg);

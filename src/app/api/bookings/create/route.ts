@@ -102,11 +102,13 @@ export async function POST(request: Request) {
       }
     }
 
+    const encodedName = `${nameToSave}___${enforcedGameType}___${body.num_players ? Number(body.num_players) : 1}`;
+
     const { data: newBooking, error: insertError } = await supabase
       .from('bookings')
       .insert({
         business_id: business_id,
-        customer_name: nameToSave,
+        customer_name: encodedName,
         customer_phone: customer_phone || 'Manual / Walk-In',
         table_id: table_id,
         booking_date: booking_date,
@@ -114,9 +116,7 @@ export async function POST(request: Request) {
         duration_minutes: durationNum,
         end_time: end_time,
         status: 'confirmed',
-        source: 'manual',
-        game_type: enforcedGameType,
-        num_players: body.num_players ? Number(body.num_players) : 1
+        source: 'manual'
       })
       .select()
       .single();
