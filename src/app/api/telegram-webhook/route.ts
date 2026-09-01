@@ -995,7 +995,7 @@ You can still access other businesses associated with your Telegram account.`, {
                   msg += `<b>Rate:</b> ${rateText}\n💰 <b>Final Bill:</b> ${billText}\n\n`;
                 }
                 
-                msg += `Table is now <b>Available</b>.`;
+                msg += `Table is now <b>Available</b>.\n<i>(Closed by: Qbot)</i>`;
                 
                 if (messageId) {
                   await editTelegramMessageText(chatId, messageId, msg);
