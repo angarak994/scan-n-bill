@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { logActivityToSheet, logSessionStartToSheet } from '@/lib/googleSheets';
 import { getSession } from '@/lib/auth';
+import { getCurrentISTDateStr } from '@/lib/billing';
 
 export async function POST(request: Request) {
   try {
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Check if table is currently occupied
-    const todayStr = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('T')[0];
+    const todayStr = getCurrentISTDateStr();
     
     const { data: activeSessions } = await supabase
       .from('sessions')

@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { logActivityToSheet, syncBookingToSheet } from '@/lib/googleSheets';
 import { businessManager } from '@/lib/businessManager';
 import { getSession } from '@/lib/auth';
+import { getCurrentISTDateStr } from '@/lib/billing';
 
 export async function POST(request: Request) {
   try {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     // 2. If booking is for today and spans current time, verify table isn't in an active session
-    const todayStr = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }).split('T')[0];
+    const todayStr = getCurrentISTDateStr();
     if (booking_date === todayStr) {
       const nowIst = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
       const nowParts = nowIst.split(':');
@@ -102,13 +103,11 @@ export async function POST(request: Request) {
       }
     }
 
-    const encodedName = `${nameToSave}___${enforcedGameType}___${body.num_players ? Number(body.num_players) : 1}`;
-
     const { data: newBooking, error: insertError } = await supabase
       .from('bookings')
       .insert({
         business_id: business_id,
-        customer_name: encodedName,
+        customer_name: nameToSave,
         customer_phone: customer_phone || 'Manual / Walk-In',
         table_id: table_id,
         booking_date: booking_date,
@@ -116,7 +115,9 @@ export async function POST(request: Request) {
         duration_minutes: durationNum,
         end_time: end_time,
         status: 'confirmed',
-        source: 'manual'
+        source: 'manual',
+        game_type: enforcedGameType,
+        num_players: body.num_players ? Number(body.num_players) : 1
       })
       .select()
       .single();

@@ -144,7 +144,7 @@ export const sessionRepository = {
       .from('sessions')
       .select('*')
       .eq('business_id', businessId)
-      .or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startDate}T00:00:00Z,end_time.lte.${endDate}T23:59:59.999Z),status.eq.ACTIVE`);
+      .or(`and(date.gte.${startDate},date.lte.${endDate}),status.eq.ACTIVE`);
 
     if (error || !data) return [];
     return data as Session[];

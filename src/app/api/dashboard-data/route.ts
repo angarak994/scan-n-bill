@@ -60,20 +60,6 @@ export async function GET(request: Request) {
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
     let completedSessions = sessions.filter(s => {
       if (s.status !== 'COMPLETED') return false;
-      // If the session ended today, count it for today.
-      // If end_time is somehow null, fallback to the start date.
-      if (s.end_time) {
-        // Create local date string (YYYY-MM-DD) from the UTC end_time.
-        // We will do a basic check.
-        // The safest way is to check if it's within the range string-wise after converting to IST or just taking the UTC date since the DB query handled it.
-        // Actually, the DB query returned it if end_time matched OR date matched. Let's just keep it if it's COMPLETED.
-        // But wait, it might return a session started today but completed tomorrow (if checking past ranges).
-        // Let's use the local YYYY-MM-DD of end_time.
-        const dateObj = new Date(s.end_time);
-        const tzOffset = 5.5 * 60 * 60 * 1000;
-        const localDateStr = new Date(dateObj.getTime() + tzOffset).toISOString().split('T')[0];
-        return localDateStr >= startDate && localDateStr <= endDate;
-      }
       return s.date >= startDate && s.date <= endDate;
     });
 
@@ -95,20 +81,7 @@ export async function GET(request: Request) {
       .gte('created_at', startOfDayUTC);
 
     const manualClosuresToday = interventions?.length || 0;
-    const { data: rawBookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate).lte('booking_date', endDate);
-
-    const bookings = (rawBookings || []).map(b => {
-      if (b.customer_name && b.customer_name.includes('___')) {
-        const parts = b.customer_name.split('___');
-        return {
-          ...b,
-          customer_name: parts[0],
-          game_type: parts[1],
-          num_players: Number(parts[2])
-        };
-      }
-      return b;
-    });
+    const { data: bookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate);
 
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
 

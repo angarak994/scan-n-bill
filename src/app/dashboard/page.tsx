@@ -170,9 +170,13 @@ function DashboardContent() {
 
   // Report Date Filter State
   const getLocalDateStr = (d = new Date()) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+    const dCopy = new Date(d.getTime());
+    if (dCopy.getHours() < 6) {
+      dCopy.setDate(dCopy.getDate() - 1);
+    }
+    const year = dCopy.getFullYear();
+    const month = String(dCopy.getMonth() + 1).padStart(2, '0');
+    const day = String(dCopy.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
 
@@ -293,7 +297,7 @@ function DashboardContent() {
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
       url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRangeRef.current.start}&endDate=${reportDateRangeRef.current.end}`;
       
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       if (res.status === 401) {
         setIsAuthorized(false);
         setLoading(false);
@@ -803,7 +807,6 @@ function DashboardContent() {
 
   const confirmLogout = async () => {
     setEnteredPin('');
-    setIsAuthorized(false);
     
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
