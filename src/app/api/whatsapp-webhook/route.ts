@@ -50,10 +50,12 @@ export async function POST(request: Request) {
     const buttonReplyId = message.type === 'interactive' && message.interactive.type === 'button_reply' ? message.interactive.button_reply.id : null;
     const listReplyId = message.type === 'interactive' && message.interactive.type === 'list_reply' ? message.interactive.list_reply.id : null;
     const incomingText = buttonReplyId || listReplyId || text;
+    const lowerText = incomingText.toLowerCase();
 
     // Detect explicit business start
-    if (text.startsWith('Book_') || text.startsWith('START_BIZ_')) {
-       const slug = text.replace('Book_', '').replace('START_BIZ_', '').trim();
+    if (lowerText.startsWith('book_') || lowerText.startsWith('start_biz_')) {
+       // Extract slug case-insensitively
+       const slug = lowerText.replace('book_', '').replace('start_biz_', '').trim();
        const business = await businessManager.getBusinessBySlug(slug);
        
        if (!business) {
