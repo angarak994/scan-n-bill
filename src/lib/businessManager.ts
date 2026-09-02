@@ -94,5 +94,29 @@ export const businessManager = {
 
     if (error) throw error;
     return active_discounts;
+  },
+
+  getBusinessBySlug: async (slug: string): Promise<BusinessData | null> => {
+    const { data: businesses, error } = await supabase
+      .from('businesses')
+      .select('id, business_name');
+
+    if (error || !businesses) return null;
+
+    const normalizedSlug = slug.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    
+    for (const b of businesses) {
+      const bSlug = b.business_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (bSlug === normalizedSlug) {
+        return businessManager.getBusiness(b.id);
+      }
+    }
+    
+    // Fallback: try matching UUID if slug was actually the ID
+    if (slug.length === 36) {
+        return businessManager.getBusiness(slug);
+    }
+    
+    return null;
   }
 };
