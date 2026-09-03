@@ -80,6 +80,7 @@ function DashboardContent() {
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
   const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string } | null>(null);
+  const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   
@@ -94,6 +95,7 @@ function DashboardContent() {
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [isClosingManual, setIsClosingManual] = useState(false);
   const [manualCustomer, setManualCustomer] = useState('');
   const [manualTable, setManualTable] = useState('');
   const [manualGame, setManualGame] = useState('pool');
@@ -189,6 +191,7 @@ function DashboardContent() {
 
   // Manual Booking State (Additive)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isClosingBooking, setIsClosingBooking] = useState(false);
   const [bookingTable, setBookingTable] = useState('');
   const [bookingCustomer, setBookingCustomer] = useState('');
   const [bookingError, setBookingError] = useState('');
@@ -209,9 +212,23 @@ function DashboardContent() {
   const reportDateRangeRef = useRef(reportDateRange);
   const telegramLoadedRef = useRef(false);
 
+  const fetchReportsData = async () => {
+    try {
+      let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
+      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        setReportsData(json);
+      }
+    } catch (e) {
+      console.error("Failed to fetch reports data", e);
+    }
+  };
+
   useEffect(() => {
     reportDateRangeRef.current = reportDateRange;
-    if (isAuthorized) fetchData(undefined, true);
+    if (isAuthorized) fetchReportsData();
   }, [reportDateRange, isAuthorized]);
 
   useEffect(() => {
@@ -299,7 +316,7 @@ function DashboardContent() {
       if (!isBackground) setLoading(true);
       
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRangeRef.current.start}&endDate=${reportDateRangeRef.current.end}`;
+      url += (url.includes('?') ? '&' : '?') + `startDate=${currentDay}&endDate=${currentDay}`;
       
       const res = await fetch(url, { cache: 'no-store' });
       if (res.status === 401) {
@@ -311,6 +328,7 @@ function DashboardContent() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (!reportsData) fetchReportsData();
         if (json.businessId) setBusinessId(json.businessId);
         setIsAuthorized(true);
         if (json.has_logged_in === false && !showCelebration) {
@@ -439,7 +457,10 @@ function DashboardContent() {
         body: JSON.stringify({ booking_id: bookingId, business_id: businessId, status })
       });
       if (res.ok) {
-        fetchData(undefined, true);
+        setData(prev => prev ? {
+          ...prev, 
+          bookings: prev.bookings?.map(b => b.id === bookingId ? { ...b, status } : b)
+        } : prev);
         toast.success('✓ Booking updated.');
       } else {
         const error = await res.json();
@@ -461,13 +482,18 @@ function DashboardContent() {
         body: JSON.stringify({ table_id: manualTable, game_type: manualGame, num_players: Number(manualPlayers), customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
       });
       if (res.ok) {
-        setIsManualModalOpen(false);
-        setManualTable('');
-        setManualCustomer('');
-        setManualNotes('');
-        setManualPlayers('1');
-        fetchData(undefined, true);
+        const result = await res.json();
+        setData(prev => prev ? { ...prev, activeSessions: [...prev.activeSessions, result] } : prev);
         toast.success('✓ Session created successfully.');
+        setIsClosingManual(true);
+        setTimeout(() => {
+          setIsManualModalOpen(false);
+          setIsClosingManual(false);
+          setManualTable('');
+          setManualCustomer('');
+          setManualNotes('');
+          setManualPlayers('1');
+        }, 250);
       } else {
         const error = await res.json();
         toast.error("We couldn't start the session. Please try again.");
@@ -667,15 +693,19 @@ function DashboardContent() {
       });
       const result = await res.json();
       if (res.ok && result.success) {
-        setIsBookingModalOpen(false);
-        setBookingTable('');
-        setBookingCustomer('');
-        setBookingStartTime('');
-        setBookingDate(getLocalDateStr());
-        setBookingDuration('60');
-        setBookingPlayers('1');
-        fetchData(undefined, true);
+        setData(prev => prev ? { ...prev, bookings: [...(prev.bookings || []), result.booking] } : prev);
         toast.success('✓ Manual booking created.');
+        setIsClosingBooking(true);
+        setTimeout(() => {
+          setIsBookingModalOpen(false);
+          setIsClosingBooking(false);
+          setBookingTable('');
+          setBookingCustomer('');
+          setBookingStartTime('');
+          setBookingDate(getLocalDateStr());
+          setBookingDuration('60');
+          setBookingPlayers('1');
+        }, 200);
       } else {
         toast.error(result.error || "Couldn't create booking. Please try again.");
       }
@@ -1551,19 +1581,17 @@ function DashboardContent() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Revenue</p>
-              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={revenueToday} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
+              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={reportsData?.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
+            
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Sessions Completed</p>
-              <p className="text-3xl font-bold text-text-primary font-mono">{data.completedSessions.length}</p>
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Completed Sessions</p>
+              <p className="text-3xl font-bold text-text-primary font-mono">{reportsData?.completedSessions?.length || 0}</p>
             </div>
+            
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Average Session</p>
-              <p className="text-3xl font-bold text-secondary font-mono">{avgDuration}</p>
-            </div>
-            <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Avg Rev / Session</p>
-              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(revenueToday / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Avg Session Value</p>
+              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={reportsData?.completedSessions?.length ? Math.round((reportsData.dailyRevenue || 0) / reportsData.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
           </div>
         </div>
@@ -1660,18 +1688,31 @@ function DashboardContent() {
               </tr>
             </thead>
             <tbody>
-              {data.completedSessions.length === 0 ? (
+              {!reportsData?.completedSessions || reportsData.completedSessions.length === 0 ? (
                 <tr><td colSpan={10} className="p-12 text-center text-text-secondary text-base">Your session history will appear here once you complete a transaction.</td></tr>
               ) : (
-                data.completedSessions.map((session: any) => {
-                  const formatTimeStr = (t?: string) => {
-                    if (!t) return '-';
+                reportsData.completedSessions.map((session: any) => {
+                  const formatDateWithTime = (dateStr: string) => {
+                    if (!dateStr || dateStr.includes('undefined')) return '-';
                     try {
-                      return t.includes('T') ? new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : t;
-                    } catch { return t; }
+                      const d = new Date(dateStr.includes('T') ? (dateStr.includes('+') || dateStr.includes('Z') ? dateStr : `${dateStr}+05:30`) : dateStr);
+                      if (isNaN(d.getTime())) return dateStr;
+                      const formatter = new Intl.DateTimeFormat('en-GB', {
+                        timeZone: 'Asia/Kolkata',
+                        day: '2-digit', month: 'short', year: 'numeric',
+                        hour: 'numeric', minute: '2-digit', hour12: true
+                      });
+                      return formatter.format(d).replace(' am', ' AM').replace(' pm', ' PM');
+                    } catch {
+                      return dateStr;
+                    }
                   };
-                  const startTimeFormatted = formatTimeReadable(session.start_time, true, session.date);
-                  const endTimeFormatted = formatTimeReadable(session.end_time);
+
+                  const startFull = session.start_time?.includes('T') ? session.start_time : `${session.date}T${session.start_time}`;
+                  const endFull = session.end_time?.includes('T') ? session.end_time : (session.end_time ? `${session.date}T${session.end_time}` : '');
+                  
+                  const startTimeFormatted = formatDateWithTime(startFull);
+                  const endTimeFormatted = formatDateWithTime(endFull);
 
                   const startMs = parseDateString(session.start_time?.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`);
                   const endMs = session.end_time ? parseDateString(session.end_time?.includes('T') ? session.end_time : `${session.date}, ${session.end_time}`) : startMs;
@@ -2621,36 +2662,54 @@ function DashboardContent() {
               
               <div>
                 <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Amount Received (₹)</label>
-                <input 
-                  type="number" 
-                  value={endSessionData.amountReceived}
-                  onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
-                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all"
-                  placeholder={String(endSessionData.cost)}
-                />
-                <p className="text-xs text-text-secondary mt-2">If this is less than the total bill, the remaining amount will be added to the customer's Qkhata ledger.</p>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
+                  <input 
+                    type="number" 
+                    value={endSessionData.amountReceived}
+                    onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
+                    className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    placeholder={String(endSessionData.cost)}
+                  />
+                </div>
+                <p className="text-xs text-text-secondary mt-2">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
               </div>
 
-              <div className="mt-8 flex gap-3">
-                <button 
-                  onClick={() => setEndSessionData(null)}
-                  className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={() => {
-                    const amountToRecord = endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived);
-                    handleIntervention('force_end', endSessionData.session.id, amountToRecord);
-                    setEndSessionData(null);
-                    if (overdueSession && overdueSession.id === endSessionData.session.id) {
-                      setOverdueSession(null);
-                    }
-                  }}
-                  className="flex-1 py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
-                >
-                  Confirm & End
-                </button>
+              <div className="mt-8 flex flex-col gap-3">
+                {memberships.some(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name) && (
+                  <button 
+                    onClick={() => {
+                      handleIntervention('force_end', endSessionData.session.id, 0);
+                      setEndSessionData(null);
+                      if (overdueSession && overdueSession.id === endSessionData.session.id) setOverdueSession(null);
+                    }}
+                    className="w-full py-3.5 bg-warning text-black font-extrabold text-sm uppercase rounded-xl hover:bg-warning/90 transition-colors shadow-lg shadow-warning/20 flex justify-between px-6 items-center"
+                  >
+                    <span>Payment: Pay Later</span>
+                    <span className="font-mono bg-black/10 px-2 py-0.5 rounded">QKhata: ₹{endSessionData.cost}</span>
+                  </button>
+                )}
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setEndSessionData(null)}
+                    className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const amountToRecord = endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived);
+                      handleIntervention('force_end', endSessionData.session.id, amountToRecord);
+                      setEndSessionData(null);
+                      if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                        setOverdueSession(null);
+                      }
+                    }}
+                    className="flex-[2] py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
+                  >
+                    Confirm & End
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2931,7 +2990,7 @@ function DashboardContent() {
       {/* Manual Session Modal */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingManual ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-in fade-in zoom-in-95'}`}>
             <button 
               onClick={() => setIsManualModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -3003,7 +3062,7 @@ function DashboardContent() {
       {/* Manual Booking Modal (Additive) */}
       {isBookingModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingBooking ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-in fade-in zoom-in-95'}`}>
             <button 
               onClick={() => setIsBookingModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       cleanPhone = `91${cleanPhone}`; // Default to India if just 10 digits
     }
 
-    const message = `*QKhata Reminder*\n\nHi ${customerName},\n\nYour outstanding balance at *${businessName}* is ₹${amount}. Please settle it at your convenience.\n\nThank you!`;
+    const message = `Hi ${customerName}, you have ₹${amount} pending at ${businessName}. Whenever convenient, please settle it. Hope to see you back for another game soon!`;
 
     await sendWhatsAppText(cleanPhone, message);
 
