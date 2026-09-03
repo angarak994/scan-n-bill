@@ -32,7 +32,9 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
         table_id, 
         game_type: data.game_type || game_type || 'unknown', 
         pricingRules: data.pricingRules,
-        businessName: data.businessName 
+        businessName: data.businessName,
+        qpayConfig: data.qpayConfig,
+        paymentQrConfig: data.paymentQrConfig,
       };
     } else if (data.status === 'active') {
       if (!scanNonce) {
@@ -42,6 +44,8 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
           table_id: data.table_id,
           game_type: data.game_type,
           businessName: data.businessName,
+          qpayConfig: data.qpayConfig,
+          paymentQrConfig: data.paymentQrConfig,
         };
       } else {
         initialState = {
@@ -54,6 +58,8 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
           start_time: data.start_time,
           pricingRules: data.pricingRules,
           businessName: data.businessName,
+          qpayConfig: data.qpayConfig,
+          paymentQrConfig: data.paymentQrConfig,
         };
       }
     }

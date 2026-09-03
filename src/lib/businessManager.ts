@@ -15,8 +15,12 @@ export interface BusinessData {
   dashboard_pin?: string;
   menu_items?: { name: string; price: number }[];
   active_discounts?: Record<string, { percent: number; applyToFood: boolean }>;
-  goals?: any;
+  goals?: { daily_revenue: number, daily_sessions: number };
   has_logged_in?: boolean;
+  qpay_config?: { enabled: boolean; provider: string | null; secrets: any };
+  qpulse_config?: { enabled: boolean; frequency: string; last_shown_date: string | null };
+  payment_qr_config?: { enabled: boolean; qr_url: string | null };
+  created_at: string;
 }
 
 export const businessManager = {
@@ -49,7 +53,7 @@ export const businessManager = {
   getBusiness: async (id: string): Promise<BusinessData | null> => {
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, business_name, owner_name, contact_number, address, google_sheet_id, business_type, status, pricing_rules, tables, dashboard_pin, menu_items, active_discounts, goals')
+      .select('*')
       .eq('id', id)
       .single();
 

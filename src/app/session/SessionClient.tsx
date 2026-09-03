@@ -6,10 +6,10 @@ import { calculateCost, getCurrentRate } from '../../lib/billing';
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean }; businessName?: string }
-  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: { percent: number; applyToFood: boolean }; businessName?: string }
-  | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string }
-  | { status: 'completed'; duration: string; cost: number; end_time: string }
+  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean }; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: { percent: number; applyToFood: boolean }; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'completed'; duration: string; cost: number; end_time: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'error'; message: string };
 
 interface SessionClientProps {
@@ -177,6 +177,29 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       setSession({ status: 'error', message: 'Network error occurred' });
     } finally {
       setIsStarting(false);
+    }
+  };
+
+  const handlePayOnline = async () => {
+    try {
+      const res = await fetch('/api/qpay/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id,
+          session_id: (session as any).id,
+          amount: billModalData?.cost || 0,
+          customer_name: (session as any).customer_name,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        alert('Failed to initiate online payment: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Error connecting to payment gateway.');
     }
   };
 
@@ -567,6 +590,30 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               </div>
             </div>
 
+            
+            {session?.paymentQrConfig?.enabled && session?.paymentQrConfig?.qr_url && (
+              <div className="w-full bg-white dark:bg-gray-800 border-2 border-dashed border-emerald-500 rounded-xl p-4 mb-4 text-center">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Pay via UPI</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Scan this QR using your preferred UPI app.</p>
+                <div className="flex justify-center mb-4">
+                  <div className="w-40 h-40 bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                    <img src={session.paymentQrConfig.qr_url} alt="Business UPI QR" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setBillModalData(null);
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.delete('_scan');
+                    window.location.href = newUrl.pathname + newUrl.search;
+                  }}
+                  className="w-full px-6 py-3 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-bold hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                >
+                  I have paid via UPI
+                </button>
+              </div>
+            )}
+            
             <button
               onClick={() => {
                 setBillModalData(null);
@@ -574,10 +621,19 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 newUrl.searchParams.delete('_scan');
                 window.location.href = newUrl.pathname + newUrl.search;
               }}
-              className="w-full px-6 py-4 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 font-bold text-lg shadow-xl shadow-gray-900/20 transition-all active:scale-[0.98]"
+              className="w-full px-6 py-4 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 font-bold text-lg shadow-xl shadow-gray-900/20 transition-all active:scale-[0.98] mb-3"
             >
               Close & Start New Session
             </button>
+            
+            {session?.qpayConfig?.enabled && (
+              <button
+                onClick={handlePayOnline}
+                className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-lg shadow-xl shadow-blue-500/30 transition-all active:scale-[0.98]"
+              >
+                Pay Online
+              </button>
+            )}
           </div>
         </div>
       )}

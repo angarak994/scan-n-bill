@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     // 3. Insert manual booking into database
     const business = await businessManager.getBusiness(business_id);
     const tableConfig = business?.tables?.find(t => t.id === table_id);
-    const enforcedGameType = tableConfig?.game_type || game_type || 'pool';
+    const enforcedGameType = tableConfig ? ((tableConfig as any).game_type || game_type || 'pool') : (game_type || 'pool');
 
     if (enforcedGameType === 'ps5') {
       const num_players = Number(body.num_players);

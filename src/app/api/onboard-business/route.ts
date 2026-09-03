@@ -76,7 +76,8 @@ export async function POST(request: Request) {
       pricing_rules,
       tables,
       dashboard_pin,
-      menu_items
+      menu_items,
+      created_at: new Date().toISOString()
     });
 
     // Generate QRs

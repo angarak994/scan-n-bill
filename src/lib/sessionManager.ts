@@ -45,8 +45,8 @@ export async function startSession(table_id: string, game_type: GameType, custom
     if (!tableConfig) {
       throw new ApiError(403, 'Invalid table or business mapping.');
     }
-    if (tableConfig.game_type) {
-      game_type = tableConfig.game_type as GameType;
+    if ((tableConfig as any).game_type) {
+      game_type = (tableConfig as any).game_type as GameType;
     }
   }
 
@@ -98,7 +98,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 }
 
-export async function endSession(table_id: string, businessId?: string, source: string = 'System') {
+export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash') {
   const session = await sessionRepository.findActiveByTable(table_id, businessId);
   if (!session || !session.id) {
     throw new ApiError(404, 'No active session found for this table');
@@ -199,6 +199,11 @@ export async function endSession(table_id: string, businessId?: string, source: 
   const totalCost = timeCost + finalFoodCost;
   const totalBaseCost = baseCost + (session.food_cost || 0);
   const totalDiscountAmount = discountAmount + foodDiscountAmount;
+  
+  const actualAmountPaid = amountPaid !== undefined ? amountPaid : totalCost;
+  let payment_status = 'Paid';
+  if (actualAmountPaid === 0 && totalCost > 0) payment_status = 'Pending';
+  else if (actualAmountPaid > 0 && actualAmountPaid < totalCost) payment_status = 'Partially Paid';
 
   let finalSource = source;
   // Check if session is linked to a booking to override source
@@ -215,11 +220,30 @@ export async function endSession(table_id: string, businessId?: string, source: 
     cost: totalCost,
     base_cost: totalBaseCost,
     discount_amount: totalDiscountAmount,
-    payment_status: 'Paid',
+    payment_status: payment_status,
+    amount_paid: actualAmountPaid,
     completed_by: finalSource,
     paused_at: null,
     paused_duration_seconds: totalPausedSecs,
-  }, businessId);
+  } as any, businessId);
+
+  // QKhata / Payment logic integration
+  if (businessId) {
+    try {
+        const { createLedgerEntryAndPayment } = require('./services/paymentService');
+        await createLedgerEntryAndPayment({
+            businessId,
+            sessionId: session.id,
+            customerName: session.customer_name,
+            totalBilled: totalCost,
+            amountPaid: actualAmountPaid,
+            paymentMethod: paymentMethod,
+            paymentStatus: actualAmountPaid === 0 ? 'Pending' : 'Paid'
+        });
+    } catch (e) {
+        console.error("QKhata/Payment Service Error", e);
+    }
+  }
 
   if ((session as any)._matchedMemberId) {
     try {
@@ -287,6 +311,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
 }
 
 export async function getTableStatus(table_id: string, businessId?: string) {
+  let businessName = 'Qcontrol Business';
   const activeSession = await sessionRepository.findActiveByTable(table_id, businessId);
   if (activeSession) {
     // Auto-cutoff logic
@@ -306,13 +331,16 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let pricingRules;
     let menuItems;
     let discount;
-    let businessName = 'Qcontrol Business';
+    let qpayConfig = undefined;
+    let paymentQrConfig = undefined;
     if (businessId) {
       const business = await businessManager.getBusiness(businessId);
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
       businessName = business?.business_name || businessName;
+      qpayConfig = business?.qpay_config;
+      paymentQrConfig = business?.payment_qr_config;
       // Fetch active promotion
       const { data: activePromos } = await supabase
         .from('promotions')
@@ -346,6 +374,8 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       locked_rate: activeSession.locked_rate,
       locked_rate_name: activeSession.locked_rate_name,
       businessName,
+      qpayConfig,
+      paymentQrConfig,
     };
   }
 
@@ -353,17 +383,21 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let menuItems;
   let discount;
   let configuredGameType = 'pool';
-  let businessName = 'Qcontrol Business';
+
+  let qpayConfig = undefined;
+  let paymentQrConfig = undefined;
   if (businessId) {
     const business = await businessManager.getBusiness(businessId);
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
     businessName = business?.business_name || businessName;
+    qpayConfig = business?.qpay_config;
+    paymentQrConfig = business?.payment_qr_config;
     
     const tableConfig = business?.tables?.find(t => t.id === table_id);
-    if (tableConfig && tableConfig.game_type) {
-      configuredGameType = tableConfig.game_type;
+    if (tableConfig && (tableConfig as any).game_type) {
+      configuredGameType = (tableConfig as any).game_type;
     }
 
     // Fetch active promotion
@@ -389,5 +423,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     discount,
     game_type: configuredGameType,
     businessName,
+    qpayConfig,
+    paymentQrConfig,
   };
 }

@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     const updatePayload: any = {};
     if (pricing_rules !== undefined) updatePayload.pricing_rules = pricing_rules;
     if (tables !== undefined) updatePayload.tables = tables;
+    if (body.qpulse_config !== undefined) updatePayload.qpulse_config = body.qpulse_config;
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

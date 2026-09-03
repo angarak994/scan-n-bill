@@ -5,6 +5,7 @@ import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
 import { handleSessionIntervention } from '@/lib/services/interventionService';
 import { startSession } from '@/lib/sessionManager';
+import { generateQpulseInsight } from '@/lib/services/qpulseService';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -513,7 +514,14 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
             // Let's just do total revenue and session count.
           });
           
-          const msg = `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
+          
+          let msg = `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
+          
+          const qpulseInsight = await generateQpulseInsight(business.id);
+          if (qpulseInsight && qpulseInsight.telegram) {
+            msg += `\n\n<b>Qpulse Insight</b>\n${qpulseInsight.telegram}`;
+          }
+          
           await sendTelegramMessage(chatId, msg, mainMenu);
         }
         return NextResponse.json({ ok: true });

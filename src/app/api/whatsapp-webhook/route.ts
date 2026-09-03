@@ -128,7 +128,7 @@ export async function POST(request: Request) {
           context.booking_date = isoDate;
           
           // Generate available time slots based on the game type
-          const availableTables = (business.tables || []).filter(t => (t.game_type || 'pool').toLowerCase() === context.game_type);
+          const availableTables = (business.tables || []).filter(t => ((t as any).game_type || 'pool').toLowerCase() === context.game_type);
           
           if (availableTables.length === 0) {
             await sendWhatsAppText(phone, 'Sorry, no tables are available for this game type.');

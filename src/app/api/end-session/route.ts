@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
     const body = await request.json();
-    const { table_id, business_id } = body;
+    const { table_id, business_id, amount_paid, payment_method } = body;
     let source = 'QR';
     
     if (sessionCookie) {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (!table_id) {
       return NextResponse.json({ error: 'table_id is required' }, { status: 400 });
     }
-    const result = await endSession(table_id, business_id, source);
+    const result = await endSession(table_id, business_id, source, amount_paid, payment_method);
     
     // Sync to Google Sheets asynchronously (fire-and-forget)
     try {
@@ -42,7 +42,9 @@ export async function POST(request: Request) {
          num_players: result.num_players,
          paused_duration_seconds: result.paused_duration_seconds,
          applied_pricing: result.applied_pricing,
-         completed_by: result.completed_by || source
+         completed_by: result.completed_by || source,
+         payment_status: (result as any).payment_status || 'Paid',
+         amount_paid: (result as any).amount_paid || result.cost
       }, business_id).catch((sheetError: any) => console.error('Google Sheets Sync Error (Async):', sheetError));
     } catch (err) {
       console.error('Failed to initiate Google Sheets sync:', err);

@@ -8,6 +8,9 @@ import { createClient } from '@supabase/supabase-js';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker } from './components';
 import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
+import QKhataTab from './QKhataTab';
+import PaymentsTab from './PaymentsTab';
+import QpulseWidget from '@/components/QpulseWidget';
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -86,7 +89,7 @@ function DashboardContent() {
   const [pinError, setPinError] = useState('');
 
   // UI State
-  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support'>('overview');
+  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support' | 'qkhata' | 'payments'>('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
@@ -148,6 +151,7 @@ function DashboardContent() {
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, amountReceived: string } | null>(null);
 
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
@@ -1229,6 +1233,7 @@ function DashboardContent() {
 
   const renderOverview = () => (
     <>
+          <QpulseWidget onNavigate={(tab) => setSidebarTab(tab)} />
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Revenue Card */}
@@ -1612,6 +1617,7 @@ function DashboardContent() {
                     toReadableIST={toReadableIST}
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
+                    onRequestEndSession={(session, cost) => setEndSessionData({ session, cost, amountReceived: String(cost) })}
                   />
                 ))
               )}
@@ -2462,11 +2468,195 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+
+      {/* Qpulse & QR Sections */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mt-8">
+        <h2 className="text-2xl font-bold mb-6">Integrations & Insights</h2>
+        <div className="border border-border-theme rounded-xl p-6 bg-bg-surface max-w-xl mb-6">
+          <h3 className="text-lg font-bold mb-2">Qpulse Insights</h3>
+          <p className="text-sm text-text-secondary mb-4">Receive motivational and business insights to stay on top of your game.</p>
+          <div className="bg-bg-primary/50 p-4 rounded-xl border border-border-theme">
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              const enabled = fd.get('enabled') === 'true';
+              const frequency = fd.get('frequency') as string;
+              try {
+                toast.loading('Saving Qpulse settings...', { id: 'qpulse-save' });
+                const res = await fetch('/api/update-business-config', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    business_id: businessId,
+                    qpulse_config: { enabled, frequency, last_shown_date: ((data as any)?.qpulse_config)?.last_shown_date || null }
+                  })
+                });
+                if (!res.ok) throw new Error();
+                toast.success('Qpulse settings updated!', { id: 'qpulse-save' });
+                fetchData(undefined, true);
+              } catch {
+                toast.error('Failed to update Qpulse settings.', { id: 'qpulse-save' });
+              }
+            }}>
+              <div className="flex gap-4 mb-4">
+                <div className="flex-1">
+                  <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block mb-2">Qpulse Status</label>
+                  <select name="enabled" defaultValue={((data as any)?.qpulse_config)?.enabled === false ? "false" : "true"} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium">
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block mb-2">Frequency</label>
+                  <select name="frequency" defaultValue={((data as any)?.qpulse_config)?.frequency || 'Every 3 days'} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium">
+                    <option value="Daily">Daily</option>
+                    <option value="Every 3 days">Every 3 days</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Off">Off</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+                Save Qpulse
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mt-8">
+        <h2 className="text-2xl font-bold mb-6">Payment Collection</h2>
+        <div className="border border-border-theme rounded-xl p-6 bg-bg-surface max-w-xl">
+          <h3 className="text-lg font-bold mb-2">Business Payment QR</h3>
+          <p className="text-sm text-text-secondary mb-4">Customers can scan this QR to pay your business directly via UPI. (Requires manual confirmation of payment)</p>
+          
+          {((data as any)?.payment_qr_config)?.enabled && ((data as any)?.payment_qr_config)?.qr_url ? (
+            <div className="mb-6 flex flex-col items-center">
+              <div className="w-48 h-48 bg-white rounded-xl p-2 mb-4 border border-border-theme shadow-sm relative group overflow-hidden">
+                <img src={((data as any)?.payment_qr_config).qr_url} alt="Business QR" className="w-full h-full object-contain rounded-lg" />
+              </div>
+              <div className="flex gap-4">
+                <label className="px-4 py-2 bg-accent/10 text-accent font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">
+                  Replace QR
+                  <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !businessId) return;
+                    const formData = new FormData();
+                    formData.append('business_id', businessId);
+                    formData.append('file', file);
+                    formData.append('action', 'upload');
+                    try {
+                      toast.loading('Uploading...');
+                      const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
+                      toast.dismiss();
+                      if (res.ok) { toast.success('QR replaced successfully.'); fetchData(undefined, true); }
+                      else { toast.error('Failed to replace QR.'); }
+                    } catch { toast.error('Error uploading QR.'); }
+                  }} />
+                </label>
+                <button onClick={async () => {
+                  if (!businessId) return;
+                  if (!confirm('Are you sure you want to remove this QR code?')) return;
+                  const formData = new FormData();
+                  formData.append('business_id', businessId);
+                  formData.append('action', 'remove');
+                  try {
+                    const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
+                    if (res.ok) { toast.success('QR removed successfully.'); fetchData(undefined, true); }
+                    else { toast.error('Failed to remove QR.'); }
+                  } catch { toast.error('Error removing QR.'); }
+                }} className="px-4 py-2 bg-danger/10 text-danger font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-danger/20 transition-colors border border-danger/20">
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-border-theme rounded-xl p-8 text-center bg-bg-primary/50 hover:bg-bg-primary transition-colors">
+              <div className="w-16 h-16 bg-accent/10 text-accent rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+              </div>
+              <h4 className="text-sm font-bold text-text-primary mb-1">Upload QR Code</h4>
+              <p className="text-xs text-text-secondary mb-4">PNG, JPG up to 5MB</p>
+              <label className="px-6 py-3 bg-accent text-white font-bold text-sm rounded-lg hover-lift hover:bg-accent/90 transition-colors shadow-lg cursor-pointer inline-block">
+                Select File
+                <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file || !businessId) return;
+                  const formData = new FormData();
+                  formData.append('business_id', businessId);
+                  formData.append('file', file);
+                  formData.append('action', 'upload');
+                  try {
+                    toast.loading('Uploading...', { id: 'upload' });
+                    const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
+                    if (res.ok) { toast.success('QR uploaded successfully.', { id: 'upload' }); fetchData(undefined, true); }
+                    else { toast.error('Failed to upload QR.', { id: 'upload' }); }
+                  } catch { toast.error('Error uploading QR.', { id: 'upload' }); }
+                }} />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
+      {/* End Session Modal */}
+      {endSessionData && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="bg-danger/10 border-b border-danger/20 p-5">
+              <h3 className="text-xl font-bold flex items-center gap-3 text-danger">
+                End Session
+              </h3>
+              <p className="text-sm text-text-secondary mt-1">Finalize bill for {endSessionData.session.customer_name}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Total Bill</span>
+                <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Amount Received (₹)</label>
+                <input 
+                  type="number" 
+                  value={endSessionData.amountReceived}
+                  onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
+                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all"
+                  placeholder={String(endSessionData.cost)}
+                />
+                <p className="text-xs text-text-secondary mt-2">If this is less than the total bill, the remaining amount will be added to the customer's Qkhata ledger.</p>
+              </div>
+
+              <div className="mt-8 flex gap-3">
+                <button 
+                  onClick={() => setEndSessionData(null)}
+                  className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    const amountToRecord = endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived);
+                    handleIntervention('force_end', endSessionData.session.id, amountToRecord);
+                    setEndSessionData(null);
+                    if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                      setOverdueSession(null);
+                    }
+                  }}
+                  className="flex-1 py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
+                >
+                  Confirm & End
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Overdue Session Modal */}
       {overdueSession && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
@@ -2510,10 +2700,7 @@ function DashboardContent() {
                     const startFull = overdueSession.start_time.includes('T') ? overdueSession.start_time : `${overdueSession.date}, ${overdueSession.start_time}`;
                     const res = calculateBilling(startFull, new Date().toISOString(), overdueSession.game_type, data?.pricingRules, overdueSession.num_players || 1, undefined, overdueSession.paused_duration_seconds, overdueSession.locked_rate, overdueSession.locked_rate_name);
                     
-                    if (confirm(`End session for ${overdueSession.customer_name}? Current bill: ${formatINR(res.cost)}`)) {
-                      handleIntervention('force_end', overdueSession.id, res.cost);
-                      setOverdueSession(null);
-                    }
+                    setEndSessionData({ session: overdueSession, cost: res.cost, amountReceived: String(res.cost) });
                   }}
                   className="w-full py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
                 >
@@ -2556,6 +2743,16 @@ function DashboardContent() {
           </button>
           <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconCustomers /> Customers
+          </button>
+          
+          <button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
+            QKhata
+          </button>
+
+          <button onClick={() => setSidebarTab('payments')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'payments' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 
+            Payments
           </button>
         </nav>
 
@@ -2720,6 +2917,8 @@ function DashboardContent() {
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'support' && renderSupport()}
+          {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} />}
+          {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
         </div>
         
         {/* Footer */}
