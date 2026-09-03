@@ -201,6 +201,11 @@ export async function endSession(table_id: string, businessId?: string, source: 
   const totalDiscountAmount = discountAmount + foodDiscountAmount;
   
   const actualAmountPaid = amountPaid !== undefined ? amountPaid : totalCost;
+  
+  if (actualAmountPaid < totalCost && !(session as any)._matchedMemberId) {
+    throw new ApiError(400, 'Customer must be registered to use QKhata.');
+  }
+
   let payment_status = 'Paid';
   if (actualAmountPaid === 0 && totalCost > 0) payment_status = 'Pending';
   else if (actualAmountPaid > 0 && actualAmountPaid < totalCost) payment_status = 'Partially Paid';

@@ -61,41 +61,24 @@ export async function handleSessionIntervention(params: {
       break;
     case 'force_end':
       interventionType = 'force_close';
-      const business = await businessManager.getBusiness(business_id);
-      const activeDiscount = business?.active_discounts?.[session.table_id];
-      let totalPausedSeconds = session.paused_duration_seconds || 0;
-      if (session.paused_at) {
-        totalPausedSeconds += Math.max(0, Math.floor((new Date(now).getTime() - new Date(session.paused_at).getTime()) / 1000));
-      }
-      const res = calculateBilling(
-        session.start_time, 
-        now, 
-        session.game_type, 
-        business?.pricing_rules, 
-        session.num_players || 1, 
-        activeDiscount,
-        totalPausedSeconds,
-        session.locked_rate,
-        session.locked_rate_name
-      );
-      
       let sourceLabel = 'System';
       if (performed_by === 'telegram_bot' || performed_by === 'Qbot') {
         sourceLabel = 'Qbot';
+      } else if (performed_by === 'dashboard_user') {
+        sourceLabel = 'Manual Force';
       }
+      
+      const { endSession } = require('../sessionManager');
+      const sessionResult = await endSession(session.table_id, business_id, sourceLabel, amount_recovered);
       
       dbUpdates = {
         status: 'COMPLETED',
-        end_time: now,
-        duration: res.duration,
-        applied_pricing: res.slabs_applied,
-        cost: res.cost,
-        base_cost: res.baseCost,
-        discount_amount: res.discountAmount,
-        closure_type: 'manual_force',
-        completed_by: sourceLabel,
-        paused_at: null,
-        paused_duration_seconds: totalPausedSeconds,
+        end_time: sessionResult.end_time || now,
+        duration: sessionResult.duration || 0,
+        applied_pricing: sessionResult.applied_pricing,
+        cost: sessionResult.cost,
+        discount_amount: sessionResult.discounts,
+        paused_duration_seconds: sessionResult.paused_duration_seconds,
         last_activity_at: now
       };
       break;
@@ -110,7 +93,7 @@ export async function handleSessionIntervention(params: {
   }
 
   if (action === 'force_end') {
-    await sessionRepository.update(session_id, dbUpdates, business_id);
+    // Session is already updated inside endSession
   } else {
     const { error: updateError } = await supabase
       .from('sessions')

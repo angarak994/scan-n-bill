@@ -2945,7 +2945,12 @@ function DashboardContent() {
             <form onSubmit={handleManualStart} className="p-8 flex flex-col gap-4">
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name <span className="text-danger">*</span></label>
-                <input type="text" required value={manualCustomer} onChange={e => setManualCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+                <input type="text" required list="member-list" value={manualCustomer} onChange={e => setManualCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+                <datalist id="member-list">
+                  {memberships.map((m: any) => (
+                    <option key={m.id} value={m.name} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
