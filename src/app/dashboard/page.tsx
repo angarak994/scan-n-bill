@@ -483,7 +483,14 @@ function DashboardContent() {
       });
       if (res.ok) {
         const result = await res.json();
-        setData(prev => prev ? { ...prev, activeSessions: [...prev.activeSessions, result] } : prev);
+        setData(prev => {
+          if (!prev) return prev;
+          const exists = prev.activeSessions.some(s => s.id === result.id);
+          return {
+            ...prev,
+            activeSessions: exists ? prev.activeSessions.map(s => s.id === result.id ? result : s) : [...prev.activeSessions, result]
+          };
+        });
         toast.success('✓ Session created successfully.');
         setIsClosingManual(true);
         setTimeout(() => {
@@ -693,7 +700,15 @@ function DashboardContent() {
       });
       const result = await res.json();
       if (res.ok && result.success) {
-        setData(prev => prev ? { ...prev, bookings: [...(prev.bookings || []), result.booking] } : prev);
+        setData(prev => {
+          if (!prev) return prev;
+          const bookings = prev.bookings || [];
+          const exists = bookings.some(b => b.id === result.booking.id);
+          return {
+            ...prev,
+            bookings: exists ? bookings.map(b => b.id === result.booking.id ? result.booking : b) : [...bookings, result.booking]
+          };
+        });
         toast.success('✓ Manual booking created.');
         setIsClosingBooking(true);
         setTimeout(() => {
@@ -1236,7 +1251,7 @@ function DashboardContent() {
   const revenueToday = data.dailyRevenue;
   
   const activePromo: ActivePromotion | null = data.activePromotions?.[0] || null;
-  const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
+  const isPromoValid = !!(activePromo && new Date(activePromo.end_time).getTime() > now.getTime());
 
   // Active discount mapping
   const currentDiscounts = { ...data.activeDiscounts };
@@ -1263,7 +1278,7 @@ function DashboardContent() {
 
   const renderOverview = () => (
     <>
-          <QpulseWidget onNavigate={(tab) => setSidebarTab(tab)} />
+          <QpulseWidget onNavigate={(tab) => setSidebarTab(tab as any)} />
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Revenue Card */}

@@ -128,16 +128,18 @@ export async function POST(request: Request) {
     }
 
     // 4. Log to Google Sheets (Non-blocking fallback)
-    try {
-      await syncBookingToSheet(newBooking, business_id);
-      await logActivityToSheet('MANUAL_BOOKING_CREATED', {
-        user: 'Owner/Admin',
-        table: table_id,
-        details: `Manual Booking created for ${nameToSave} on Table ${table_id} at ${formattedStartTime} (${durationNum} mins)`
-      }, business_id);
-    } catch (sheetError) {
-      console.error('Google Sheets Sync Error on Manual Booking:', sheetError);
-    }
+    Promise.resolve().then(async () => {
+      try {
+        await syncBookingToSheet(newBooking, business_id);
+        await logActivityToSheet('MANUAL_BOOKING_CREATED', {
+          user: 'Owner/Admin',
+          table: table_id,
+          details: `Manual Booking created for ${nameToSave} on Table ${table_id} at ${formattedStartTime} (${durationNum} mins)`
+        }, business_id);
+      } catch (sheetError) {
+        console.error('Google Sheets Sync Error on Manual Booking:', sheetError);
+      }
+    });
 
     return NextResponse.json({ success: true, booking: newBooking }, { status: 200 });
   } catch (error: any) {

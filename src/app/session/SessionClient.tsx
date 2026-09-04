@@ -569,34 +569,47 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       {/* Pop-up Bill Modal */}
       {billModalData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 p-8 w-full max-w-md transform scale-100 animate-in zoom-in-95 duration-300 flex flex-col items-center text-center">
-            <div className="w-24 h-24 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-4 shadow-inner ring-4 ring-emerald-50 dark:ring-emerald-900/20">
-              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-            </div>
-            <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">Bill Generated</h1>
-            <p className="text-gray-500 dark:text-gray-400 mb-8 font-medium">Please proceed to the counter to pay.</p>
-            
-            <div className="w-full bg-gray-50 dark:bg-gray-900/50 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-gray-700/50">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm">Duration</span>
-                <span className="font-bold text-gray-900 dark:text-gray-100 font-mono text-lg">{billModalData.duration}</span>
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 p-8 w-full max-w-md transform scale-100 animate-in zoom-in-95 duration-300 flex flex-col">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-3 shadow-inner ring-4 ring-emerald-50 dark:ring-emerald-900/20">
+                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
               </div>
+              <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Bill Generated</h1>
+              <p className="text-gray-500 dark:text-gray-400 font-medium text-sm">Please proceed to the counter to pay.</p>
+            </div>
+            
+            <div className="w-full bg-gray-50 dark:bg-gray-900/50 rounded-2xl p-6 mb-6 border border-gray-100 dark:border-gray-700/50">
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-xs">Customer</span>
+                  <span className="font-bold text-gray-900 dark:text-gray-100 text-sm capitalize">{(session as any).customer_name || 'Walk-In'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-xs">Game / Table</span>
+                  <span className="font-bold text-gray-900 dark:text-gray-100 text-sm capitalize">{(session as any).game_type} • {(session as any).table_id}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-xs">Duration</span>
+                  <span className="font-bold text-gray-900 dark:text-gray-100 font-mono text-sm">{billModalData.duration}</span>
+                </div>
+              </div>
+              
               <div className="w-full h-px bg-gray-200 dark:bg-gray-700/50 my-4 border-dashed border-t"></div>
+              
               <div className="flex justify-between items-end">
                 <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider text-sm mb-1">Total Amount</span>
                 <span className="text-5xl font-black text-green-600 dark:text-green-400">₹{billModalData.cost}</span>
               </div>
             </div>
 
-            
             {session?.paymentQrConfig?.enabled && session?.paymentQrConfig?.qr_url && (
               <div className="w-full bg-white dark:bg-gray-800 border-2 border-dashed border-emerald-500 rounded-xl p-4 mb-4 text-center">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Pay via UPI</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Scan this QR using your preferred UPI app.</p>
-                <div className="flex justify-center mb-4">
-                  <div className="w-40 h-40 bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Scan this QR using your preferred UPI app.</p>
+                <div className="flex justify-center mb-3">
+                  <div className="w-32 h-32 bg-white p-2 rounded-lg shadow-sm border border-gray-100">
                     <img src={session.paymentQrConfig.qr_url} alt="Business UPI QR" className="w-full h-full object-contain" />
                   </div>
                 </div>
@@ -607,33 +620,34 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                     newUrl.searchParams.delete('_scan');
                     window.location.href = newUrl.pathname + newUrl.search;
                   }}
-                  className="w-full px-6 py-3 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-bold hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                  className="w-full px-4 py-3 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-bold hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
                 >
                   I have paid via UPI
                 </button>
               </div>
             )}
             
-            <button
-              onClick={() => {
-                setBillModalData(null);
-                const newUrl = new URL(window.location.href);
-                newUrl.searchParams.delete('_scan');
-                window.location.href = newUrl.pathname + newUrl.search;
-              }}
-              className="w-full px-6 py-4 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 font-bold text-lg shadow-xl shadow-gray-900/20 transition-all active:scale-[0.98] mb-3"
-            >
-              Close & Start New Session
-            </button>
-            
-            {session?.qpayConfig?.enabled && (
+            <div className="flex flex-col gap-3">
+              {session?.qpayConfig?.enabled && (
+                <button
+                  onClick={handlePayOnline}
+                  className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-lg shadow-xl shadow-blue-500/30 transition-all active:scale-[0.98]"
+                >
+                  Pay Online
+                </button>
+              )}
               <button
-                onClick={handlePayOnline}
-                className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-lg shadow-xl shadow-blue-500/30 transition-all active:scale-[0.98]"
+                onClick={() => {
+                  setBillModalData(null);
+                  const newUrl = new URL(window.location.href);
+                  newUrl.searchParams.delete('_scan');
+                  window.location.href = newUrl.pathname + newUrl.search;
+                }}
+                className="w-full px-6 py-4 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 font-bold text-lg shadow-xl shadow-gray-900/20 transition-all active:scale-[0.98]"
               >
-                Pay Online
+                Close & Start New Session
               </button>
-            )}
+            </div>
           </div>
         </div>
       )}

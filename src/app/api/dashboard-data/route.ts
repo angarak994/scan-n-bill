@@ -108,7 +108,8 @@ export async function GET(request: Request) {
       ownerName: business.owner_name,
       has_logged_in: business.has_logged_in,
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
-      google_sheet_id: business.google_sheet_id
+      google_sheet_id: business.google_sheet_id,
+      payment_qr_config: business.payment_qr_config
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);

@@ -205,14 +205,12 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function processWebhook(update: any) {
   if (!TELEGRAM_BOT_TOKEN) {
-    return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
+    return;
   }
 
   try {
-    const update = await request.json();
-
     // 1. Handle regular messages
     if (update.message && update.message.text) {
       const chatId = update.message.chat.id;
@@ -1056,7 +1054,7 @@ You can still access other businesses associated with your Telegram account.`, {
               action,
               session_id: sessionId,
               business_id: business.id,
-              amount_recovered: 0,
+              amount_recovered: undefined,
               performed_by: 'Qbot'
             });
             
@@ -1184,10 +1182,20 @@ You can still access other businesses associated with your Telegram account.`, {
 
     }
 
-    return NextResponse.json({ ok: true });
+    return;
   } catch (error) {
     console.error('Telegram Webhook Error:', error);
-    // Always return 200 OK to Telegram to prevent it from retrying and suspending the webhook
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const update = await request.json();
+    // Fire and forget: process webhook asynchronously to keep Telegram responsive
+    Promise.resolve().then(() => processWebhook(update));
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Telegram Webhook Parse Error:', error);
     return NextResponse.json({ ok: true, error_logged: true });
   }
 }
