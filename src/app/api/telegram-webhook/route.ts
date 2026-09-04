@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
@@ -1191,8 +1191,17 @@ You can still access other businesses associated with your Telegram account.`, {
 export async function POST(request: Request) {
   try {
     const update = await request.json();
-    // Fire and forget: process webhook asynchronously to keep Telegram responsive
-    Promise.resolve().then(() => processWebhook(update));
+    
+    // Use Next.js after() to process the webhook in the background 
+    // without blocking the HTTP response, keeping Telegram lightning fast.
+    after(async () => {
+      try {
+        await processWebhook(update);
+      } catch (err) {
+        console.error('Background Webhook Error:', err);
+      }
+    });
+    
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram Webhook Parse Error:', error);
