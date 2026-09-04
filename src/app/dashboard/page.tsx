@@ -10,6 +10,7 @@ import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
 import QKhataTab from './QKhataTab';
 import PaymentsTab from './PaymentsTab';
+import MessagingTab from './MessagingTab';
 import QpulseWidget from '@/components/QpulseWidget';
 
 // Setup Supabase Client for Realtime
@@ -90,7 +91,7 @@ function DashboardContent() {
   const [pinError, setPinError] = useState('');
 
   // UI State
-  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support' | 'qkhata' | 'payments'>('overview');
+  const [sidebarTab, setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'support' | 'qkhata' | 'payments' | 'messaging'>('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
@@ -153,7 +154,7 @@ function DashboardContent() {
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, amountReceived: string } | null>(null);
+  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string } | null>(null);
 
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
@@ -376,7 +377,7 @@ function DashboardContent() {
     return () => clearInterval(clock);
   }, []);
 
-  const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string) => {
+  const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string, paymentMethod?: string, dueDate?: string) => {
     if (!businessId || !data) return;
 
     // Optimistic UI Update
@@ -410,7 +411,7 @@ function DashboardContent() {
       const res = await fetch('/api/intervene-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId })
+        body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId, payment_method: paymentMethod, due_date: dueDate })
       });
       if (res.ok) {
         if (action === 'confirm_playing') {
@@ -1660,7 +1661,7 @@ function DashboardContent() {
                     toReadableIST={toReadableIST}
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
-                    onRequestEndSession={(session, cost) => setEndSessionData({ session, cost, amountReceived: String(cost) })}
+                    onRequestEndSession={(session, cost) => setEndSessionData({ session, cost, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
                   />
                 ))
               )}
@@ -2675,56 +2676,94 @@ function DashboardContent() {
                 <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>
               </div>
               
-              <div>
-                <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Amount Received (₹)</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
-                  <input 
-                    type="number" 
-                    value={endSessionData.amountReceived}
-                    onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
-                    className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    placeholder={String(endSessionData.cost)}
-                  />
+              {/* Payment Mode Toggle (Only for Members) */}
+              {memberships.some(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name) && (
+                <div className="flex gap-2 p-1 bg-bg-primary rounded-xl mt-4">
+                  <button 
+                    onClick={() => setEndSessionData({...endSessionData, paymentMode: 'now'})}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${endSessionData.paymentMode === 'now' ? 'bg-bg-card text-accent shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
+                  >
+                    Pay Now
+                  </button>
+                  <button 
+                    onClick={() => setEndSessionData({...endSessionData, paymentMode: 'credit'})}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${endSessionData.paymentMode === 'credit' ? 'bg-warning/20 text-warning shadow-sm border border-warning/30' : 'text-text-secondary hover:text-warning/70'}`}
+                  >
+                    Play on Credit (QKhata)
+                  </button>
                 </div>
-                <p className="text-xs text-text-secondary mt-2">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
-              </div>
+              )}
 
-              <div className="mt-8 flex flex-col gap-3">
-                {memberships.some(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name) && (
-                  <button 
-                    onClick={() => {
-                      handleIntervention('force_end', endSessionData.session.id, 0);
-                      setEndSessionData(null);
-                      if (overdueSession && overdueSession.id === endSessionData.session.id) setOverdueSession(null);
-                    }}
-                    className="w-full py-3.5 bg-warning text-black font-extrabold text-sm uppercase rounded-xl hover:bg-warning/90 transition-colors shadow-lg shadow-warning/20 flex justify-between px-6 items-center"
-                  >
-                    <span>Payment: Pay Later</span>
-                    <span className="font-mono bg-black/10 px-2 py-0.5 rounded">QKhata: ₹{endSessionData.cost}</span>
-                  </button>
-                )}
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setEndSessionData(null)}
-                    className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const amountToRecord = endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived);
-                      handleIntervention('force_end', endSessionData.session.id, amountToRecord);
-                      setEndSessionData(null);
-                      if (overdueSession && overdueSession.id === endSessionData.session.id) {
-                        setOverdueSession(null);
-                      }
-                    }}
-                    className="flex-[2] py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
-                  >
-                    Confirm & End
-                  </button>
+              {endSessionData.paymentMode === 'now' ? (
+                <div>
+                  <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Amount Received (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
+                    <input 
+                      type="number" 
+                      value={endSessionData.amountReceived}
+                      onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
+                      className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      placeholder={String(endSessionData.cost)}
+                    />
+                  </div>
+                  <p className="text-xs text-text-secondary mt-2">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
                 </div>
+              ) : (
+                <div className="p-4 border border-warning/30 bg-warning/5 rounded-xl space-y-3">
+                  <div>
+                    <label className="block text-sm font-bold tracking-widest uppercase text-warning mb-2">Due Date</label>
+                    <input 
+                      type="date"
+                      value={endSessionData.dueDate}
+                      onChange={(e) => setEndSessionData({...endSessionData, dueDate: e.target.value})}
+                      className="w-full px-4 py-3 bg-bg-primary border border-warning/30 rounded-xl focus:border-warning outline-none text-sm text-text-primary transition-all"
+                    />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const member = memberships.find(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name);
+                      let nextCycle = new Date();
+                      if (member && member.created_at) {
+                        const regDate = new Date(member.created_at);
+                        nextCycle = new Date(nextCycle.getFullYear(), nextCycle.getMonth() + 1, regDate.getDate());
+                      } else {
+                        nextCycle.setMonth(nextCycle.getMonth() + 1);
+                      }
+                      setEndSessionData({...endSessionData, dueDate: nextCycle.toISOString().split('T')[0]});
+                    }}
+                    className="text-xs text-warning hover:underline font-semibold"
+                  >
+                    + Use Next Billing Cycle / Registration Date
+                  </button>
+                  <p className="text-[10px] text-text-secondary leading-tight mt-1">This will add ₹{endSessionData.cost} to their outstanding QKhata balance.</p>
+                </div>
+              )}
+
+              <div className="mt-8 flex gap-3">
+                <button 
+                  onClick={() => setEndSessionData(null)}
+                  className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    const isCredit = endSessionData.paymentMode === 'credit';
+                    const amountToRecord = isCredit ? 0 : (endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived));
+                    const paymentMethod = isCredit ? 'QKhata' : 'Cash';
+                    const dueDate = isCredit && endSessionData.dueDate ? endSessionData.dueDate : undefined;
+                    
+                    handleIntervention('force_end', endSessionData.session.id, amountToRecord, undefined, paymentMethod, dueDate);
+                    setEndSessionData(null);
+                    if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                      setOverdueSession(null);
+                    }
+                  }}
+                  className={`flex-[2] py-3.5 text-white font-extrabold text-sm uppercase rounded-xl transition-colors shadow-lg ${endSessionData.paymentMode === 'credit' ? 'bg-warning text-black hover:bg-warning/90 shadow-warning/20' : 'bg-danger hover:bg-red-600 shadow-danger/20'}`}
+                >
+                  {endSessionData.paymentMode === 'credit' ? 'Confirm QKhata' : 'Confirm & End'}
+                </button>
               </div>
             </div>
           </div>
@@ -2774,7 +2813,7 @@ function DashboardContent() {
                     const startFull = overdueSession.start_time.includes('T') ? overdueSession.start_time : `${overdueSession.date}, ${overdueSession.start_time}`;
                     const res = calculateBilling(startFull, new Date().toISOString(), overdueSession.game_type, data?.pricingRules, overdueSession.num_players || 1, undefined, overdueSession.paused_duration_seconds, overdueSession.locked_rate, overdueSession.locked_rate_name);
                     
-                    setEndSessionData({ session: overdueSession, cost: res.cost, amountReceived: String(res.cost) });
+                    setEndSessionData({ session: overdueSession, cost: res.cost, amountReceived: String(res.cost), paymentMode: 'now', dueDate: '' });
                   }}
                   className="w-full py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
                 >
@@ -2822,6 +2861,11 @@ function DashboardContent() {
           <button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
             QKhata
+          </button>
+
+          <button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+            <span className="text-xl">💬</span> 
+            Messaging
           </button>
 
           <button onClick={() => setSidebarTab('payments')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'payments' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
@@ -2993,6 +3037,7 @@ function DashboardContent() {
           {sidebarTab === 'support' && renderSupport()}
           {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} />}
           {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
+          {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} />}
         </div>
         
         {/* Footer */}

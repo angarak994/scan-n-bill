@@ -9,10 +9,12 @@ export interface PaymentPayload {
     amountPaid: number;
     paymentMethod: string;
     paymentStatus: string; // 'Paid', 'Pending', 'Partially Paid', 'Failed'
+    dueDate?: string;
+    source?: string;
 }
 
 export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
-    const { businessId, sessionId, customerName, totalBilled, amountPaid, paymentMethod, paymentStatus } = payload;
+    const { businessId, sessionId, customerName, totalBilled, amountPaid, paymentMethod, paymentStatus, dueDate, source } = payload;
 
     if (!businessId || !customerName) return;
 
@@ -72,6 +74,10 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
             amount: amountPaid,
             payment_method: paymentMethod || 'Cash',
             status: paymentStatus,
+            metadata: {
+                due_date: dueDate || null,
+                source: source || 'System'
+            }
         };
         
         await supabase.from('payments').insert([paymentRecord]);

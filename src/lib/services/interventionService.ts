@@ -9,10 +9,12 @@ export async function handleSessionIntervention(params: {
   session_id: string;
   business_id: string;
   amount_recovered?: number;
+  payment_method?: string;
+  due_date?: string;
   transfer_table_id?: string;
   performed_by?: string;
 }) {
-  const { action, session_id, business_id, amount_recovered, transfer_table_id, performed_by = 'dashboard_user' } = params;
+  const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id, performed_by = 'dashboard_user' } = params;
 
   if (!session_id || !business_id || !action) {
     throw new Error('Missing parameters');
@@ -69,7 +71,7 @@ export async function handleSessionIntervention(params: {
       }
       
       const { endSession } = require('../sessionManager');
-      const sessionResult = await endSession(session.table_id, business_id, sourceLabel, amount_recovered);
+      const sessionResult = await endSession(session.table_id, business_id, sourceLabel, amount_recovered, payment_method, due_date);
       
       dbUpdates = {
         status: 'COMPLETED',

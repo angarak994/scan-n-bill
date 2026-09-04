@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, session_id, business_id, amount_recovered, transfer_table_id } = body;
+    const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id } = body;
 
     if (sessionCookie.businessId !== business_id) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
@@ -21,6 +21,8 @@ export async function POST(request: Request) {
       session_id,
       business_id,
       amount_recovered,
+      payment_method,
+      due_date,
       transfer_table_id,
       performed_by: 'dashboard_user'
     });

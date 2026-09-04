@@ -98,7 +98,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 }
 
-export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash') {
+export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash', dueDate?: string) {
   const session = await sessionRepository.findActiveByTable(table_id, businessId);
   if (!session || !session.id) {
     throw new ApiError(404, 'No active session found for this table');
@@ -243,7 +243,9 @@ export async function endSession(table_id: string, businessId?: string, source: 
             totalBilled: totalCost,
             amountPaid: actualAmountPaid,
             paymentMethod: paymentMethod,
-            paymentStatus: actualAmountPaid === 0 ? 'Pending' : 'Paid'
+            paymentStatus: actualAmountPaid === 0 ? 'Pending' : 'Paid',
+            dueDate: dueDate,
+            source: finalSource
         });
     } catch (e) {
         console.error("QKhata/Payment Service Error", e);
