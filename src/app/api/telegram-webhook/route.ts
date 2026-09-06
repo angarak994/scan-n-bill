@@ -6,6 +6,7 @@ import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDate
 import { handleSessionIntervention } from '@/lib/services/interventionService';
 import { startSession } from '@/lib/sessionManager';
 import { generateQpulseInsight } from '@/lib/services/qpulseService';
+import { bookingService } from '@/lib/services/bookingService';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -378,6 +379,7 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
           const gameLine = lines.find((l: string) => l.startsWith('Game:'));
           const playersLine = lines.find((l: string) => l.startsWith('Players:'));
           if (!tableLine || !gameLine) return NextResponse.json({ ok: true });
+
           
           const tableId = tableLine.replace('Table:', '').replace('Enter player name for table:', '').trim();
           const gameType = gameLine.replace('Game:', '').trim();
@@ -393,6 +395,54 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
             await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`, mainMenu);
           } catch (error: any) {
             await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, mainMenu);
+          }
+          return NextResponse.json({ ok: true });
+        }
+
+        if (replyText.includes('Enter Customer Name for Booking')) {
+          const lines = replyText.split('\n');
+          const gameLine = lines.find((l: string) => l.startsWith('Game:'));
+          const playersLine = lines.find((l: string) => l.startsWith('Players:'));
+          const dateLine = lines.find((l: string) => l.startsWith('Date:'));
+          const timeLine = lines.find((l: string) => l.startsWith('Time:'));
+          const tableLine = lines.find((l: string) => l.startsWith('Table:'));
+          
+          if (!gameLine || !dateLine || !timeLine || !tableLine) return NextResponse.json({ ok: true });
+          
+          const gameType = gameLine.replace('Game:', '').trim();
+          const numPlayers = playersLine ? parseInt(playersLine.replace('Players:', '').trim()) : 1;
+          const dateStr = dateLine.replace('Date:', '').trim();
+          const timeStr = timeLine.replace('Time:', '').trim();
+          const tableId = tableLine.replace('Table:', '').trim();
+          
+          const playerName = text;
+          
+          try {
+             // Create booking in DB
+             const { error: insertError } = await supabase.from('bookings').insert({
+                 business_id: business.id,
+                 customer_name: playerName,
+                 customer_phone: '',
+                 table_id: tableId,
+                 booking_date: dateStr,
+                 start_time: timeStr,
+                 duration_minutes: 60,
+                 status: 'confirmed',
+                 game_type: gameType,
+                 num_players: numPlayers,
+                 source: 'telegram'
+             });
+             
+             if (insertError) throw insertError;
+             
+             await sendTelegramMessage(chatId, `✅ <b>Booking Confirmed</b>
+
+Name: ${playerName}
+Table: ${tableId}
+Date: ${dateStr}
+Time: ${timeStr}`, mainMenu);
+          } catch(e: any) {
+             await sendTelegramMessage(chatId, `❌ Failed to create booking: ${e.message}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
@@ -545,25 +595,11 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
         return NextResponse.json({ ok: true });
       }
       else if (text === '📅 Book Table') {
-        const dateStr = getCurrentISTDateStr();
-        
-        const { data: bookings } = await supabase
-          .from('bookings')
-          .select('*')
-          .eq('business_id', business.id)
-          .gte('booking_date', dateStr)
-          .eq('status', 'confirmed')
-          .order('start_time', { ascending: true });
-
-        if (!bookings || bookings.length === 0) {
-          await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, mainMenu);
-        } else {
-          let msg = `📅 <b>Today's Bookings</b> (${dateStr})\n\n`;
-          bookings.forEach((b, index) => {
-            msg += `${index + 1}. <b>${b.table_id}</b> @ ${b.start_time}\n   Name: ${b.customer_name}\n   Duration: ${b.duration_minutes}m\n   Game: ${b.game_type || 'pool'}\n   Players: ${b.num_players || 1}\n\n`;
-          });
-          await sendTelegramMessage(chatId, msg, mainMenu);
-        }
+        const buttons = [
+          [{ text: '📋 View Today\'s Bookings', callback_data: 'bk_view_today' }],
+          [{ text: '➕ Create Booking', callback_data: 'bk_create_new' }]
+        ];
+        await sendTelegramMessage(chatId, `📅 <b>Booking Management</b>\n\nChoose an action:`, { inline_keyboard: buttons });
         return NextResponse.json({ ok: true });
       }
       else {
@@ -1179,6 +1215,219 @@ You can still access other businesses associated with your Telegram account.`, {
           }
         }
       }
+
+      else if (callbackData === 'bk_view_today') {
+        const dateStr = getCurrentISTDateStr();
+        const { data: bookings } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('business_id', business.id)
+          .gte('booking_date', dateStr)
+          .in('status', ['confirmed', 'active'])
+          .order('start_time', { ascending: true });
+
+        if (!bookings || bookings.length === 0) {
+          if (messageId) {
+             await editTelegramMessageText(chatId, messageId, `No upcoming bookings for today (${dateStr}).`, { inline_keyboard: [[{ text: '➕ Create Booking', callback_data: 'bk_create_new' }]] });
+          } else {
+             await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, mainMenu);
+          }
+        } else {
+          for (const b of bookings) {
+            let msg = `📅 <b>Booking</b>
+
+`;
+            msg += `<b>Table:</b> ${b.table_id}
+`;
+            msg += `<b>Time:</b> ${b.start_time}
+`;
+            msg += `<b>Name:</b> ${b.customer_name}
+`;
+            msg += `<b>Game:</b> ${b.game_type || 'pool'}
+`;
+            msg += `<b>Players:</b> ${b.num_players || 1}
+`;
+            
+            const buttons = [
+              [
+                { text: '▶️ Start', callback_data: `bk_start_${b.id}` },
+                { text: '❌ Cancel', callback_data: `bk_cancel_${b.id}` }
+              ],
+              [
+                { text: '🚫 No Show', callback_data: `bk_noshow_${b.id}` }
+              ]
+            ];
+            
+            await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+          }
+          await answerCallbackQuery(callbackQueryId);
+        }
+      }
+      else if (callbackData.startsWith('bk_start_') || callbackData.startsWith('bk_cancel_') || callbackData.startsWith('bk_noshow_')) {
+        const parts = callbackData.split('_');
+        const action = parts[1]; // start, cancel, noshow
+        const bookingId = parts[2];
+        
+        const { data: booking } = await supabase.from('bookings').select('*').eq('id', bookingId).single();
+        if (!booking) {
+          await sendTelegramMessage(chatId, '❌ Booking not found.');
+          return NextResponse.json({ ok: true });
+        }
+        
+        if (action === 'start') {
+          try {
+            const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1);
+            await supabase.from('bookings').update({ status: 'active' }).eq('id', bookingId);
+            const msg = `✅ <b>Booking Started</b>
+
+Player: ${booking.customer_name}
+Table: ${booking.table_id}
+Started At: ${formatTimeReadable(session.start_time)}`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg);
+            else await sendTelegramMessage(chatId, msg, mainMenu);
+          } catch (error: any) {
+            if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Failed to start booking: ${error.message}`);
+            else await sendTelegramMessage(chatId, `❌ Failed to start booking: ${error.message}`, mainMenu);
+          }
+        } else if (action === 'cancel') {
+          await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
+          if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Booking for ${booking.customer_name} cancelled.`);
+        } else if (action === 'noshow') {
+          await supabase.from('bookings').update({ status: 'no_show' }).eq('id', bookingId);
+          if (messageId) await editTelegramMessageText(chatId, messageId, `🚫 Booking for ${booking.customer_name} marked as No Show.`);
+        }
+      }
+      else if (callbackData === 'bk_create_new') {
+        let gameTypes: string[] = [];
+        if (business.pricing_rules?.rules) {
+            gameTypes = Object.keys(business.pricing_rules.rules);
+        }
+        
+        if (gameTypes.length === 0) {
+           if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No pricing configured.`);
+           return NextResponse.json({ ok: true });
+        }
+        
+        const gameButtons = gameTypes.map((g) => ({ text: g.charAt(0).toUpperCase() + g.slice(1), callback_data: `bk_game_${g}` }));
+        const buttons = chunkArray(gameButtons, 2);
+        
+        const msg = `🎱 <b>Create Booking</b>
+
+Select Game Type:`;
+        if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+        else await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+      }
+      else if (callbackData.startsWith('bk_game_')) {
+        const gameType = callbackData.replace('bk_game_', '');
+        if (gameType.toLowerCase() === 'ps5') {
+            const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `bk_ps5_${num}` }));
+            const msg = `🎮 <b>Select Players</b>`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: [buttons] });
+        } else {
+            const todayStr = getCurrentISTDateStr();
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+            
+            const buttons = [
+               [{ text: 'Today', callback_data: `bk_date_${gameType}_1_${todayStr}` }],
+               [{ text: 'Tomorrow', callback_data: `bk_date_${gameType}_1_${tomorrowStr}` }]
+            ];
+            const msg = `📅 <b>Select Date</b>`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+        }
+      }
+      else if (callbackData.startsWith('bk_ps5_')) {
+        const numPlayers = parseInt(callbackData.replace('bk_ps5_', ''), 10);
+        const todayStr = getCurrentISTDateStr();
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        
+        const buttons = [
+           [{ text: 'Today', callback_data: `bk_date_ps5_${numPlayers}_${todayStr}` }],
+           [{ text: 'Tomorrow', callback_data: `bk_date_ps5_${numPlayers}_${tomorrowStr}` }]
+        ];
+        const msg = `📅 <b>Select Date</b>`;
+        if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+      }
+      else if (callbackData.startsWith('bk_date_')) {
+        const parts = callbackData.replace('bk_date_', '').split('_');
+        const gameType = parts[0];
+        const numPlayers = parseInt(parts[1], 10);
+        const dateStr = parts[2];
+        
+        // Find available tables for this game
+        const tables = (business.tables || []).filter((t: any) => {
+           if (t.type) return t.type.toLowerCase() === gameType.toLowerCase();
+           return true; // if table has no explicit type, assume it can host any
+        });
+        
+        if (tables.length === 0) {
+           if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No tables available for ${gameType}.`);
+           return NextResponse.json({ ok: true });
+        }
+        
+        // Let's generate slots from 10:00 to 22:00 for the first available table
+        // This is a simplified slot selection for Telegram
+        const tableId = tables[0].id; // Pick first table
+        const availableSlots = [];
+        
+        for (let h = 10; h <= 22; h++) {
+            const startMins = h * 60;
+            const res = await bookingService.checkTableAvailability(business.id, tableId, dateStr, startMins, 60);
+            if (res.available) {
+                availableSlots.push({
+                   time: `${h.toString().padStart(2, '0')}:00`,
+                   mins: startMins
+                });
+            }
+        }
+        
+        if (availableSlots.length === 0) {
+           if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No slots available on ${dateStr}.`);
+           return NextResponse.json({ ok: true });
+        }
+        
+        const slotButtons = availableSlots.map(s => ({
+            text: s.time,
+            callback_data: `bk_time_${tableId}_${s.mins}_${gameType}_${numPlayers}_${dateStr}`
+        }));
+        
+        // Show first 6 slots max to avoid massive keyboards
+        const buttons = chunkArray(slotButtons.slice(0, 6), 2);
+        
+        const msg = `🕒 <b>Select Time</b>
+
+Table: ${tableId}
+Date: ${dateStr}`;
+        if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+      }
+      else if (callbackData.startsWith('bk_time_')) {
+        const parts = callbackData.replace('bk_time_', '').split('_');
+        const tableId = parts[0];
+        const mins = parseInt(parts[1], 10);
+        const gameType = parts[2];
+        const numPlayers = parseInt(parts[3], 10);
+        const dateStr = parts.slice(4).join('_');
+        
+        const hh = Math.floor(mins / 60).toString().padStart(2, '0');
+        const mm = (mins % 60).toString().padStart(2, '0');
+        const timeStr = `${hh}:${mm}`;
+        
+        const msg = `👤 <b>Enter Customer Name for Booking</b>
+
+Game: ${gameType}
+Players: ${numPlayers}
+Date: ${dateStr}
+Time: ${timeStr}
+Table: ${tableId}
+
+(Reply to this message with the customer's name, e.g., "John")`;
+        
+        await sendTelegramMessage(chatId, msg, { force_reply: true });
+      }
+
 
     }
 

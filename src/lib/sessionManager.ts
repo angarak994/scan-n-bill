@@ -164,6 +164,19 @@ export async function endSession(table_id: string, businessId?: string, source: 
         // We will increment total_spend and loyalty_points later after final math
         (session as any)._matchedMemberId = member.id;
       }
+
+      // Check if they exist in the customers table for QKhata eligibility
+      const { data: customerRecord } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('business_id', businessId)
+        .or(`phone.eq.${session.customer_name},name.eq.${session.customer_name}`)
+        .limit(1)
+        .single();
+      
+      if (customerRecord) {
+        (session as any)._isRegisteredCustomer = true;
+      }
     }
   } catch (e) {
     console.error('Membership Lookup Error:', e);
@@ -202,7 +215,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
   
   const actualAmountPaid = amountPaid !== undefined ? amountPaid : totalCost;
   
-  if (actualAmountPaid < totalCost && !(session as any)._matchedMemberId) {
+  if (actualAmountPaid < totalCost && !(session as any)._matchedMemberId && !(session as any)._isRegisteredCustomer) {
     throw new ApiError(400, 'Customer must be registered to use QKhata.');
   }
 
@@ -232,8 +245,9 @@ export async function endSession(table_id: string, businessId?: string, source: 
     paused_duration_seconds: totalPausedSecs,
   } as any, businessId);
 
-  // QKhata / Payment logic integration
+  // QKhata / Payment logic integration (Non-blocking)
   if (businessId) {
+    Promise.resolve().then(async () => {
     try {
         const { createLedgerEntryAndPayment } = require('./services/paymentService');
         await createLedgerEntryAndPayment({
@@ -250,15 +264,15 @@ export async function endSession(table_id: string, businessId?: string, source: 
     } catch (e) {
         console.error("QKhata/Payment Service Error", e);
     }
+    }).catch(e => console.error(e));
   }
 
   if ((session as any)._matchedMemberId) {
+    Promise.resolve().then(async () => {
     try {
       // 1 point per 100 spent (example logic)
       const earnedPoints = Math.floor(totalCost / 100);
       
-      // Update member using RPC or manual fetch/update. 
-      // Supabase doesn't have an atomic increment without RPC, so we fetch and update.
       const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', (session as any)._matchedMemberId).single();
       if (member) {
          await supabase.from('memberships').update({
@@ -269,9 +283,11 @@ export async function endSession(table_id: string, businessId?: string, source: 
     } catch (e) {
       console.error('Failed to update member points', e);
     }
+    }).catch(e => console.error(e));
   }
 
   if ((session as any)._appliedPromoId) {
+    Promise.resolve().then(async () => {
     try {
       const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', (session as any)._appliedPromoId).single();
       if (promo) {
@@ -282,9 +298,11 @@ export async function endSession(table_id: string, businessId?: string, source: 
     } catch (e) {
       console.error('Failed to increment promotion usage', e);
     }
+    }).catch(e => console.error(e));
   }
 
-  // Sync booking status if this session was started from a booking
+  // Sync booking status if this session was started from a booking (Non-blocking)
+  Promise.resolve().then(async () => {
   try {
     if (linkedBooking) {
       await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', linkedBooking.id);
@@ -298,6 +316,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
   } catch (e) {
     console.error('Failed to sync booking completion', e);
   }
+  }).catch(e => console.error(e));
 
   return { 
     session_id: session.id, 

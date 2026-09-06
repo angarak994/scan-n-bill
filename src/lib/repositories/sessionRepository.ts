@@ -192,8 +192,28 @@ export const sessionRepository = {
       throw new Error("Failed to create session in Database: " + error?.message);
     }
 
-    // 2. Sync append to Google Sheets
-    // Awaited to prevent Vercel Serverless from killing the background process
+    // --- DB-LEVEL SAFEGUARD AGAINST DUPLICATE ACTIVE SESSIONS ---
+    // Since Vercel is serverless, in-memory locks can fail across instances.
+    const { data: activeCheck } = await supabase
+      .from('sessions')
+      .select('id, start_time')
+      .eq('business_id', businessId)
+      .eq('table_id', session.table_id)
+      .eq('status', 'ACTIVE')
+      .order('start_time', { ascending: true });
+
+    if (activeCheck && activeCheck.length > 1) {
+      // If there are multiple active sessions, and THIS session is not the first one (oldest),
+      // we gracefully delete this duplicate and throw an error to prevent further execution.
+      if (activeCheck[0].id !== insertedData.id) {
+        await supabase.from('sessions').delete().eq('id', insertedData.id);
+        throw new Error("A session is already active for this table.");
+      }
+    }
+    // -----------------------------------------------------------
+
+    // 2. Sync append to Google Sheets (Non-blocking)
+    Promise.resolve().then(async () => {
     try {
       const sheets = getSheetsClient();
       const config = await getSheetConfig(sheets, businessId);
@@ -254,6 +274,7 @@ export const sessionRepository = {
       console.error("Google Sheets Sync Error on Create:", sheetError);
       await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', insertedData.id);
     }
+    }).catch(e => console.error('Background sheets sync error', e));
   },
 
   update: async (id: string, updates: Partial<Session>, businessId?: string): Promise<void> => {
@@ -281,8 +302,8 @@ export const sessionRepository = {
       throw new Error("Failed to update session in Database: " + error?.message);
     }
 
-    // 2. Sync update to Google Sheets
-    // Awaited to prevent Vercel Serverless from killing the background process
+    // 2. Sync update to Google Sheets (Non-blocking)
+    Promise.resolve().then(async () => {
     try {
       const sheets = getSheetsClient();
       const config = await getSheetConfig(sheets, businessId);
@@ -362,5 +383,6 @@ export const sessionRepository = {
       console.error("Google Sheets Sync Error on Update:", sheetError);
       await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', id);
     }
+    }).catch(e => console.error('Background sheets sync error', e));
   }
 };

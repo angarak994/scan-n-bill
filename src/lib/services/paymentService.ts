@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
+import { sendSMS, SMSConfig } from './smsService';
 
 export interface PaymentPayload {
     businessId: string;
@@ -81,6 +82,23 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
         };
         
         await supabase.from('payments').insert([paymentRecord]);
+
+        // Send SMS Confirmation if configured and paid
+        if (paymentStatus === 'Paid') {
+            const { data: business } = await supabase.from('businesses').select('sms_config, business_name').eq('id', businessId).single();
+            const smsConfig = business?.sms_config as SMSConfig;
+            
+            // Re-fetch customer phone to be safe
+            const { data: cData } = await supabase.from('customers').select('phone').eq('id', customerId).single();
+            
+            if (smsConfig && smsConfig.enabled && cData?.phone) {
+                const cleanPhone = cData.phone.replace(/\D/g, '');
+                if (cleanPhone.length >= 10) {
+                    const smsMessage = `Thank you ${customerName}, your payment of Rs.${amountPaid} at ${business?.business_name || 'our store'} has been received successfully.`;
+                    sendSMS(businessId, cleanPhone, customerName, smsMessage, "payment_success_v1", smsConfig).catch(console.error); // Fire and forget
+                }
+            }
+        }
     }
 }
 

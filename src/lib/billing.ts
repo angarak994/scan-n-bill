@@ -14,9 +14,6 @@ export function parseDateString(dateStr: string): number {
 export function getCurrentISTDateStr(dateMs?: number): string {
   const now = dateMs ? new Date(dateMs) : new Date();
   const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  if (istDate.getUTCHours() < 6) {
-    istDate.setUTCDate(istDate.getUTCDate() - 1);
-  }
   return istDate.toISOString().split('T')[0];
 }
 

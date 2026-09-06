@@ -7,6 +7,11 @@ export default function QpulseWidget({ onNavigate }: { onNavigate?: (tab: string
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
+        // Prevent showing if dismissed in this session
+        if (sessionStorage.getItem('qpulse_dismissed') === 'true') {
+            return;
+        }
+
         // Fetch on mount
         fetch('/api/qpulse')
             .then(res => res.json())
@@ -21,6 +26,7 @@ export default function QpulseWidget({ onNavigate }: { onNavigate?: (tab: string
 
     const handleDismiss = async () => {
         setIsVisible(false);
+        sessionStorage.setItem('qpulse_dismissed', 'true');
         try {
             await fetch('/api/qpulse', { method: 'POST' }); // Marks as shown
         } catch (err) {

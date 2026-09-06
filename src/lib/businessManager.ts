@@ -20,6 +20,7 @@ export interface BusinessData {
   qpay_config?: { enabled: boolean; provider: string | null; secrets: any };
   qpulse_config?: { enabled: boolean; frequency: string; last_shown_date: string | null };
   payment_qr_config?: { enabled: boolean; qr_url: string | null };
+  whatsapp_config?: { enabled: boolean; token: string; phoneId: string };
   created_at: string;
 }
 

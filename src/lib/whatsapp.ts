@@ -2,17 +2,20 @@ const WHATSAPP_API = 'https://graph.facebook.com/v19.0';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
-export async function sendWhatsAppMessage(to: string, message: Record<string, unknown>) {
-  if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) {
+export async function sendWhatsAppMessage(to: string, message: Record<string, unknown>, overrideToken?: string, overridePhoneId?: string) {
+  const token = overrideToken || WHATSAPP_TOKEN;
+  const phoneId = overridePhoneId || WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!token || !phoneId) {
     console.error('WhatsApp configuration missing');
     return null;
   }
 
   try {
-    const res = await fetch(`${WHATSAPP_API}/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+    const res = await fetch(`${WHATSAPP_API}/${phoneId}/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -22,26 +25,49 @@ export async function sendWhatsAppMessage(to: string, message: Record<string, un
       })
     });
     
+    const responseText = await res.text();
+    let jsonResponse;
+    try {
+      jsonResponse = JSON.parse(responseText);
+    } catch (e) {
+      jsonResponse = { error: { message: responseText } };
+    }
+
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error('WhatsApp API Error:', errorText);
+      console.error('WhatsApp API Error:', responseText);
     }
     
-    return await res.json();
+    return jsonResponse;
   } catch (error) {
     console.error('Failed to send WhatsApp message:', error);
     return null;
   }
 }
 
-export async function sendWhatsAppText(to: string, text: string) {
+export async function sendWhatsAppText(to: string, text: string, previewUrl: boolean = false, overrideToken?: string, overridePhoneId?: string) {
   return sendWhatsAppMessage(to, {
     type: 'text',
-    text: { body: text }
-  });
+    text: {
+      body: text,
+      preview_url: previewUrl
+    }
+  }, overrideToken, overridePhoneId);
 }
 
-export async function sendWhatsAppButtons(to: string, bodyText: string, buttons: { id: string, title: string }[]) {
+export async function sendWhatsAppTemplate(to: string, templateName: string, languageCode: string = 'en_US', components: any[] = [], overrideToken?: string, overridePhoneId?: string) {
+  return sendWhatsAppMessage(to, {
+    type: 'template',
+    template: {
+      name: templateName,
+      language: {
+        code: languageCode
+      },
+      components
+    }
+  }, overrideToken, overridePhoneId);
+}
+
+export async function sendWhatsAppButtons(to: string, bodyText: string, buttons: { id: string, title: string }[], overrideToken?: string, overridePhoneId?: string) {
   return sendWhatsAppMessage(to, {
     type: 'interactive',
     interactive: {
@@ -54,10 +80,26 @@ export async function sendWhatsAppButtons(to: string, bodyText: string, buttons:
         }))
       }
     }
-  });
+  }, overrideToken, overridePhoneId);
 }
 
-export async function sendWhatsAppList(to: string, bodyText: string, buttonText: string, sections: { title: string, rows: { id: string, title: string, description?: string }[] }[]) {
+export async function sendWhatsAppInteractiveList(to: string, header: string, bodyText: string, footer: string, buttonText: string, sections: any[], overrideToken?: string, overridePhoneId?: string) {
+  return sendWhatsAppMessage(to, {
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: header },
+      body: { text: bodyText },
+      footer: { text: footer },
+      action: {
+        button: buttonText,
+        sections
+      }
+    }
+  }, overrideToken, overridePhoneId);
+}
+
+export async function sendWhatsAppList(to: string, bodyText: string, buttonText: string, sections: { title: string, rows: { id: string, title: string, description?: string }[] }[], overrideToken?: string, overridePhoneId?: string) {
   return sendWhatsAppMessage(to, {
     type: 'interactive',
     interactive: {
@@ -76,5 +118,5 @@ export async function sendWhatsAppList(to: string, bodyText: string, buttonText:
         }))
       }
     }
-  });
+  }, overrideToken, overridePhoneId);
 }

@@ -4,40 +4,72 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 
-export default function MessagingTab({ businessId }: { businessId: string }) {
+export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustomers = [], memberships = [] }: { businessId: string, isWhatsAppConnected: boolean, dbCustomers?: any[], memberships?: any[] }) {
     const [customers, setCustomers] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCustomers, setSelectedCustomers] = useState<Set<string>>(new Set());
     const [messageTemplate, setMessageTemplate] = useState('');
     const [isSending, setIsSending] = useState(false);
+    const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
+    const [activeTab, setActiveTab] = useState<'compose' | 'logs'>('compose');
+
+    const fetchLogs = async () => {
+        if (!businessId) return;
+        const { data } = await supabase
+            .from('whatsapp_messages')
+            .select('*')
+            .eq('business_id', businessId)
+            .order('created_at', { ascending: false })
+            .limit(50);
+        if (data) setDeliveryLogs(data);
+    };
 
     useEffect(() => {
-        if (!businessId) return;
-        
-        async function fetchData() {
-            try {
-                // Fetch customers with phone numbers
-                const { data } = await supabase
-                    .from('customers')
-                    .select('*')
-                    .eq('business_id', businessId)
-                    .not('phone', 'is', null)
-                    .order('created_at', { ascending: false });
-                if (data) {
-                    // Filter out invalid/empty phones
-                    const validCustomers = data.filter(c => c.phone && c.phone.trim().length > 5);
-                    setCustomers(validCustomers);
-                }
-            } catch (err) {
-                console.error("Failed to load customers for messaging", err);
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        
-        fetchData();
+        fetchLogs();
+        // Set up real-time subscription for status updates
+        const channel = supabase.channel('whatsapp_messages_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `business_id=eq.${businessId}` }, fetchLogs)
+            .subscribe();
+            
+        return () => { supabase.removeChannel(channel); };
     }, [businessId]);
+
+    useEffect(() => {
+        const unifiedContacts = new Map<string, any>();
+
+        // Process dbCustomers (Walk-ins/QKhata users)
+        if (dbCustomers && dbCustomers.length > 0) {
+            dbCustomers.forEach(c => {
+                if (c.phone && c.phone.trim().length >= 10) {
+                    const cleanPhone = c.phone.replace(/\D/g, '');
+                    unifiedContacts.set(cleanPhone, {
+                        id: c.id,
+                        name: c.name,
+                        phone: cleanPhone,
+                        type: 'Customer'
+                    });
+                }
+            });
+        }
+
+        // Process Memberships (Registered Members)
+        if (memberships && memberships.length > 0) {
+            memberships.forEach(m => {
+                if (m.mobile && m.mobile.trim().length >= 10) {
+                    const cleanPhone = m.mobile.replace(/\D/g, '');
+                    // Overwrite customer with member data if phone matches, as members are priority
+                    unifiedContacts.set(cleanPhone, {
+                        id: m.id,
+                        name: m.name,
+                        phone: cleanPhone,
+                        type: 'Member - ' + m.tier
+                    });
+                }
+            });
+        }
+
+        setCustomers(Array.from(unifiedContacts.values()));
+    }, [dbCustomers, memberships]);
 
     const filteredCustomers = customers.filter(c => 
         c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -94,7 +126,8 @@ export default function MessagingTab({ businessId }: { businessId: string }) {
 
             toast.success(`Successfully sent ${result.successCount} messages.`, { id: toastId });
             if (result.failureCount > 0) {
-                toast.error(`Failed to send ${result.failureCount} messages.`, { duration: 4000 });
+                const errorStr = result.errors?.map((e: any) => e.error).join(', ') || 'Unknown error';
+                toast.error(`Failed to send ${result.failureCount} message(s). Reason: ${errorStr}`, { duration: 8000 });
             }
 
             // Reset after send
@@ -108,14 +141,13 @@ export default function MessagingTab({ businessId }: { businessId: string }) {
         }
     };
 
-    if (isLoading) return <div className="p-8 text-center text-text-secondary">Loading contacts...</div>;
 
     return (
         <div className="flex flex-col h-[calc(100vh-100px)] bg-bg-primary text-text-primary rounded-xl border border-border-theme overflow-hidden font-sans shadow-2xl">
             <div className="bg-bg-surface p-6 border-b border-border-theme flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
                 <div>
                     <h2 className="text-2xl font-black tracking-tight text-accent flex items-center gap-2">
-                        <span className="text-3xl">💬</span> WhatsApp Messaging
+                        <svg className="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg> WhatsApp Messaging
                     </h2>
                     <p className="text-sm text-text-secondary mt-1">Send personalized bulk messages, promotions, or reminders to your registered members.</p>
                 </div>
@@ -140,7 +172,15 @@ export default function MessagingTab({ businessId }: { businessId: string }) {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-bg-surface p-2">
+                        {!isWhatsAppConnected && (
+                            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-red-500 font-bold text-sm">WhatsApp Not Connected</h4>
+                                    <p className="text-text-secondary text-xs mt-1">You must connect your WhatsApp Business number in Settings before sending messages.</p>
+                                </div>
+                            </div>
+                        )}
                         {filteredCustomers.length === 0 ? (
                             <div className="text-center p-8 text-text-disabled">No members found with phone numbers.</div>
                         ) : (
@@ -152,7 +192,12 @@ export default function MessagingTab({ businessId }: { businessId: string }) {
                                 >
                                     <div>
                                         <h4 className={`font-bold text-sm ${selectedCustomers.has(customer.id) ? 'text-accent' : 'text-text-primary'}`}>{customer.name}</h4>
-                                        <p className="text-xs text-text-secondary mt-0.5">{customer.phone}</p>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                            <p className="text-xs text-text-secondary">{customer.phone}</p>
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${customer.type.includes('Member') ? 'bg-accent/20 text-accent' : 'bg-bg-primary text-text-secondary border border-border-theme'}`}>
+                                                {customer.type}
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         {Number(customer.outstanding_balance) > 0 && (
@@ -174,62 +219,117 @@ export default function MessagingTab({ businessId }: { businessId: string }) {
                     </div>
                 </div>
 
-                {/* Right Side: Message Composer */}
+                {/* Right Side: Message Composer & Logs */}
                 <div className="w-full md:w-1/2 flex flex-col bg-bg-surface p-6 min-h-0">
-                    <h3 className="font-bold text-sm uppercase tracking-widest text-text-secondary mb-4 shrink-0">Compose Message</h3>
-                    
-                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0">
-                        <button onClick={() => setMessageTemplate("Hi {{name}}, we miss you at the club! Show this message on your next visit for 10% off your table time.")} className="px-3 py-1.5 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors">
-                            Welcome Back Promo
-                        </button>
-                        <button onClick={() => setMessageTemplate("Hi {{name}}, just a quick reminder that your QKhata balance of ₹{{outstanding}} is pending. Please clear it at your earliest convenience.")} className="px-3 py-1.5 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors">
-                            Payment Reminder
-                        </button>
-                    </div>
-
-                    <textarea
-                        value={messageTemplate}
-                        onChange={(e) => setMessageTemplate(e.target.value)}
-                        placeholder="Type your message here... Use {{name}} to insert the customer's name, or {{outstanding}} for their due balance."
-                        className="flex-1 min-h-[150px] bg-bg-primary border border-border-theme rounded-xl p-4 text-sm focus:border-accent outline-none resize-none transition-colors mb-4 font-medium"
-                    />
-
-                    <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-6 shrink-0">
-                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled mb-2">Message Preview</h4>
-                        <p className="text-sm text-text-secondary italic whitespace-pre-wrap">
-                            {messageTemplate
-                                .replace(/\{\{name\}\}/g, selectedCustomers.size > 0 ? (customers.find(c => c.id === Array.from(selectedCustomers)[0])?.name || 'Customer') : 'Customer')
-                                .replace(/\{\{outstanding\}\}/g, selectedCustomers.size > 0 ? (Number(customers.find(c => c.id === Array.from(selectedCustomers)[0])?.outstanding_balance || 0).toFixed(0)) : '0')}
-                        </p>
-                    </div>
-
-                    <div className="flex items-center justify-between shrink-0">
-                        <span className="text-xs font-bold text-text-secondary">
-                            {selectedCustomers.size} recipient(s) selected
-                        </span>
-                        <button
-                            onClick={handleSendBulk}
-                            disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim()}
-                            className="px-8 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-xl hover:bg-accent/90 transition-all shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    <div className="flex border-b border-border-theme mb-6">
+                        <button 
+                            onClick={() => setActiveTab('compose')}
+                            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'compose' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                         >
-                            {isSending ? (
-                                <>
-                                    <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Sending...
-                                </>
-                            ) : (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                    </svg>
-                                    Send Messages
-                                </>
-                            )}
+                            Compose Message
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('logs')}
+                            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'logs' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                        >
+                            Delivery Logs
                         </button>
                     </div>
+
+                    {activeTab === 'compose' ? (
+                        <>
+                            <div className="mb-4 shrink-0">
+                                <p className="text-xs text-text-secondary mb-3">
+                                    <strong>Note on Meta Policies:</strong> You can only send free-form text if the customer has messaged you in the last 24 hours. Otherwise, Meta will block the message.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0">
+                                <button onClick={() => setMessageTemplate("Hi {{name}}, we miss you at the club! Show this message on your next visit for 10% off your table time.")} className="px-3 py-1.5 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors">
+                                    Welcome Back Promo
+                                </button>
+                                <button onClick={() => setMessageTemplate("Hi {{name}}, just a quick reminder that your QKhata balance of ₹{{outstanding}} is pending. Please clear it at your earliest convenience.")} className="px-3 py-1.5 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors">
+                                    Payment Reminder
+                                </button>
+                            </div>
+
+                            <textarea
+                                value={messageTemplate}
+                                onChange={(e) => setMessageTemplate(e.target.value)}
+                                placeholder="Type your message here... Use {{name}} to insert the customer's name, or {{outstanding}} for their due balance."
+                                className="flex-1 min-h-[150px] bg-bg-primary border border-border-theme rounded-xl p-4 text-sm focus:border-accent outline-none resize-none transition-colors mb-4 font-medium"
+                            />
+
+                            <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-6 shrink-0">
+                                <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled mb-2">Message Preview</h4>
+                                <p className="text-sm text-text-secondary italic whitespace-pre-wrap">
+                                    {messageTemplate
+                                        .replace(/\{\{name\}\}/g, selectedCustomers.size > 0 ? (customers.find(c => c.id === Array.from(selectedCustomers)[0])?.name || 'Customer') : 'Customer')
+                                        .replace(/\{\{outstanding\}\}/g, selectedCustomers.size > 0 ? (Number(customers.find(c => c.id === Array.from(selectedCustomers)[0])?.outstanding_balance || 0).toFixed(0)) : '0')}
+                                </p>
+                            </div>
+
+                            <div className="flex items-center justify-between shrink-0">
+                                <span className="text-xs font-bold text-text-secondary">
+                                    {selectedCustomers.size} recipient(s) selected
+                                </span>
+                                <button
+                                    onClick={handleSendBulk}
+                                    disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim() || !isWhatsAppConnected}
+                                    className="px-8 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-xl hover:bg-accent/90 transition-all shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    {isSending ? (
+                                        <>
+                                            <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Sending...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                            </svg>
+                                            Send Messages
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                            {deliveryLogs.length === 0 ? (
+                                <div className="text-center p-8 text-text-disabled text-sm">No messages sent yet.</div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {deliveryLogs.map(log => (
+                                        <div key={log.id} className="bg-bg-primary border border-border-theme p-4 rounded-xl flex flex-col gap-2">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-text-primary">{log.recipient_name} <span className="text-text-secondary font-normal text-xs ml-1">({log.recipient_phone})</span></h4>
+                                                    <p className="text-xs text-text-secondary mt-1">{new Date(log.created_at).toLocaleString()}</p>
+                                                </div>
+                                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${
+                                                    log.status === 'delivered' ? 'bg-green-500/20 text-green-500' :
+                                                    log.status === 'read' ? 'bg-blue-500/20 text-blue-500' :
+                                                    log.status === 'failed' ? 'bg-red-500/20 text-red-500' :
+                                                    log.status === 'sent' ? 'bg-accent/20 text-accent' :
+                                                    'bg-bg-card text-text-secondary border border-border-theme'
+                                                }`}>
+                                                    {log.status}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-text-secondary italic line-clamp-2 mt-2">{log.content}</p>
+                                            {log.error_message && (
+                                                <p className="text-xs text-red-400 mt-2 bg-red-500/10 p-2 rounded border border-red-500/20">{log.error_message}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

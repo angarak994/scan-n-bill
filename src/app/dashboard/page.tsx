@@ -80,7 +80,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string } } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -105,6 +105,11 @@ function DashboardContent() {
   const [isStartingManual, setIsStartingManual] = useState(false);
   const [memberships, setMemberships] = useState<any[]>([]);
   const [isMembershipsLoading, setIsMembershipsLoading] = useState(false);
+  const [selectedBulkSmsCustomers, setSelectedBulkSmsCustomers] = useState<string[]>([]);
+  const [showBulkSmsModal, setShowBulkSmsModal] = useState(false);
+  const [bulkSmsMessage, setBulkSmsMessage] = useState('');
+  const [bulkSmsTemplateId, setBulkSmsTemplateId] = useState('promotional_v1');
+  const [isSendingBulkSms, setIsSendingBulkSms] = useState(false);
   const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
   const [isCreatingMember, setIsCreatingMember] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -132,6 +137,16 @@ function DashboardContent() {
   const [promoDiscount, setPromoDiscount] = useState('40');
   const [promoDurationHours, setPromoDurationHours] = useState('2');
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
+  const [isUpdatingGoals, setIsUpdatingGoals] = useState(false);
+
+  // WhatsApp Connect State
+  const [waPhoneId, setWaPhoneId] = useState('');
+  const [waToken, setWaToken] = useState('');
+  const [isConnectingWa, setIsConnectingWa] = useState(false);
+  const [smsAuthKey, setSmsAuthKey] = useState('');
+  const [smsSenderId, setSmsSenderId] = useState('');
+  const [smsProvider, setSmsProvider] = useState('msg91');
+  const [isConnectingSms, setIsConnectingSms] = useState(false);
 
   // Telegram & Reminder State
   const [telegramOwners, setTelegramOwners] = useState<any[]>([]);
@@ -178,9 +193,6 @@ function DashboardContent() {
   // Report Date Filter State
   const getLocalDateStr = (d = new Date()) => {
     const dCopy = new Date(d.getTime());
-    if (dCopy.getHours() < 6) {
-      dCopy.setDate(dCopy.getDate() - 1);
-    }
     const year = dCopy.getFullYear();
     const month = String(dCopy.getMonth() + 1).padStart(2, '0');
     const day = String(dCopy.getDate()).padStart(2, '0');
@@ -216,7 +228,7 @@ function DashboardContent() {
   const fetchReportsData = async () => {
     try {
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`;
+      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRange.start}&endDate=${reportDateRange.end}&_t=${Date.now()}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
@@ -347,24 +359,71 @@ function DashboardContent() {
     if (isAuthorized) {
       fetchData();
       
-      // Fallback Polling in case Realtime isn't configured properly
-      const interval = setInterval(() => fetchData(undefined, true), 10000);
-      
-      // Setup Supabase Realtime
+      // Setup Supabase Realtime for targeted state updates (No polling)
       let subscription: any = null;
       if (supabase && businessId) {
         subscription = supabase.channel('dashboard_changes')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, () => {
-            fetchData(undefined, true);
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, (payload) => {
+             setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+                const s = payload.new as any;
+                
+                if (payload.eventType === 'INSERT' && s.status === 'ACTIVE') {
+                   if (!newData.activeSessions.some((x: any) => x.id === s.id)) {
+                       newData.activeSessions = [...newData.activeSessions, s];
+                   }
+                } else if (payload.eventType === 'UPDATE') {
+                   if (s.status === 'COMPLETED') {
+                       newData.activeSessions = newData.activeSessions.filter((x: any) => x.id !== s.id);
+                       if (!newData.completedSessions.some((x: any) => x.id === s.id)) {
+                           newData.completedSessions = [s, ...newData.completedSessions];
+                           newData.dailyRevenue += (s.cost || 0);
+                       }
+                   } else if (s.status === 'ACTIVE') {
+                       const idx = newData.activeSessions.findIndex((x: any) => x.id === s.id);
+                       if (idx > -1) {
+                           newData.activeSessions[idx] = s;
+                           newData.activeSessions = [...newData.activeSessions];
+                       } else {
+                           newData.activeSessions = [...newData.activeSessions, s];
+                       }
+                   }
+                } else if (payload.eventType === 'DELETE') {
+                   newData.activeSessions = newData.activeSessions.filter((x: any) => x.id !== payload.old.id);
+                }
+                return newData;
+             });
           })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, () => {
-            fetchData(undefined, true);
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, (payload) => {
+             setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+                if (!newData.bookings) newData.bookings = [];
+                const b = payload.new as any;
+                
+                if (payload.eventType === 'INSERT') {
+                   if (!newData.bookings.some((x: any) => x.id === b.id)) {
+                       newData.bookings = [...newData.bookings, b];
+                   }
+                } else if (payload.eventType === 'UPDATE') {
+                   const idx = newData.bookings.findIndex((x: any) => x.id === b.id);
+                   if (idx > -1) {
+                       newData.bookings[idx] = b;
+                       newData.bookings = [...newData.bookings];
+                   } else {
+                       newData.bookings = [...newData.bookings, b];
+                   }
+                } else if (payload.eventType === 'DELETE') {
+                   newData.bookings = newData.bookings.filter((x: any) => x.id !== payload.old.id);
+                }
+                return newData;
+             });
           })
           .subscribe();
       }
       
       return () => {
-        clearInterval(interval);
         if (subscription && supabase) supabase.removeChannel(subscription);
       };
     }
@@ -1378,7 +1437,11 @@ function DashboardContent() {
                 <div key={booking.id} className="p-4 rounded-lg border border-border-theme bg-bg-surface hover:border-accent/50 transition-colors">
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <p className="text-sm font-bold">{booking.customer_name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold">{booking.customer_name}</p>
+                        {booking.source === 'whatsapp' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-1.5 py-0.5 rounded border border-[#25D366]/20 flex-shrink-0">WhatsApp AI</span>}
+                        {booking.source === 'telegram' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-1.5 py-0.5 rounded border border-[#0088cc]/20 flex-shrink-0">Telegram AI</span>}
+                      </div>
                       <p className="text-[10px] text-text-secondary mt-0.5">{booking.customer_phone}</p>
                     </div>
                     <span className="px-2 py-1 rounded text-xs font-bold font-mono bg-bg-card border border-border-theme">
@@ -1504,6 +1567,8 @@ function DashboardContent() {
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
                       <td className="p-4 md:p-5">
                         <p className="text-base font-bold text-text-primary">{booking.customer_name}</p>
+                        {booking.source === 'whatsapp' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-2 py-0.5 rounded-full border border-[#25D366]/20">WhatsApp AI</span>}
+                        {booking.source === 'telegram' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-2 py-0.5 rounded-full border border-[#0088cc]/20">Telegram AI</span>}
                       </td>
                       <td className="p-4 md:p-5">
                         <span className="px-3 py-1.5 border border-border-theme bg-bg-surface rounded-lg text-sm font-mono font-bold text-accent uppercase tracking-widest shadow-sm group-hover:border-accent/50 transition-colors">
@@ -1812,15 +1877,28 @@ function DashboardContent() {
             <h3 className="text-xl font-bold text-text-primary">Membership Directory</h3>
             <p className="text-xs text-text-secondary mt-1 italic">Manage your loyal customers</p>
           </div>
-          <button onClick={fetchMemberships} className="p-2 bg-bg-surface border border-border-theme rounded hover:bg-border-theme transition-colors">
-            <svg className="w-4 h-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          </button>
+          <div className="flex gap-3 items-center">
+            {selectedBulkSmsCustomers.length > 0 && (
+              <button onClick={() => setShowBulkSmsModal(true)} className="px-4 py-2 bg-accent text-black font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors shadow shadow-accent/20">
+                Send Bulk SMS ({selectedBulkSmsCustomers.length})
+              </button>
+            )}
+            <button onClick={fetchMemberships} className="p-2 bg-bg-surface border border-border-theme rounded hover:bg-border-theme transition-colors">
+              <svg className="w-4 h-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+          </div>
         </div>
         
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
+                <th className="p-5 font-bold w-10">
+                  <input type="checkbox" onChange={(e) => {
+                    if (e.target.checked) setSelectedBulkSmsCustomers(memberships.map(m => m.mobile).filter(Boolean));
+                    else setSelectedBulkSmsCustomers([]);
+                  }} className="w-4 h-4 rounded border-border-theme text-accent focus:ring-accent" />
+                </th>
                 <th className="p-5 font-bold">Member</th>
                 <th className="p-5 font-bold">Contact</th>
                 <th className="p-5 font-bold">Tier</th>
@@ -1838,6 +1916,18 @@ function DashboardContent() {
               ) : (
                 memberships.map((m, i) => (
                   <tr key={i} className="border-b border-border-theme/50 hover:bg-bg-surface/50 transition-colors">
+                    <td className="p-5">
+                      <input 
+                        type="checkbox" 
+                        checked={m.mobile ? selectedBulkSmsCustomers.includes(m.mobile) : false}
+                        onChange={(e) => {
+                          if (!m.mobile) return;
+                          if (e.target.checked) setSelectedBulkSmsCustomers([...selectedBulkSmsCustomers, m.mobile]);
+                          else setSelectedBulkSmsCustomers(selectedBulkSmsCustomers.filter(phone => phone !== m.mobile));
+                        }}
+                        className="w-4 h-4 rounded border-border-theme text-accent focus:ring-accent" 
+                      />
+                    </td>
                     <td className="p-5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-bold text-accent">
@@ -1876,6 +1966,72 @@ function DashboardContent() {
           </table>
         </div>
       </div>
+
+      {showBulkSmsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-border-theme flex justify-between items-center bg-bg-primary/50">
+              <h3 className="text-xl font-bold text-text-primary">Send Bulk SMS</h3>
+              <button onClick={() => setShowBulkSmsModal(false)} className="text-text-secondary hover:text-text-primary">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-text-secondary mb-2">DLT Template ID</label>
+                <input 
+                  type="text" 
+                  value={bulkSmsTemplateId} 
+                  onChange={e => setBulkSmsTemplateId(e.target.value)} 
+                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm font-mono" 
+                  placeholder="e.g. promo_v1" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-text-secondary mb-2">Message Content (Approved Template)</label>
+                <textarea 
+                  value={bulkSmsMessage} 
+                  onChange={e => setBulkSmsMessage(e.target.value)} 
+                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm h-32" 
+                  placeholder="Hi {{name}}, enjoy 10% off today!" 
+                />
+                <p className="text-xs text-text-secondary mt-1">Placeholders: `{"{{"}name{"}}"}`</p>
+              </div>
+              <div className="bg-accent/10 text-accent p-3 rounded-lg text-sm font-bold text-center">
+                Sending to {selectedBulkSmsCustomers.length} customers
+              </div>
+            </div>
+            <div className="p-4 border-t border-border-theme flex justify-end gap-3 bg-bg-surface">
+              <button onClick={() => setShowBulkSmsModal(false)} className="px-5 py-2.5 rounded-lg text-sm font-bold text-text-secondary hover:bg-bg-primary transition-colors">Cancel</button>
+              <button 
+                onClick={async () => {
+                  setIsSendingBulkSms(true);
+                  const toastId = toast.loading(`Sending ${selectedBulkSmsCustomers.length} messages...`);
+                  try {
+                    const customersToSend = memberships.filter(m => selectedBulkSmsCustomers.includes(m.mobile)).map(m => ({ phone: m.mobile, name: m.name }));
+                    const res = await fetch('/api/sms-bulk-send', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ businessId, customers: customersToSend, templateId: bulkSmsTemplateId, messageTemplate: bulkSmsMessage })
+                    });
+                    const resData = await res.json();
+                    if (!res.ok || resData.error) throw new Error(resData.error || 'Failed to send');
+                    toast.success(`Sent ${resData.successCount} messages. Failed: ${resData.failureCount}`, { id: toastId });
+                    setShowBulkSmsModal(false);
+                  } catch (e: any) {
+                    toast.error(e.message || 'Error sending bulk SMS', { id: toastId });
+                  }
+                  setIsSendingBulkSms(false);
+                }} 
+                disabled={isSendingBulkSms || !bulkSmsMessage || !bulkSmsTemplateId}
+                className="px-5 py-2.5 rounded-lg text-sm font-extrabold bg-accent text-black hover:bg-accent/90 transition-colors disabled:opacity-50"
+              >
+                {isSendingBulkSms ? 'Sending...' : 'Send Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
         <h2 className="text-2xl font-bold mb-6">Register New Member</h2>
@@ -2317,6 +2473,202 @@ function DashboardContent() {
           </button>
         </form>
       </div>
+
+      {/* WhatsApp Integration Setting */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <svg className="w-6 h-6 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+            WhatsApp Business Integration
+          </h2>
+          {data?.whatsapp_config?.enabled ? (
+            <span className="px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 rounded-full text-xs font-bold uppercase">Connected</span>
+          ) : (
+            <span className="px-3 py-1 bg-bg-surface text-text-secondary border border-border-theme rounded-full text-xs font-bold uppercase">Not Connected</span>
+          )}
+        </div>
+        <p className="text-sm text-text-secondary mb-6 max-w-2xl">
+          Connect your official WhatsApp Business number to send QKhata reminders, booking confirmations, and bulk promotions directly from your own business number.
+        </p>
+
+        {data?.whatsapp_config?.enabled ? (
+          <div className="max-w-md p-6 bg-bg-primary border border-border-theme rounded-xl">
+            <p className="text-sm font-semibold text-text-primary mb-4">Your WhatsApp Business account is successfully linked.</p>
+            <button 
+              onClick={async () => {
+                if (confirm('Are you sure you want to disconnect WhatsApp? You will not be able to send reminders.')) {
+                  try {
+                    const res = await fetch('/api/update-whatsapp-config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'disconnect' })
+                    });
+                    if (res.ok) {
+                      toast.success('WhatsApp disconnected.');
+                      fetchData(undefined, true);
+                    }
+                  } catch(e) { toast.error('Failed to disconnect.'); }
+                }
+              }}
+              className="bg-danger/10 text-danger hover:bg-danger/20 font-bold py-2.5 px-6 rounded-lg transition-colors text-sm"
+            >
+              Disconnect WhatsApp
+            </button>
+          </div>
+        ) : (
+          <form className="max-w-md flex flex-col gap-4" onSubmit={async (e) => {
+            e.preventDefault();
+            setIsConnectingWa(true);
+            try {
+              const res = await fetch('/api/update-whatsapp-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'connect', phoneId: waPhoneId, token: waToken })
+              });
+              if (res.ok) {
+                toast.success('WhatsApp connected successfully!');
+                setWaPhoneId('');
+                setWaToken('');
+                fetchData(undefined, true);
+              } else {
+                toast.error('Failed to connect. Please check credentials.');
+              }
+            } catch(e) {
+              toast.error('An error occurred.');
+            }
+            setIsConnectingWa(false);
+          }}>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Phone Number ID <span className="text-danger">*</span></label>
+              <input 
+                type="text" 
+                required
+                value={waPhoneId}
+                onChange={e => setWaPhoneId(e.target.value)}
+                className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                placeholder="e.g. 102345678912345"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Permanent Access Token <span className="text-danger">*</span></label>
+              <input 
+                type="password" 
+                required
+                value={waToken}
+                onChange={e => setWaToken(e.target.value)}
+                className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                placeholder="EAAGm0..."
+              />
+              <p className="text-[11px] text-text-secondary mt-2">Find these in your Meta App Developer Dashboard under WhatsApp &gt; API Setup. <br/><a href="#" className="text-accent hover:underline">Read the setup guide</a></p>
+            </div>
+            <button type="submit" disabled={isConnectingWa} className="w-full mt-2 bg-accent text-black font-extrabold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+              {isConnectingWa ? 'Connecting...' : 'Connect WhatsApp'}
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* SMS Integration Setting */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mt-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <svg className="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+            SMS Integration (DLT Compliant)
+          </h2>
+          {data?.sms_config?.enabled ? (
+            <span className="px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 rounded-full text-xs font-bold uppercase">Connected</span>
+          ) : (
+            <span className="px-3 py-1 bg-bg-surface text-text-secondary border border-border-theme rounded-full text-xs font-bold uppercase">Not Connected</span>
+          )}
+        </div>
+        <p className="text-sm text-text-secondary mb-6 max-w-2xl">
+          Connect an Indian DLT-compliant SMS provider (e.g. MSG91) to automatically send booking confirmations, QKhata reminders, and promotional bulk messages.
+        </p>
+
+        {data?.sms_config?.enabled ? (
+          <div className="max-w-md p-6 bg-bg-primary border border-border-theme rounded-xl">
+            <p className="text-sm font-semibold text-text-primary mb-2">Your SMS Provider is successfully linked.</p>
+            <p className="text-xs text-text-secondary mb-4">Provider: {data.sms_config.provider.toUpperCase()} | Sender ID: {data.sms_config.senderId}</p>
+            <button 
+              onClick={async () => {
+                if (confirm('Are you sure you want to disconnect your SMS provider?')) {
+                  try {
+                    const res = await fetch('/api/update-sms-config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'disconnect' })
+                    });
+                    if (res.ok) {
+                      toast.success('SMS provider disconnected.');
+                      fetchData(undefined, true);
+                    }
+                  } catch(e) { toast.error('Failed to disconnect.'); }
+                }
+              }}
+              className="bg-danger/10 text-danger hover:bg-danger/20 font-bold py-2.5 px-6 rounded-lg transition-colors text-sm"
+            >
+              Disconnect SMS
+            </button>
+          </div>
+        ) : (
+          <form className="max-w-md flex flex-col gap-4" onSubmit={async (e) => {
+            e.preventDefault();
+            setIsConnectingSms(true);
+            try {
+              const res = await fetch('/api/update-sms-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'connect', provider: smsProvider, authKey: smsAuthKey, senderId: smsSenderId })
+              });
+              if (res.ok) {
+                toast.success('SMS connected successfully!');
+                setSmsAuthKey('');
+                setSmsSenderId('');
+                fetchData(undefined, true);
+              } else {
+                toast.error('Failed to connect. Please check credentials.');
+              }
+            } catch(e) {
+              toast.error('An error occurred.');
+            }
+            setIsConnectingSms(false);
+          }}>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Provider <span className="text-danger">*</span></label>
+              <select value={smsProvider} onChange={e => setSmsProvider(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary">
+                <option value="msg91">MSG91</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Auth Key <span className="text-danger">*</span></label>
+              <input 
+                type="password" 
+                required
+                value={smsAuthKey}
+                onChange={e => setSmsAuthKey(e.target.value)}
+                className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                placeholder="e.g. 421376xxxxxx"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Sender ID <span className="text-danger">*</span></label>
+              <input 
+                type="text" 
+                required
+                maxLength={6}
+                value={smsSenderId}
+                onChange={e => setSmsSenderId(e.target.value.toUpperCase())}
+                className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono uppercase"
+                placeholder="e.g. QCONTL"
+              />
+              <p className="text-[11px] text-text-secondary mt-2">6-character DLT approved sender ID.</p>
+            </div>
+            <button type="submit" disabled={isConnectingSms} className="w-full mt-2 bg-accent text-black font-extrabold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+              {isConnectingSms ? 'Connecting...' : 'Connect SMS'}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 
@@ -2677,7 +3029,7 @@ function DashboardContent() {
               </div>
               
               {/* Payment Mode Toggle (Only for Members) */}
-              {memberships.some(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name) && (
+              {(data?.dbCustomers || []).some((c: any) => c.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || c.phone === endSessionData.session.customer_name) && (
                 <div className="flex gap-2 p-1 bg-bg-primary rounded-xl mt-4">
                   <button 
                     onClick={() => setEndSessionData({...endSessionData, paymentMode: 'now'})}
@@ -2722,7 +3074,7 @@ function DashboardContent() {
                   </div>
                   <button 
                     onClick={() => {
-                      const member = memberships.find(m => m.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || m.mobile === endSessionData.session.customer_name);
+                      const member = (data?.dbCustomers || []).find((c: any) => c.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || c.phone === endSessionData.session.customer_name);
                       let nextCycle = new Date();
                       if (member && member.created_at) {
                         const regDate = new Date(member.created_at);
@@ -2864,7 +3216,7 @@ function DashboardContent() {
           </button>
 
           <button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <span className="text-xl">💬</span> 
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
             Messaging
           </button>
 
@@ -3037,7 +3389,7 @@ function DashboardContent() {
           {sidebarTab === 'support' && renderSupport()}
           {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} />}
           {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
-          {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} />}
+          {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
         </div>
         
         {/* Footer */}

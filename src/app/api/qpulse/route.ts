@@ -32,12 +32,12 @@ export async function GET(request: Request) {
         const now = new Date();
 
         if (lastShown) {
-            const diffTime = Math.abs(now.getTime() - lastShown.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            const diffTime = now.getTime() - lastShown.getTime();
+            const diffHours = diffTime / (1000 * 60 * 60);
             
-            if (config.frequency === 'Once a day' && diffDays < 1) return NextResponse.json({ show: false });
-            if (config.frequency === 'Every 3 days' && diffDays < 3) return NextResponse.json({ show: false });
-            if (config.frequency === 'Weekly' && diffDays < 7) return NextResponse.json({ show: false });
+            if (config.frequency === 'Once a day' && diffHours < 24) return NextResponse.json({ show: false });
+            if (config.frequency === 'Every 3 days' && diffHours < 72) return NextResponse.json({ show: false });
+            if (config.frequency === 'Weekly' && diffHours < 168) return NextResponse.json({ show: false });
         }
 
         const insightObj = await generateQpulseInsight(businessId);

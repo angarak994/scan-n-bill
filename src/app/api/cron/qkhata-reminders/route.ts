@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sendWhatsAppText } from '@/lib/whatsapp';
+import { sendSMS, SMSConfig } from '@/lib/services/smsService';
 
 export async function GET(request: Request) {
   // CRON endpoint to send QKhata reminders
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     // Find all pending QKhata payments with a due date
     const { data: pendingPayments, error: paymentError } = await supabase
       .from('payments')
-      .select('*, customers(name, phone, outstanding_balance), businesses(business_name)')
+      .select('*, customers(name, phone, outstanding_balance), businesses(id, business_name, whatsapp_config, sms_config)')
       .eq('status', 'Pending')
       .eq('payment_method', 'QKhata')
       .not('metadata->due_date', 'is', null);
@@ -50,7 +51,28 @@ export async function GET(request: Request) {
         const message = `Hi ${customer.name},\n\nYour Qcontrol balance of ₹${Number(customer.outstanding_balance).toFixed(0)} is due today (${dueDate}) at *${business.business_name}*.\n\nYou can clear it whenever convenient. We look forward to seeing you again!`;
 
         try {
-          await sendWhatsAppText(cleanPhone, message);
+          // Try SMS first, then WhatsApp (or both depending on preference, here we prefer SMS if configured)
+          const smsConfig = business.sms_config as SMSConfig;
+          const waConfig = business.whatsapp_config as any;
+
+          let sent = false;
+
+          if (smsConfig && smsConfig.enabled) {
+            const smsMessage = `Hi ${customer.name}, Your Qcontrol balance of Rs.${Number(customer.outstanding_balance).toFixed(0)} is due today at ${business.business_name}. Please clear it.`;
+            const result = await sendSMS(business.id, cleanPhone, customer.name, smsMessage, "qkhata_reminder_v1", smsConfig);
+            if (result.success) sent = true;
+          }
+
+          // If SMS wasn't sent or disabled, fallback to WhatsApp
+          if (!sent && waConfig && waConfig.enabled && waConfig.token && waConfig.phoneId) {
+            await sendWhatsAppText(cleanPhone, message, false, waConfig.token, waConfig.phoneId);
+            sent = true;
+          }
+
+          if (!sent) {
+            // Neither configured or both failed
+            continue;
+          }
           
           // Mark reminder as sent in metadata to avoid duplicate sends
           const newMetadata = { ...payment.metadata, reminder_sent_at: new Date().toISOString() };

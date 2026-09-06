@@ -58,6 +58,16 @@ export async function GET(request: Request) {
     const sessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
+    
+    // Deduplicate active sessions by table_id (keep newest)
+    const activeTableMap = new Map<string, typeof activeSessions[0]>();
+    for (const s of activeSessions) {
+      const existing = activeTableMap.get(s.table_id);
+      if (!existing || new Date(s.start_time).getTime() > new Date(existing.start_time).getTime()) {
+        activeTableMap.set(s.table_id, s);
+      }
+    }
+    activeSessions = Array.from(activeTableMap.values());
     let completedSessions = sessions.filter(s => {
       if (s.status !== 'COMPLETED') return false;
       return s.date >= startDate && s.date <= endDate;
@@ -91,6 +101,11 @@ export async function GET(request: Request) {
       .eq('business_id', businessId)
       .eq('status', 'Active');
 
+    const { data: dbCustomers } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('business_id', businessId);
+
     return NextResponse.json({
       activeSessions,
       completedSessions,
@@ -103,13 +118,15 @@ export async function GET(request: Request) {
       revenueSavedToday,
       bookings: bookings || [],
       activePromotions: activePromotions || [],
+      dbCustomers: dbCustomers || [],
       businessId,
       businessName: business.business_name,
       ownerName: business.owner_name,
       has_logged_in: business.has_logged_in,
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
       google_sheet_id: business.google_sheet_id,
-      payment_qr_config: business.payment_qr_config
+      payment_qr_config: business.payment_qr_config,
+      whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false }
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);
