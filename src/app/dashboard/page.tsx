@@ -476,7 +476,7 @@ function DashboardContent() {
         if (action === 'confirm_playing') {
           setOverdueSession(null);
         }
-        fetchData(undefined, true);
+        // fetchData removed; Realtime updates sessions
         if (action === 'transfer') toast.success('✓ Table transferred.');
       } else {
         setData(previousData); // Rollback
@@ -497,7 +497,7 @@ function DashboardContent() {
         body: JSON.stringify({ booking_id: bookingId, business_id: businessId })
       });
       if (res.ok) {
-        fetchData(undefined, true);
+        // fetchData removed
         toast.success('✓ Booking started successfully.');
       } else {
         const error = await res.json();
@@ -596,7 +596,11 @@ function DashboardContent() {
       });
       if (res.ok) {
         toast.success('✓ Business settings & PS5 config updated successfully.');
-        fetchData(undefined, true);
+        setData(prev => prev ? {
+          ...prev,
+          pricingRules: newRules !== undefined ? newRules : prev.pricingRules,
+          tables: newTables !== undefined ? newTables : prev.tables
+        } : prev);
       } else {
         toast.error('Failed to update configuration.');
       }
@@ -873,7 +877,7 @@ function DashboardContent() {
       });
       if (res.ok) {
         setEditSession(null);
-        fetchData(undefined, true);
+        // fetchData removed
         toast.success('✓ Settings updated.');
       } else {
         toast.error("We couldn't complete your request. Please try again.");
@@ -938,7 +942,7 @@ function DashboardContent() {
         body: JSON.stringify({ business_id: businessId, table_id: selectedTable, percent: Number(discountPercent), applyToFood })
       });
       if (res.ok) {
-        fetchData(undefined, true);
+        // fetchData removed; relying on session realtime update
         toast.success('✓ Discount applied.');
       } else {
         toast.error('Could not apply discount.');
@@ -961,7 +965,7 @@ function DashboardContent() {
         body: JSON.stringify({ business_id: businessId, table_id: tableId, percent: 0, applyToFood: false })
       });
       if (res.ok) {
-        fetchData(undefined, true);
+        // fetchData removed
         toast.success('✓ Discount removed.');
       } else {
         toast.error('Could not remove discount.');
@@ -989,7 +993,11 @@ function DashboardContent() {
       });
       if (res.ok) {
         setIsUpdatingDiscount(false);
-        fetchData(undefined, true);
+        // Optimistic update for promo
+        setData(prev => prev ? {
+          ...prev,
+          activePromotions: [{ id: 'temp-promo', name: promoTitle, discount_percent: Number(promoDiscount), end_time: new Date(Date.now() + Number(promoDurationHours)*3600000).toISOString(), status: 'Active' }]
+        } : prev);
         toast.success('✓ Promotion launched successfully.');
         setPromoTitle('');
       } else {
@@ -1013,7 +1021,7 @@ function DashboardContent() {
         body: JSON.stringify({ id: activePromo.id, status: 'Expired' })
       });
       if (res.ok) {
-        fetchData(undefined, true);
+        setData(prev => prev ? { ...prev, activePromotions: [] } : prev);
         setPromoTitle('');
       } else {
         const err = await res.json();
@@ -2459,8 +2467,8 @@ function DashboardContent() {
               body: JSON.stringify({ business_id: businessId, goals })
             });
             if (res.ok) {
-              fetchData(undefined, true);
-              toast.success('✓ Settings updated.');
+              // fetchData removed
+        toast.success('✓ Settings updated.');
             }
           } catch(err) { toast.error("We couldn't complete your request. Please try again."); }
         }} className="max-w-md flex flex-col gap-4">
@@ -2505,7 +2513,7 @@ function DashboardContent() {
                     });
                     if (res.ok) {
                       toast.success('WhatsApp disconnected.');
-                      fetchData(undefined, true);
+                      // fetchData removed for instant UI
                     }
                   } catch(e) { toast.error('Failed to disconnect.'); }
                 }
@@ -2529,7 +2537,7 @@ function DashboardContent() {
                 toast.success('WhatsApp connected successfully!');
                 setWaPhoneId('');
                 setWaToken('');
-                fetchData(undefined, true);
+                // fetchData removed for instant UI
               } else {
                 toast.error('Failed to connect. Please check credentials.');
               }
@@ -2600,7 +2608,7 @@ function DashboardContent() {
                     });
                     if (res.ok) {
                       toast.success('SMS provider disconnected.');
-                      fetchData(undefined, true);
+                      // fetchData removed for instant UI
                     }
                   } catch(e) { toast.error('Failed to disconnect.'); }
                 }
@@ -2624,7 +2632,7 @@ function DashboardContent() {
                 toast.success('SMS connected successfully!');
                 setSmsAuthKey('');
                 setSmsSenderId('');
-                fetchData(undefined, true);
+                // fetchData removed for instant UI
               } else {
                 toast.error('Failed to connect. Please check credentials.');
               }
@@ -2902,7 +2910,7 @@ function DashboardContent() {
                 });
                 if (!res.ok) throw new Error();
                 toast.success('Qpulse settings updated!', { id: 'qpulse-save' });
-                fetchData(undefined, true);
+                // fetchData removed for instant UI
               } catch {
                 toast.error('Failed to update Qpulse settings.', { id: 'qpulse-save' });
               }
@@ -2958,7 +2966,7 @@ function DashboardContent() {
                       toast.loading('Uploading...');
                       const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
                       toast.dismiss();
-                      if (res.ok) { toast.success('QR replaced successfully.'); fetchData(undefined, true); }
+                      if (res.ok) { toast.success('QR replaced successfully.'); /* fetchData removed for instant UI */ }
                       else { toast.error('Failed to replace QR.'); }
                     } catch { toast.error('Error uploading QR.'); }
                   }} />
@@ -2971,7 +2979,7 @@ function DashboardContent() {
                   formData.append('action', 'remove');
                   try {
                     const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
-                    if (res.ok) { toast.success('QR removed successfully.'); fetchData(undefined, true); }
+                    if (res.ok) { toast.success('QR removed successfully.'); /* fetchData removed for instant UI */ }
                     else { toast.error('Failed to remove QR.'); }
                   } catch { toast.error('Error removing QR.'); }
                 }} className="px-4 py-2 bg-danger/10 text-danger font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-danger/20 transition-colors border border-danger/20">
@@ -2998,7 +3006,7 @@ function DashboardContent() {
                   try {
                     toast.loading('Uploading...', { id: 'upload' });
                     const res = await fetch('/api/upload-qr', { method: 'POST', body: formData });
-                    if (res.ok) { toast.success('QR uploaded successfully.', { id: 'upload' }); fetchData(undefined, true); }
+                    if (res.ok) { toast.success('QR uploaded successfully.', { id: 'upload' }); /* fetchData removed for instant UI */ }
                     else { toast.error('Failed to upload QR.', { id: 'upload' }); }
                   } catch { toast.error('Error uploading QR.', { id: 'upload' }); }
                 }} />
