@@ -7,8 +7,12 @@ export async function POST(request: Request) {
   try {
     const formData = await request.json();
 
-    if (!formData.business_name || !formData.owner_name || !formData.dashboard_pin || !formData.google_sheet_id) {
+    if (!formData.business_name || !formData.owner_name || !formData.dashboard_pin || !formData.google_sheet_id || !formData.contact_number) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    if (!/^\d{10}$/.test(formData.contact_number)) {
+      return NextResponse.json({ error: 'Please enter a valid 10-digit mobile number.' }, { status: 400 });
     }
 
     const hashedPin = await bcrypt.hash(formData.dashboard_pin.toString(), 10);

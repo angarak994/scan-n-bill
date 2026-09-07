@@ -9,6 +9,7 @@ export default function Login() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const [showPin, setShowPin] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -17,7 +18,17 @@ export default function Login() {
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'identifier') {
+      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+      setFormData({ ...formData, identifier: val });
+      if (val.length > 0 && val.length !== 10) {
+        setPhoneError('Please enter a valid 10-digit mobile number.');
+      } else {
+        setPhoneError('');
+      }
+    } else {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,13 +88,16 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="space-y-2">
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Club Name or Phone</label>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Phone Number</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-text-disabled">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
                 </div>
-                <input required type="text" name="identifier" value={formData.identifier} onChange={handleChange} className="w-full bg-bg-surface border border-border-theme rounded-xl pl-11 pr-4 py-3.5 text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all font-medium placeholder-text-disabled" placeholder="e.g. Rack & Roll Billiards" />
+                <input required type="text" name="identifier" value={formData.identifier} onChange={handleChange} className="w-full bg-bg-surface border border-border-theme rounded-xl pl-11 pr-4 py-3.5 text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all font-medium placeholder-text-disabled" placeholder="10-digit mobile number" />
               </div>
+              {phoneError && (
+                <p className="text-xs text-error font-medium mt-1">{phoneError}</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -106,7 +120,7 @@ export default function Login() {
               </div>
             </div>
 
-            <button disabled={loading} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+            <button disabled={loading || formData.identifier.length !== 10} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>

@@ -9,6 +9,7 @@ export default function Register() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   
   const [formData, setFormData] = useState({
     business_name: '',
@@ -20,7 +21,17 @@ export default function Register() {
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'contact_number') {
+      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+      setFormData({ ...formData, contact_number: val });
+      if (val.length > 0 && val.length !== 10) {
+        setPhoneError('Please enter a valid 10-digit mobile number.');
+      } else {
+        setPhoneError('');
+      }
+    } else {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,7 +99,10 @@ export default function Register() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-4">
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Phone *</label>
-                <input required type="text" name="contact_number" value={formData.contact_number} onChange={handleChange} className="w-full bg-bg-surface border border-border-theme rounded-xl px-4 py-3.5 text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all font-medium placeholder-text-disabled" placeholder="Contact number" />
+                <input required type="text" name="contact_number" value={formData.contact_number} onChange={handleChange} className="w-full bg-bg-surface border border-border-theme rounded-xl px-4 py-3.5 text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all font-medium placeholder-text-disabled" placeholder="10-digit mobile number" />
+                {phoneError && (
+                  <p className="text-xs text-error font-medium mt-1">{phoneError}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Admin PIN *</label>
@@ -108,7 +122,7 @@ export default function Register() {
               <p className="text-[10px] text-text-secondary">Optional. Your Twilio number. Leave blank to use the shared gateway.</p>
             </div>
 
-            <button disabled={loading} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+            <button disabled={loading || formData.contact_number.length !== 10} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>

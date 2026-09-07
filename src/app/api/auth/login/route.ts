@@ -16,29 +16,23 @@ export async function POST(request: Request) {
     const { identifier, pin } = await request.json();
 
     if (!identifier || !pin) {
-      return NextResponse.json({ error: 'Identifier and PIN are required' }, { status: 400 });
+      return NextResponse.json({ error: 'Phone Number and PIN are required' }, { status: 400 });
+    }
+
+    if (!/^\d{10}$/.test(identifier)) {
+      return NextResponse.json({ error: 'Please enter a valid 10-digit mobile number.' }, { status: 400 });
     }
 
     // Since this uses the service_role client, it bypasses RLS.
-    let { data } = await supabase
+    const { data } = await supabase
       .from('businesses')
       .select('id, dashboard_pin')
-      .eq('business_name', identifier)
+      .eq('contact_number', identifier)
       .limit(1)
       .single();
 
     if (!data) {
-      const phoneRes = await supabase
-        .from('businesses')
-        .select('id, dashboard_pin')
-        .eq('contact_number', identifier)
-        .limit(1)
-        .single();
-      data = phoneRes.data;
-    }
-
-    if (!data) {
-      return NextResponse.json({ error: 'Business not found. Check your Club Name or Phone.' }, { status: 404 });
+      return NextResponse.json({ error: 'Business not found. Check your Phone Number.' }, { status: 404 });
     }
 
     // Verify hashed PIN. (Fallback for legacy unhashed pins in transition: if it doesn't match bcrypt format, do direct compare for safety until migration script completes).
