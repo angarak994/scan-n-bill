@@ -3260,7 +3260,6 @@ function DashboardContent() {
               <p className="text-text-secondary mt-1 text-sm">Start a session for walk-ins without QR.</p>
             </div>
             <form onSubmit={handleManualStart} className="p-8 flex flex-col gap-4">
-              <div>
               <div className="relative">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Customer Name <span className="text-danger">*</span></label>
