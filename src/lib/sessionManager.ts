@@ -29,46 +29,56 @@ export async function startSession(table_id: string, game_type: GameType, custom
   try {
     activeTableLocks.add(lockKey);
     
-    const existingSession = await sessionRepository.findActiveByTable(table_id, businessId);
+    if (!customer_name || customer_name.trim() === '') {
+      throw new ApiError(400, 'Customer Name is mandatory');
+    }
+
+    const now = new Date();
+    
+    // Fetch dependencies concurrently
+    let existingSession = null;
+    let business = null;
+    let pricingRulesRes = null;
+
+    if (businessId) {
+      [existingSession, business, pricingRulesRes] = await Promise.all([
+        sessionRepository.findActiveByTable(table_id, businessId),
+        businessManager.getBusiness(businessId),
+        supabase.from('pricing_rules').select('*').eq('business_id', businessId)
+      ]);
+    } else {
+      existingSession = await sessionRepository.findActiveByTable(table_id, undefined);
+    }
+
     if (existingSession) {
       throw new ApiError(400, 'A session is already active for this table');
     }
 
-  if (!customer_name || customer_name.trim() === '') {
-    throw new ApiError(400, 'Customer Name is mandatory');
-  }
-
-  // Force game type from configuration mapping
-  if (businessId) {
-    const business = await businessManager.getBusiness(businessId);
-    const tableConfig = business?.tables?.find(t => t.id === table_id);
-    if (!tableConfig) {
-      throw new ApiError(403, 'Invalid table or business mapping.');
+    // Force game type from configuration mapping
+    if (businessId && business) {
+      const tableConfig = business.tables?.find(t => t.id === table_id);
+      if (!tableConfig) {
+        throw new ApiError(403, 'Invalid table or business mapping.');
+      }
+      if ((tableConfig as any).game_type) {
+        game_type = (tableConfig as any).game_type as GameType;
+      }
     }
-    if ((tableConfig as any).game_type) {
-      game_type = (tableConfig as any).game_type as GameType;
+
+    if (game_type === 'ps5' && (num_players < 1 || num_players > 4)) {
+      throw new ApiError(400, 'PS5 sessions must have between 1 and 4 players.');
     }
-  }
 
-  if (game_type === 'ps5' && (num_players < 1 || num_players > 4)) {
-    throw new ApiError(400, 'PS5 sessions must have between 1 and 4 players.');
-  }
-
-  const now = new Date();
-  
-  // Resolve rate
-  let lockedRate = undefined;
-  let lockedRateName = undefined;
-  if (businessId) {
-    const { data: pricingRules } = await supabase.from('pricing_rules').select('*').eq('business_id', businessId);
-    if (pricingRules) {
-      const activeRule = resolveRate(game_type, pricingRules, now);
+    // Resolve rate
+    let lockedRate = undefined;
+    let lockedRateName = undefined;
+    if (businessId && pricingRulesRes?.data) {
+      const activeRule = resolveRate(game_type, pricingRulesRes.data, now);
       if (activeRule) {
         lockedRate = activeRule.rate_per_hour;
         lockedRateName = activeRule.rule_type;
       }
     }
-  }
 
   const dateStr = getCurrentISTDateStr(); // IST Date
   const timeStr = now.toISOString(); // Full ISO timestamp

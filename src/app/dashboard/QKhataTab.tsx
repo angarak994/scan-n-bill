@@ -18,12 +18,17 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
         
         async function fetchData() {
             try {
-                const { data } = await supabase
-                    .from('customers')
-                    .select('*')
-                    .eq('business_id', businessId)
-                    .order('outstanding_balance', { ascending: false });
-                if (data) setCustomers(data);
+                const [customersRes, membershipsRes] = await Promise.all([
+                    supabase.from('customers').select('*').eq('business_id', businessId).order('outstanding_balance', { ascending: false }),
+                    supabase.from('memberships').select('mobile').eq('business_id', businessId)
+                ]);
+
+                if (customersRes.data && membershipsRes.data) {
+                    const memberPhones = new Set(membershipsRes.data.map(m => m.mobile));
+                    // QKhata is exclusively for registered members. Cross-reference by phone.
+                    const memberCustomers = customersRes.data.filter(c => c.phone && memberPhones.has(c.phone));
+                    setCustomers(memberCustomers);
+                }
             } catch (err) {
                 console.error("Failed to load QKhata data", err);
             } finally {
@@ -150,8 +155,11 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
                 <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center">
                         <div>
-                            <h3 className="text-xl font-bold text-text-primary">Ledger</h3>
-                            <p className="text-xs text-text-secondary mt-1 italic">Track outstanding balances</p>
+                            <h3 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                                <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                Member Ledger
+                            </h3>
+                            <p className="text-xs text-text-secondary mt-1 italic">Track outstanding balances exclusively for registered members.</p>
                         </div>
                         <div className="text-sm font-bold text-red-500/90 bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
                             ₹{totalOutstanding.toFixed(2)}

@@ -104,6 +104,22 @@ function DashboardContent() {
   const [manualNotes, setManualNotes] = useState('');
   const [isStartingManual, setIsStartingManual] = useState(false);
   const [memberships, setMemberships] = useState<any[]>([]);
+  const [showQkhataPopover, setShowQkhataPopover] = useState(false);
+  const [qkhataSearch, setQkhataSearch] = useState('');
+  const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
+
+  const qkhataMembers = useMemo(() => {
+    if (!memberships || !data?.dbCustomers) return [];
+    const memberPhones = new Set(memberships.map(m => m.mobile));
+    return data.dbCustomers.filter(c => c.phone && memberPhones.has(c.phone));
+  }, [memberships, data?.dbCustomers]);
+
+  const filteredQkhataMembers = useMemo(() => {
+    return qkhataMembers.filter(m => 
+      m.name.toLowerCase().includes(qkhataSearch.toLowerCase()) || 
+      (m.phone && m.phone.includes(qkhataSearch))
+    );
+  }, [qkhataMembers, qkhataSearch]);
   const [isMembershipsLoading, setIsMembershipsLoading] = useState(false);
   const [selectedBulkSmsCustomers, setSelectedBulkSmsCustomers] = useState<string[]>([]);
   const [showBulkSmsModal, setShowBulkSmsModal] = useState(false);
@@ -555,6 +571,9 @@ function DashboardContent() {
         setIsClosingManual(true);
         setTimeout(() => {
           setIsManualModalOpen(false);
+          setSelectedQkhataMember(null);
+          setShowQkhataPopover(false);
+          setQkhataSearch('');
           setIsClosingManual(false);
           setManualTable('');
           setManualCustomer('');
@@ -2094,7 +2113,8 @@ function DashboardContent() {
   );
 
   const renderSettings = () => (
-    <div className="flex flex-col gap-8 mt-4">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-4">
+      <div className="lg:col-span-2 flex flex-col gap-8">
       {/* Game Categories & PS5 Management (Additive) */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
@@ -2450,37 +2470,6 @@ function DashboardContent() {
         </div>
       </div>
       
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-        <h2 className="text-2xl font-bold mb-6">Business Goals</h2>
-        <form onSubmit={async (e) => {
-          e.preventDefault();
-          if (!businessId) return;
-          const formData = new FormData(e.currentTarget as HTMLFormElement);
-          const goals = {
-            daily_revenue: Number(formData.get('daily_revenue')),
-            daily_sessions: Number(formData.get('daily_sessions'))
-          };
-          try {
-            const res = await fetch('/api/update-goals', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ business_id: businessId, goals })
-            });
-            if (res.ok) {
-              // fetchData removed
-        toast.success('✓ Settings updated.');
-            }
-          } catch(err) { toast.error("We couldn't complete your request. Please try again."); }
-        }} className="max-w-md flex flex-col gap-4">
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
-            <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
-          </div>
-          <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
-            Save Goals
-          </button>
-        </form>
-      </div>
 
       {/* WhatsApp Integration Setting */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
@@ -2677,215 +2666,60 @@ function DashboardContent() {
           </form>
         )}
       </div>
-    </div>
-  );
+      </div>
+      <div className="lg:col-span-1 flex flex-col gap-6">
 
-  const renderSupport = () => (
-    <div className="flex flex-col gap-8 mt-4">
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
-        <h2 className="text-2xl font-bold mb-2">Help & Support</h2>
-        <p className="text-text-secondary text-sm mb-8">Get help with QControl or contact our team for assistance.</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="flex flex-col gap-4">
-            <h3 className="text-lg font-bold text-accent">Frequently Asked Questions</h3>
-            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
-              <h4 className="font-bold text-sm">How do I update pricing?</h4>
-              <p className="text-xs text-text-secondary mt-1">Go to the Settings tab to adjust hourly rates or add promotions.</p>
-            </div>
-            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
-              <h4 className="font-bold text-sm">My tables aren't syncing?</h4>
-              <p className="text-xs text-text-secondary mt-1">Check your internet connection. QControl uses Supabase for real-time sync.</p>
-            </div>
-            <div className="bg-bg-surface border border-border-theme rounded-lg p-4">
-              <h4 className="font-bold text-sm">How do I export data?</h4>
-              <p className="text-xs text-text-secondary mt-1">Navigate to the Reports tab and click "Export CSV".</p>
-            </div>
+      <div className="bg-bg-card border border-border-theme rounded-xl p-6">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-text-primary">
+          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          System Status
+        </h3>
+        <div className="space-y-3">
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-text-secondary">WhatsApp API</span>
+            {data?.whatsapp_config?.enabled ? <span className="text-success font-bold text-xs bg-success/10 border border-success/20 px-2 py-1 rounded">Active</span> : <span className="text-text-disabled font-bold text-xs bg-bg-surface px-2 py-1 rounded border border-border-theme">Inactive</span>}
           </div>
-
-          <div className="flex flex-col gap-4">
-            <h3 className="text-lg font-bold text-accent">System Diagnostics</h3>
-            <div className="bg-bg-surface border border-border-theme rounded-lg p-6">
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-medium">Database Sync</span>
-                <span className="text-xs font-bold text-success px-2 py-1 bg-success/10 rounded">Operational</span>
-              </div>
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-medium">Real-time Service</span>
-                <span className="text-xs font-bold text-success px-2 py-1 bg-success/10 rounded">Operational</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Application Version</span>
-                <span className="text-xs font-mono text-text-secondary">v2.1.0-QControl</span>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <button onClick={() => alert("Support request sent! Our team will contact you shortly.")} className="w-full py-3 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 transition-colors shadow-md">
-                Contact Support Team
-              </button>
-            </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-text-secondary">SMS DLT</span>
+            {data?.sms_config?.enabled ? <span className="text-success font-bold text-xs bg-success/10 border border-success/20 px-2 py-1 rounded">Active</span> : <span className="text-text-disabled font-bold text-xs bg-bg-surface px-2 py-1 rounded border border-border-theme">Inactive</span>}
+          </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-text-secondary">Telegram Bot</span>
+            {telegramOwners.length > 0 ? <span className="text-success font-bold text-xs bg-success/10 border border-success/20 px-2 py-1 rounded">Active</span> : <span className="text-text-disabled font-bold text-xs bg-bg-surface px-2 py-1 rounded border border-border-theme">Inactive</span>}
           </div>
         </div>
       </div>
-
-      {/* Change PIN UI */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          Security Settings
-        </h2>
-        <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
-          {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <h2 className="text-2xl font-bold mb-6">Business Goals</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (!businessId) return;
+          const formData = new FormData(e.currentTarget as HTMLFormElement);
+          const goals = {
+            daily_revenue: Number(formData.get('daily_revenue')),
+            daily_sessions: Number(formData.get('daily_sessions'))
+          };
+          try {
+            const res = await fetch('/api/update-goals', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ business_id: businessId, goals })
+            });
+            if (res.ok) {
+              // fetchData removed
+        toast.success('✓ Settings updated.');
+            }
+          } catch(err) { toast.error("We couldn't complete your request. Please try again."); }
+        }} className="max-w-md flex flex-col gap-4">
           <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
-            <div className="relative">
-              <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showCurrentPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
+            <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
           </div>
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
-            <div className="relative">
-              <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showNewPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
-            <p className="text-[10px] text-text-secondary mt-1">Must be exactly 4 digits.</p>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
-            <div className="relative">
-              <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showConfirmPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
-          </div>
-          <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
-            {isChangingPassword ? 'Updating...' : 'Change PIN'}
+          <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+            Save Goals
           </button>
         </form>
       </div>
-
-      {/* Smart Reminders & Telegram UI */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          <span>🤖</span> Telegram & Smart Reminders
-        </h2>
-        
-        <div className="flex flex-col lg:flex-row gap-8">
-          <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
-              <select value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent">
-                <option value="0">Disabled / No Reminders</option>
-                <option value="30">30 Minutes</option>
-                <option value="45">45 Minutes</option>
-                <option value="60">60 Minutes</option>
-                <option value="90">90 Minutes</option>
-                <option value="120">120 Minutes</option>
-              </select>
-              <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
-            </div>
-            <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
-              {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
-            </button>
-          </form>
-
-          <div className="flex-1 max-w-md bg-bg-surface border border-border-theme rounded-xl p-5">
-            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-              👥 Manage Telegram Owners
-            </h3>
-            
-            <div className="space-y-3 mb-6">
-
-              
-              {telegramOwners.map((owner, idx) => {
-                const isRevoked = owner.status === 'revoked';
-                return (
-                  <div key={idx} className={`flex justify-between items-center bg-bg-card p-3 rounded-lg border ${isRevoked ? 'border-error/30 opacity-75' : 'border-border-theme'}`}>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold flex items-center gap-2">
-                        {owner.name} 
-                        {owner.role === 'PRIMARY_OWNER' && <Tooltip text="Primary Owner"><span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase cursor-help">Primary</span></Tooltip>} 
-                        {isRevoked ? (
-                          <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
-                        ) : (
-                          <span className="text-[10px] bg-success/10 text-success px-1.5 py-0.5 rounded font-bold uppercase">🟢 Granted</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
-                      {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isRevoked ? (
-                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
-                          🔓 Grant Access
-                        </button>
-                      ) : (
-                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                          Revoke Access
-                        </button>
-                      )}
-                      <Tooltip text="Permanently Delete Owner">
-                        <button
-                          onClick={() => handlePermanentDeleteOwner(owner.chatId)}
-                          className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
-                          aria-label="Permanently Delete Owner"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                      </Tooltip>
-                    </div>
-                  </div>
-                );
-              })}
-              
-              {telegramOwners.length === 0 && (
-                <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
-              )}
-            </div>
-
-            <div className="border-t border-border-theme pt-4">
-              <div className="flex flex-col gap-2">
-                <button 
-                  onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
-                  disabled={generatingLinkRole === 'PRIMARY_OWNER'}
-                  className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
-                >
-                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : 'Connect as Primary Owner'}
-                </button>
-                <button 
-                  onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
-                  disabled={generatingLinkRole === 'SECONDARY_OWNER'}
-                  className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
-                >
-                  {generatingLinkRole === 'SECONDARY_OWNER' ? 'Generating...' : '🔗 Link Secondary Owner'}
-                </button>
-              </div>
-              
-              {telegramInviteLink && (
-                <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
-                  <p className="text-[10px] text-text-secondary mb-2">Share this link securely with the new owner:</p>
-                  <div className="flex gap-2">
-                    <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
-                    <button 
-                      onClick={() => navigator.clipboard.writeText(telegramInviteLink)}
-                      className="px-3 py-2 bg-accent/10 text-accent font-bold text-xs uppercase rounded hover:bg-accent/20 transition-colors"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Qpulse & QR Sections */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mt-8">
         <h2 className="text-2xl font-bold mb-6">Integrations & Insights</h2>
@@ -3412,7 +3246,11 @@ function DashboardContent() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
           <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingManual ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-in fade-in zoom-in-95'}`}>
             <button 
-              onClick={() => setIsManualModalOpen(false)}
+              onClick={() => {
+                setIsManualModalOpen(false);
+                setSelectedQkhataMember(null);
+                setShowQkhataPopover(false);
+              }}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -3423,13 +3261,85 @@ function DashboardContent() {
             </div>
             <form onSubmit={handleManualStart} className="p-8 flex flex-col gap-4">
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name <span className="text-danger">*</span></label>
-                <input type="text" required list="member-list" value={manualCustomer} onChange={e => setManualCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Customer Name <span className="text-danger">*</span></label>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowQkhataPopover(!showQkhataPopover)}
+                    className="flex items-center gap-1.5 px-2 py-1 bg-accent/10 hover:bg-accent/20 text-accent rounded text-[10px] font-extrabold uppercase tracking-widest transition-colors border border-accent/20"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    QKhata
+                  </button>
+                </div>
+                <input type="text" required list="member-list" value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
                 <datalist id="member-list">
                   {memberships.map((m: any) => (
                     <option key={m.id} value={m.name} />
                   ))}
                 </datalist>
+
+                {showQkhataPopover && (
+                  <div className="absolute top-[80px] right-0 w-full sm:w-[340px] bg-bg-card border border-border-theme rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.8)] z-50 overflow-hidden flex flex-col max-h-[350px] animate-in slide-in-from-top-2 fade-in duration-200 ring-1 ring-accent/20">
+                    <div className="p-3 border-b border-border-theme bg-bg-primary sticky top-0 z-10">
+                      <div className="relative">
+                        <svg className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input 
+                          type="text" 
+                          autoFocus
+                          value={qkhataSearch}
+                          onChange={e => setQkhataSearch(e.target.value)}
+                          placeholder="Search registered member..." 
+                          className="w-full pl-9 pr-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm outline-none focus:border-accent text-text-primary placeholder:text-text-disabled transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div className="overflow-y-auto custom-scrollbar flex-1 p-2 flex flex-col gap-1 bg-bg-primary/50">
+                      {filteredQkhataMembers.length === 0 ? (
+                        <div className="py-8 px-4 flex flex-col items-center text-center">
+                          <svg className="w-8 h-8 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                          <p className="text-xs font-bold text-text-secondary">No members found</p>
+                          <p className="text-[10px] text-text-secondary mt-1">Only registered members can use QKhata.</p>
+                        </div>
+                      ) : (
+                        filteredQkhataMembers.map(member => {
+                          const bal = Number(member.outstanding_balance || 0);
+                          const isOverdue = bal > 5000;
+                          const isOutstanding = bal > 0 && bal <= 5000;
+                          return (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => {
+                                setManualCustomer(member.phone);
+                                setSelectedQkhataMember(member);
+                                setShowQkhataPopover(false);
+                                setQkhataSearch('');
+                              }}
+                              className="w-full text-left p-3 rounded-lg bg-bg-primary hover:bg-bg-surface border border-border-theme/50 hover:border-accent/30 transition-all flex justify-between items-center group"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-sm font-bold text-text-primary group-hover:text-accent transition-colors">{member.name}</span>
+                                <span className="text-[11px] text-text-secondary font-mono mt-0.5">{member.phone}</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className={`text-sm font-bold font-mono ${bal > 0 ? 'text-text-primary' : 'text-text-secondary'}`}>₹{bal.toLocaleString('en-IN')}</span>
+                                {bal <= 0 ? (
+                                  <span className="text-[9px] uppercase tracking-widest text-success font-extrabold mt-0.5">Available</span>
+                                ) : isOverdue ? (
+                                  <span className="text-[9px] uppercase tracking-widest text-danger font-extrabold mt-0.5">Overdue</span>
+                                ) : (
+                                  <span className="text-[9px] uppercase tracking-widest text-warning font-extrabold mt-0.5">Outstanding</span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
@@ -3471,6 +3381,23 @@ function DashboardContent() {
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
                 <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Special requests..." />
               </div>
+
+              {selectedQkhataMember && (
+                <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 shadow-inner">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-black shadow-lg shadow-accent/20">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-accent">Playing on QKhata</span>
+                      <span className="text-sm font-bold text-text-primary">{selectedQkhataMember.name} <span className="text-text-secondary font-mono text-xs font-normal">({selectedQkhataMember.phone})</span></span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setSelectedQkhataMember(null); setManualCustomer(''); }} className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  </button>
+                </div>
+              )}
               <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50">
                 {isStartingManual ? 'Starting...' : 'Start Session'}
               </button>
@@ -3769,6 +3696,234 @@ export default function Dashboard() {
       </div>
     }>
       <DashboardContent />
+      {/* Change PIN UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          Security Settings
+        </h2>
+        <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
+          {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
+            <div className="relative">
+              <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showCurrentPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
+            <div className="relative">
+              <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showNewPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+            <p className="text-[10px] text-text-secondary mt-1">Must be exactly 4 digits.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
+            <div className="relative">
+              <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showConfirmPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+            {isChangingPassword ? 'Updating...' : 'Change PIN'}
+          </button>
+        </form>
+      </div>
+      {/* Smart Reminders & Telegram UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          <span>🤖</span> Telegram & Smart Reminders
+        </h2>
+        
+        <div className="flex flex-col lg:flex-row gap-8">
+          <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
+              <select value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent">
+                <option value="0">Disabled / No Reminders</option>
+                <option value="30">30 Minutes</option>
+                <option value="45">45 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="90">90 Minutes</option>
+                <option value="120">120 Minutes</option>
+              </select>
+              <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
+            </div>
+            <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+              {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
+            </button>
+          </form>
+
+          <div className="flex-1 max-w-md bg-bg-surface border border-border-theme rounded-xl p-5">
+            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+              👥 Manage Telegram Owners
+            </h3>
+            
+            <div className="space-y-3 mb-6">
+
+              
+              {telegramOwners.map((owner, idx) => {
+                const isRevoked = owner.status === 'revoked';
+                return (
+                  <div key={idx} className={`flex justify-between items-center bg-bg-card p-3 rounded-lg border ${isRevoked ? 'border-error/30 opacity-75' : 'border-border-theme'}`}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold flex items-center gap-2">
+                        {owner.name} 
+                        {owner.role === 'PRIMARY_OWNER' && <Tooltip text="Primary Owner"><span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase cursor-help">Primary</span></Tooltip>} 
+                        {isRevoked ? (
+                          <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
+                        ) : (
+                          <span className="text-[10px] bg-success/10 text-success px-1.5 py-0.5 rounded font-bold uppercase">🟢 Granted</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
+                      {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isRevoked ? (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
+                          🔓 Grant Access
+                        </button>
+                      ) : (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
+                          Revoke Access
+                        </button>
+                      )}
+                      <Tooltip text="Permanently Delete Owner">
+                        <button
+                          onClick={() => handlePermanentDeleteOwner(owner.chatId)}
+                          className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                          aria-label="Permanently Delete Owner"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {telegramOwners.length === 0 && (
+                <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
+              )}
+            </div>
+
+            <div className="border-t border-border-theme pt-4">
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
+                  disabled={generatingLinkRole === 'PRIMARY_OWNER'}
+                  className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
+                >
+                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : 'Connect as Primary Owner'}
+                </button>
+                <button 
+                  onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
+                  disabled={generatingLinkRole === 'SECONDARY_OWNER'}
+                  className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
+                >
+                  {generatingLinkRole === 'SECONDARY_OWNER' ? 'Generating...' : '🔗 Link Secondary Owner'}
+                </button>
+              </div>
+              
+              {telegramInviteLink && (
+                <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
+                  <p className="text-[10px] text-text-secondary mb-2">Share this link securely with the new owner:</p>
+                  <div className="flex gap-2">
+                    <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(telegramInviteLink)}
+                      className="px-3 py-2 bg-accent/10 text-accent font-bold text-xs uppercase rounded hover:bg-accent/20 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+
+  const renderSupport = () => (
+    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8 lg:p-10 relative">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-accent/10 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
+        <h2 className="text-3xl font-black mb-2 tracking-tight">How can we help?</h2>
+        <p className="text-text-secondary text-sm md:text-base mb-10 max-w-2xl">Search our knowledge base or get in touch with our dedicated support team to resolve your issues quickly.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center text-accent mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">Documentation</h3>
+            <p className="text-xs text-text-secondary">Read guides & tutorials on using QControl.</p>
+          </a>
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">API & Hardware</h3>
+            <p className="text-xs text-text-secondary">Setup IoT switches & API integrations.</p>
+          </a>
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center text-green-500 mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">Billing & Pricing</h3>
+            <p className="text-xs text-text-secondary">Questions about subscription & payments.</p>
+          </a>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+          <div>
+            <h3 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
+              <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Frequently Asked Questions
+            </h3>
+            <div className="space-y-4">
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">How do I update pricing?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Go to the Settings tab to adjust hourly rates or add promotions. Changes take effect immediately for all new sessions.</p>
+              </div>
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">My tables aren't syncing?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Check your internet connection. QControl uses Supabase for real-time WebSocket sync. Try refreshing the page if the issue persists.</p>
+              </div>
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">How do I export data?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Navigate to the Reports tab and click "Export CSV". You can export data for specific date ranges.</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-bg-surface p-6 md:p-8 rounded-xl border border-border-theme flex flex-col">
+            <h3 className="text-lg font-bold text-text-primary mb-2">Need direct help?</h3>
+            <p className="text-sm text-text-secondary mb-6">Send us a message and our support team will get back to you within 24 hours.</p>
+            
+            <form onSubmit={(e) => { e.preventDefault(); alert("Support request sent! Our team will contact you shortly."); }} className="flex flex-col gap-4 flex-1">
+              <input type="text" placeholder="Subject" className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none" required />
+              <textarea placeholder="Describe your issue in detail..." rows={4} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none resize-none" required></textarea>
+              <button type="submit" className="mt-auto py-3.5 bg-accent text-black font-extrabold uppercase tracking-wide text-sm rounded-lg hover:bg-accent/90 transition-colors shadow-md">
+                Submit Ticket
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
     </Suspense>
   );
 }

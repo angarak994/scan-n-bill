@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 export default function Login() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -49,11 +50,13 @@ export default function Login() {
         throw new Error(data.error || 'Login failed');
       }
 
-      // Success, route to dashboard
-      router.push(`/dashboard?b=${data.businessId}`);
+      // Success, route to dashboard using hard navigation for immediate feedback
+      setSuccess(true);
+      window.location.href = `/dashboard?b=${data.businessId}`;
     } catch (err: any) {
       setError(err.message || 'Login failed');
       setLoading(false);
+      setSuccess(false);
     }
   };
 
@@ -120,8 +123,13 @@ export default function Login() {
               </div>
             </div>
 
-            <button disabled={loading || formData.identifier.length !== 10} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
-              {loading ? (
+            <button disabled={loading || success || formData.identifier.length !== 10} type="submit" className="w-full mt-2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+              {success ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Loading Dashboard...
+                </>
+              ) : loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   Authenticating...
