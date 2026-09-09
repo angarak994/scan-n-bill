@@ -2849,9 +2849,235 @@ function DashboardContent() {
           )}
         </div>
       </div>
+      {/* Change PIN UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          Security Settings
+        </h2>
+        <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
+          {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
+            <div className="relative">
+              <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showCurrentPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
+            <div className="relative">
+              <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showNewPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+            <p className="text-[10px] text-text-secondary mt-1">Must be exactly 4 digits.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
+            <div className="relative">
+              <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
+              <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                {showConfirmPin ? <IconEyeOff /> : <IconEye />}
+              </button>
+            </div>
+          </div>
+          <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+            {isChangingPassword ? 'Updating...' : 'Change PIN'}
+          </button>
+        </form>
+      </div>
+      {/* Smart Reminders & Telegram UI */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
+        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
+          <span>🤖</span> Telegram & Smart Reminders
+        </h2>
+        
+        <div className="flex flex-col lg:flex-row gap-8">
+          <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
+              <select value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent">
+                <option value="0">Disabled / No Reminders</option>
+                <option value="30">30 Minutes</option>
+                <option value="45">45 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="90">90 Minutes</option>
+                <option value="120">120 Minutes</option>
+              </select>
+              <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
+            </div>
+            <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+              {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
+            </button>
+          </form>
+
+          <div className="flex-1 max-w-md bg-bg-surface border border-border-theme rounded-xl p-5">
+            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+              👥 Manage Telegram Owners
+            </h3>
+            
+            <div className="space-y-3 mb-6">
+
+              
+              {telegramOwners.map((owner, idx) => {
+                const isRevoked = owner.status === 'revoked';
+                return (
+                  <div key={idx} className={`flex justify-between items-center bg-bg-card p-3 rounded-lg border ${isRevoked ? 'border-error/30 opacity-75' : 'border-border-theme'}`}>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold flex items-center gap-2">
+                        {owner.name} 
+                        {owner.role === 'PRIMARY_OWNER' && <Tooltip text="Primary Owner"><span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase cursor-help">Primary</span></Tooltip>} 
+                        {isRevoked ? (
+                          <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
+                        ) : (
+                          <span className="text-[10px] bg-success/10 text-success px-1.5 py-0.5 rounded font-bold uppercase">🟢 Granted</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
+                      {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isRevoked ? (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
+                          🔓 Grant Access
+                        </button>
+                      ) : (
+                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
+                          Revoke Access
+                        </button>
+                      )}
+                      <Tooltip text="Permanently Delete Owner">
+                        <button
+                          onClick={() => handlePermanentDeleteOwner(owner.chatId)}
+                          className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                          aria-label="Permanently Delete Owner"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {telegramOwners.length === 0 && (
+                <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
+              )}
+            </div>
+
+            <div className="border-t border-border-theme pt-4">
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
+                  disabled={generatingLinkRole === 'PRIMARY_OWNER'}
+                  className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
+                >
+                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : 'Connect as Primary Owner'}
+                </button>
+                <button 
+                  onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
+                  disabled={generatingLinkRole === 'SECONDARY_OWNER'}
+                  className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
+                >
+                  {generatingLinkRole === 'SECONDARY_OWNER' ? 'Generating...' : '🔗 Link Secondary Owner'}
+                </button>
+              </div>
+              
+              {telegramInviteLink && (
+                <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
+                  <p className="text-[10px] text-text-secondary mb-2">Share this link securely with the new owner:</p>
+                  <div className="flex gap-2">
+                    <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(telegramInviteLink)}
+                      className="px-3 py-2 bg-accent/10 text-accent font-bold text-xs uppercase rounded hover:bg-accent/20 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
     </div>
   );
 
+
+  const renderSupport = () => (
+    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8 lg:p-10 relative">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-accent/10 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
+        <h2 className="text-3xl font-black mb-2 tracking-tight">How can we help?</h2>
+        <p className="text-text-secondary text-sm md:text-base mb-10 max-w-2xl">Search our knowledge base or get in touch with our dedicated support team to resolve your issues quickly.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center text-accent mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">Documentation</h3>
+            <p className="text-xs text-text-secondary">Read guides & tutorials on using QControl.</p>
+          </a>
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">API & Hardware</h3>
+            <p className="text-xs text-text-secondary">Setup IoT switches & API integrations.</p>
+          </a>
+          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center text-green-500 mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            </div>
+            <h3 className="font-bold text-sm mb-1">Billing & Pricing</h3>
+            <p className="text-xs text-text-secondary">Questions about subscription & payments.</p>
+          </a>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+          <div>
+            <h3 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
+              <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Frequently Asked Questions
+            </h3>
+            <div className="space-y-4">
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">How do I update pricing?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Go to the Settings tab to adjust hourly rates or add promotions. Changes take effect immediately for all new sessions.</p>
+              </div>
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">My tables aren't syncing?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Check your internet connection. QControl uses Supabase for real-time WebSocket sync. Try refreshing the page if the issue persists.</p>
+              </div>
+              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
+                <h4 className="font-bold text-sm text-text-primary mb-1">How do I export data?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">Navigate to the Reports tab and click "Export CSV". You can export data for specific date ranges.</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-bg-surface p-6 md:p-8 rounded-xl border border-border-theme flex flex-col">
+            <h3 className="text-lg font-bold text-text-primary mb-2">Need direct help?</h3>
+            <p className="text-sm text-text-secondary mb-6">Send us a message and our support team will get back to you within 24 hours.</p>
+            
+            <form onSubmit={(e) => { e.preventDefault(); alert("Support request sent! Our team will contact you shortly."); }} className="flex flex-col gap-4 flex-1">
+              <input type="text" placeholder="Subject" className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none" required />
+              <textarea placeholder="Describe your issue in detail..." rows={4} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none resize-none" required></textarea>
+              <button type="submit" className="mt-auto py-3.5 bg-accent text-black font-extrabold uppercase tracking-wide text-sm rounded-lg hover:bg-accent/90 transition-colors shadow-md">
+                Submit Ticket
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
       {/* End Session Modal */}
@@ -3695,234 +3921,6 @@ export default function Dashboard() {
       </div>
     }>
       <DashboardContent />
-      {/* Change PIN UI */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          Security Settings
-        </h2>
-        <form onSubmit={handleChangePassword} className="max-w-md flex flex-col gap-4">
-          {passwordError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{passwordError}</div>}
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
-            <div className="relative">
-              <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showCurrentPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
-            <div className="relative">
-              <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showNewPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
-            <p className="text-[10px] text-text-secondary mt-1">Must be exactly 4 digits.</p>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
-            <div className="relative">
-              <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-              <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
-                {showConfirmPin ? <IconEyeOff /> : <IconEye />}
-              </button>
-            </div>
-          </div>
-          <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
-            {isChangingPassword ? 'Updating...' : 'Change PIN'}
-          </button>
-        </form>
-      </div>
-      {/* Smart Reminders & Telegram UI */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8 mt-8">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          <span>🤖</span> Telegram & Smart Reminders
-        </h2>
-        
-        <div className="flex flex-col lg:flex-row gap-8">
-          <form onSubmit={handleUpdateTelegramSettings} className="flex-1 max-w-md flex flex-col gap-4">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Reminder Interval (Minutes)</label>
-              <select value={reminderInterval} onChange={e => setReminderInterval(e.target.value)} className="w-full px-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm text-text-primary outline-none focus:border-accent">
-                <option value="0">Disabled / No Reminders</option>
-                <option value="30">30 Minutes</option>
-                <option value="45">45 Minutes</option>
-                <option value="60">60 Minutes</option>
-                <option value="90">90 Minutes</option>
-                <option value="120">120 Minutes</option>
-              </select>
-              <p className="text-[10px] text-text-secondary mt-1">How long before an active session is flagged as overdue.</p>
-            </div>
-            <button type="submit" disabled={isUpdatingTelegram} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
-              {isUpdatingTelegram ? 'Saving...' : 'Save Settings'}
-            </button>
-          </form>
-
-          <div className="flex-1 max-w-md bg-bg-surface border border-border-theme rounded-xl p-5">
-            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-              👥 Manage Telegram Owners
-            </h3>
-            
-            <div className="space-y-3 mb-6">
-
-              
-              {telegramOwners.map((owner, idx) => {
-                const isRevoked = owner.status === 'revoked';
-                return (
-                  <div key={idx} className={`flex justify-between items-center bg-bg-card p-3 rounded-lg border ${isRevoked ? 'border-error/30 opacity-75' : 'border-border-theme'}`}>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold flex items-center gap-2">
-                        {owner.name} 
-                        {owner.role === 'PRIMARY_OWNER' && <Tooltip text="Primary Owner"><span className="text-[10px] bg-accent/10 text-accent px-1.5 py-0.5 rounded font-bold uppercase cursor-help">Primary</span></Tooltip>} 
-                        {isRevoked ? (
-                          <span className="text-[10px] bg-error/10 text-error px-1.5 py-0.5 rounded font-bold uppercase">🔴 Revoked</span>
-                        ) : (
-                          <span className="text-[10px] bg-success/10 text-success px-1.5 py-0.5 rounded font-bold uppercase">🟢 Granted</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-text-secondary font-mono">{owner.chatId}</span>
-                      {owner.addedAt && <span className="text-[10px] text-text-secondary mt-1">Added: {new Date(owner.addedAt).toLocaleDateString()}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isRevoked ? (
-                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-success hover:bg-success/10 px-3 py-1.5 rounded transition-colors">
-                          🔓 Grant Access
-                        </button>
-                      ) : (
-                        <button onClick={() => handleToggleTelegramOwnerAccess(owner.chatId, owner.status || 'granted')} className="text-xs font-bold text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                          Revoke Access
-                        </button>
-                      )}
-                      <Tooltip text="Permanently Delete Owner">
-                        <button
-                          onClick={() => handlePermanentDeleteOwner(owner.chatId)}
-                          className="p-1.5 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
-                          aria-label="Permanently Delete Owner"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                      </Tooltip>
-                    </div>
-                  </div>
-                );
-              })}
-              
-              {telegramOwners.length === 0 && (
-                <div className="text-sm text-text-secondary italic">No authorized Telegram owners yet.</div>
-              )}
-            </div>
-
-            <div className="border-t border-border-theme pt-4">
-              <div className="flex flex-col gap-2">
-                <button 
-                  onClick={() => handleGenerateTelegramLink('PRIMARY_OWNER')} 
-                  disabled={generatingLinkRole === 'PRIMARY_OWNER'}
-                  className="w-full px-4 py-2 bg-accent/10 text-accent font-bold text-sm uppercase rounded-lg hover:bg-accent/20 transition-colors border border-accent/30 flex items-center justify-center gap-2"
-                >
-                  {generatingLinkRole === 'PRIMARY_OWNER' ? 'Generating...' : 'Connect as Primary Owner'}
-                </button>
-                <button 
-                  onClick={() => handleGenerateTelegramLink('SECONDARY_OWNER')} 
-                  disabled={generatingLinkRole === 'SECONDARY_OWNER'}
-                  className="w-full px-4 py-2 bg-blue-500/10 text-blue-400 font-bold text-sm uppercase rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/30 flex items-center justify-center gap-2"
-                >
-                  {generatingLinkRole === 'SECONDARY_OWNER' ? 'Generating...' : '🔗 Link Secondary Owner'}
-                </button>
-              </div>
-              
-              {telegramInviteLink && (
-                <div className="mt-3 p-3 bg-bg-card border border-accent/30 rounded-lg">
-                  <p className="text-[10px] text-text-secondary mb-2">Share this link securely with the new owner:</p>
-                  <div className="flex gap-2">
-                    <input type="text" readOnly value={telegramInviteLink} className="w-full text-xs font-mono bg-bg-surface p-2 rounded outline-none text-accent" />
-                    <button 
-                      onClick={() => navigator.clipboard.writeText(telegramInviteLink)}
-                      className="px-3 py-2 bg-accent/10 text-accent font-bold text-xs uppercase rounded hover:bg-accent/20 transition-colors"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-      </div>
-    </div>
-  );
-
-  const renderSupport = () => (
-    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4">
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8 lg:p-10 relative">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-accent/10 rounded-full blur-[80px] -z-10 pointer-events-none"></div>
-        <h2 className="text-3xl font-black mb-2 tracking-tight">How can we help?</h2>
-        <p className="text-text-secondary text-sm md:text-base mb-10 max-w-2xl">Search our knowledge base or get in touch with our dedicated support team to resolve your issues quickly.</p>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
-            <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center text-accent mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-            </div>
-            <h3 className="font-bold text-sm mb-1">Documentation</h3>
-            <p className="text-xs text-text-secondary">Read guides & tutorials on using QControl.</p>
-          </a>
-          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
-            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center text-blue-500 mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-            </div>
-            <h3 className="font-bold text-sm mb-1">API & Hardware</h3>
-            <p className="text-xs text-text-secondary">Setup IoT switches & API integrations.</p>
-          </a>
-          <a href="#" className="p-5 rounded-xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-lg hover:shadow-accent/5 transition-all group">
-            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center text-green-500 mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-            </div>
-            <h3 className="font-bold text-sm mb-1">Billing & Pricing</h3>
-            <p className="text-xs text-text-secondary">Questions about subscription & payments.</p>
-          </a>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          <div>
-            <h3 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
-              <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Frequently Asked Questions
-            </h3>
-            <div className="space-y-4">
-              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
-                <h4 className="font-bold text-sm text-text-primary mb-1">How do I update pricing?</h4>
-                <p className="text-xs text-text-secondary leading-relaxed">Go to the Settings tab to adjust hourly rates or add promotions. Changes take effect immediately for all new sessions.</p>
-              </div>
-              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
-                <h4 className="font-bold text-sm text-text-primary mb-1">My tables aren't syncing?</h4>
-                <p className="text-xs text-text-secondary leading-relaxed">Check your internet connection. QControl uses Supabase for real-time WebSocket sync. Try refreshing the page if the issue persists.</p>
-              </div>
-              <div className="border border-border-theme rounded-lg p-4 bg-bg-surface hover:border-text-secondary/30 transition-colors">
-                <h4 className="font-bold text-sm text-text-primary mb-1">How do I export data?</h4>
-                <p className="text-xs text-text-secondary leading-relaxed">Navigate to the Reports tab and click "Export CSV". You can export data for specific date ranges.</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-bg-surface p-6 md:p-8 rounded-xl border border-border-theme flex flex-col">
-            <h3 className="text-lg font-bold text-text-primary mb-2">Need direct help?</h3>
-            <p className="text-sm text-text-secondary mb-6">Send us a message and our support team will get back to you within 24 hours.</p>
-            
-            <form onSubmit={(e) => { e.preventDefault(); alert("Support request sent! Our team will contact you shortly."); }} className="flex flex-col gap-4 flex-1">
-              <input type="text" placeholder="Subject" className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none" required />
-              <textarea placeholder="Describe your issue in detail..." rows={4} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none resize-none" required></textarea>
-              <button type="submit" className="mt-auto py-3.5 bg-accent text-black font-extrabold uppercase tracking-wide text-sm rounded-lg hover:bg-accent/90 transition-colors shadow-md">
-                Submit Ticket
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
     </Suspense>
   );
 }
