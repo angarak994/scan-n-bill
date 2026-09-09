@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 
     const { data: dbCustomers } = await supabase
       .from('customers')
-      .select('*')
+      .select('id, name, phone, outstanding_balance')
       .eq('business_id', businessId);
 
     return NextResponse.json({

@@ -24,6 +24,13 @@ export interface BusinessData {
   created_at: string;
 }
 
+interface CacheEntry {
+  data: BusinessData;
+  expiresAt: number;
+}
+const businessCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60000; // 1 minute
+
 export const businessManager = {
   registerBusiness: async (data: BusinessData): Promise<string> => {
     const { data: insertedData, error } = await supabase
@@ -51,7 +58,15 @@ export const businessManager = {
     return insertedData.id;
   },
 
-  getBusiness: async (id: string): Promise<BusinessData | null> => {
+  getBusiness: async (id: string, forceRefresh = false): Promise<BusinessData | null> => {
+    const now = Date.now();
+    if (!forceRefresh) {
+      const cached = businessCache.get(id);
+      if (cached && cached.expiresAt > now) {
+        return cached.data;
+      }
+    }
+
     const { data, error } = await supabase
       .from('businesses')
       .select('*')
@@ -78,6 +93,7 @@ export const businessManager = {
       }
     }
 
+    businessCache.set(id, { data, expiresAt: now + CACHE_TTL_MS });
     return data;
   },
 
@@ -98,6 +114,7 @@ export const businessManager = {
       .eq('id', businessId);
 
     if (error) throw error;
+    businessCache.delete(businessId); // Invalidate cache
     return active_discounts;
   },
 

@@ -9,6 +9,30 @@ import { resolveRate } from './pricing';
 // Use ISO strings for robust time storage
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
+interface PromoCacheEntry {
+  promo: any;
+  expiresAt: number;
+}
+const promoCache = new Map<string, PromoCacheEntry>();
+const PROMO_CACHE_TTL_MS = 60000; // 1 minute
+
+async function getCachedActivePromo(businessId: string) {
+  const now = Date.now();
+  const cached = promoCache.get(businessId);
+  if (cached && cached.expiresAt > now) {
+    return cached.promo;
+  }
+  const { data: activePromos } = await supabase
+    .from('promotions')
+    .select('id, discount_percent, end_time')
+    .eq('business_id', businessId)
+    .eq('status', 'Active')
+    .limit(1);
+  const promo = activePromos?.[0];
+  promoCache.set(businessId, { promo, expiresAt: now + PROMO_CACHE_TTL_MS });
+  return promo;
+}
+
 export class ApiError extends Error {
   statusCode: number;
   constructor(statusCode: number, message: string) {
@@ -131,14 +155,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
     discount = business.active_discounts?.[table_id];
     
     // Fetch active promotion from db
-    const { data: activePromos } = await supabase
-      .from('promotions')
-      .select('id, discount_percent, end_time')
-      .eq('business_id', business.id)
-      .eq('status', 'Active')
-      .limit(1);
-
-    const activePromo = activePromos?.[0];
+    const activePromo = await getCachedActivePromo(business.id);
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
     if (!discount && isPromoValid) {
       discount = { percent: activePromo.discount_percent, applyToFood: false };
@@ -378,14 +395,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       qpayConfig = business?.qpay_config;
       paymentQrConfig = business?.payment_qr_config;
       // Fetch active promotion
-      const { data: activePromos } = await supabase
-        .from('promotions')
-        .select('discount_percent, end_time')
-        .eq('business_id', businessId)
-        .eq('status', 'Active')
-        .limit(1);
-      
-      const activePromo = activePromos?.[0];
+      const activePromo = await getCachedActivePromo(businessId);
       const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
       if (!discount && isPromoValid) {
         discount = { percent: activePromo.discount_percent, applyToFood: false };
@@ -437,14 +447,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     }
 
     // Fetch active promotion
-    const { data: activePromos } = await supabase
-      .from('promotions')
-      .select('discount_percent, end_time')
-      .eq('business_id', businessId)
-      .eq('status', 'Active')
-      .limit(1);
-    
-    const activePromo = activePromos?.[0];
+    const activePromo = await getCachedActivePromo(businessId);
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
     if (!discount && isPromoValid) {
       discount = { percent: activePromo.discount_percent, applyToFood: false };

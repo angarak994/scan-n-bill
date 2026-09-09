@@ -4,6 +4,146 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { calculateCost, getCurrentRate } from '../../lib/billing';
 
+function formatElapsed(totalSeconds: number) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function LiveTimer({ session }: { session: any }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentCost, setCurrentCost] = useState(0);
+  const [currentActiveRate, setCurrentActiveRate] = useState(0);
+  const [showHourNotification, setShowHourNotification] = useState(false);
+  const [notifiedOneHour, setNotifiedOneHour] = useState(false);
+
+  useEffect(() => {
+    const startMs = new Date(session.start_time).getTime();
+    const tick = () => {
+      const now = Date.now();
+      let totalPausedSecs = session.paused_duration_seconds || 0;
+      if (session.paused_at) {
+        totalPausedSecs += Math.max(0, Math.floor((now - new Date(session.paused_at).getTime()) / 1000));
+      }
+      const elapsedTotalSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+      const billableSecs = Math.max(0, elapsedTotalSecs - totalPausedSecs);
+      setElapsedSeconds(billableSecs);
+      
+      const effectiveEndMs = session.paused_at ? new Date(session.paused_at).getTime() : now;
+      const { cost } = calculateCost(
+        startMs, 
+        effectiveEndMs, 
+        session.game_type, 
+        session.pricingRules, 
+        session.num_players || 1, 
+        session.discount, 
+        session.paused_duration_seconds || 0, 
+        session.locked_rate, 
+        session.locked_rate_name
+      );
+      setCurrentCost(cost);
+      setCurrentActiveRate(getCurrentRate(session.game_type, effectiveEndMs, session.pricingRules, session.num_players || 1).rate);
+
+      if (billableSecs >= 3600 && !notifiedOneHour) {
+        setNotifiedOneHour(true);
+        setShowHourNotification(true);
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [session]);
+
+  return (
+    <>
+      {showHourNotification && (
+        <div className="w-full bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded shadow-md relative mb-4 animate-bounce">
+          <p className="font-bold">1 Hour Completed</p>
+          <p>Continue Playing?</p>
+          <button 
+            onClick={() => setShowHourNotification(false)}
+            className="absolute top-2 right-2 text-blue-500 hover:text-blue-700 font-bold"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <div className="relative">
+        <div className="text-center mb-6">
+          <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-500/20 shadow-sm">
+            <span className="relative flex h-2.5 w-2.5 mr-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            </span>
+            ACTIVE
+          </span>
+          {session.id && (
+            <div className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
+              Session ID: <span className="text-gray-700 dark:text-gray-300 font-mono">#{session.id.split('-')[0]}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div>
+        <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
+        <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
+        <div className="flex flex-col gap-1 mb-4">
+          <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
+            Game: {session.game_type} • {session.customer_name} {session.num_players && session.num_players > 1 ? `(${session.num_players} Players)` : ''}
+          </p>
+          {session.discount && session.discount.percent > 0 && (
+            <p className="text-orange-500 font-bold text-sm">
+              {session.discount.percent}% Discount Applied {session.discount.applyToFood ? '(Incl. Food)' : ''}
+            </p>
+          )}
+        </div>
+        <div className="bg-gray-100 dark:bg-gray-900 px-8 py-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner flex flex-col items-center">
+          <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
+            {formatElapsed(elapsedSeconds)}
+          </p>
+          {session.paused_at && (
+            <span className="mt-2 px-3 py-1 rounded-md text-xs font-bold uppercase tracking-widest bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30">
+              Paused
+            </span>
+          )}
+          {session.food_cost ? (
+            <div className="flex flex-col items-center mt-4">
+              <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>
+              <p className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
+                {session.discount && session.discount.percent > 0 && session.discount.applyToFood ? (
+                  <>
+                    <span className="text-gray-400 line-through text-lg mr-2">₹{session.food_cost}</span>
+                    ₹{Math.round(session.food_cost * (1 - (session.discount.percent/100)))}
+                  </>
+                ) : (
+                  `₹${session.food_cost}`
+                )}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      
+      <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs mx-auto">
+        <p className="text-gray-500 dark:text-gray-400 font-medium">
+          Active Rate: 
+          {session.discount && session.discount.percent > 0 ? (
+            <>
+              <span className="line-through mx-2 text-gray-400">₹{currentActiveRate}</span>
+              <span className="text-green-600 font-bold">₹{Math.round(currentActiveRate * (1 - (session.discount.percent/100)))} / hour</span>
+            </>
+          ) : (
+            ` ₹${currentActiveRate} / hour`
+          )}
+        </p>
+      </div>
+    </>
+  );
+}
+
 export type SessionState =
   | { status: 'loading' }
   | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean }; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
@@ -25,11 +165,6 @@ export default function SessionClient({ initialState, business_id, table_id, gam
   const [session, setSession] = useState<SessionState>(initialState);
   const [customerName, setCustomerName] = useState('');
   const [numPlayers, setNumPlayers] = useState(1);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [currentCost, setCurrentCost] = useState(0);
-  const [currentActiveRate, setCurrentActiveRate] = useState(0);
-  const [notifiedOneHour, setNotifiedOneHour] = useState(false);
-  const [showHourNotification, setShowHourNotification] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [cart, setCart] = useState<{ [key: string]: number }>({});
@@ -89,51 +224,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     return () => clearInterval(pollInterval);
   }, [fetchTableState]);
 
-  useEffect(() => {
-    if (session.status !== 'active') {
-      setElapsedSeconds(0);
-      setCurrentCost(0);
-      setNotifiedOneHour(false);
-      setShowHourNotification(false);
-      return;
-    }
-    
-    const startMs = new Date(session.start_time).getTime();
 
-    const tick = () => {
-      const now = Date.now();
-      let totalPausedSecs = (session as any).paused_duration_seconds || 0;
-      if ((session as any).paused_at) {
-        totalPausedSecs += Math.max(0, Math.floor((now - new Date((session as any).paused_at).getTime()) / 1000));
-      }
-      const elapsedTotalSecs = Math.max(0, Math.floor((now - startMs) / 1000));
-      const billableSecs = Math.max(0, elapsedTotalSecs - totalPausedSecs);
-      setElapsedSeconds(billableSecs);
-      
-      const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
-      const { cost } = calculateCost(
-        startMs, 
-        effectiveEndMs, 
-        session.game_type, 
-        session.pricingRules, 
-        session.num_players || 1, 
-        session.discount, 
-        (session as any).paused_duration_seconds || 0, 
-        (session as any).locked_rate, 
-        (session as any).locked_rate_name
-      );
-      setCurrentCost(cost);
-      setCurrentActiveRate(getCurrentRate(session.game_type, effectiveEndMs, session.pricingRules, session.num_players || 1).rate);
-
-      if (billableSecs >= 3600 && !notifiedOneHour) {
-        setNotifiedOneHour(true);
-        setShowHourNotification(true);
-      }
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [session]);
 
   const handleStart = async () => {
     if (isStarting) return;
@@ -208,8 +299,28 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     if (isEnding) return;
     setIsEnding(true);
 
-    const optimisticDuration = formatElapsed(elapsedSeconds);
-    const optimisticCost = currentCost;
+    const now = Date.now();
+    const startMs = new Date((session as any).start_time).getTime();
+    let totalPausedSecs = (session as any).paused_duration_seconds || 0;
+    if ((session as any).paused_at) {
+      totalPausedSecs += Math.max(0, Math.floor((now - new Date((session as any).paused_at).getTime()) / 1000));
+    }
+    const elapsedTotalSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+    const billableSecs = Math.max(0, elapsedTotalSecs - totalPausedSecs);
+    const optimisticDuration = formatElapsed(billableSecs);
+    
+    const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
+    const { cost: optimisticCost } = calculateCost(
+      startMs, 
+      effectiveEndMs, 
+      (session as any).game_type, 
+      (session as any).pricingRules, 
+      (session as any).num_players || 1, 
+      (session as any).discount, 
+      (session as any).paused_duration_seconds || 0, 
+      (session as any).locked_rate, 
+      (session as any).locked_rate_name
+    );
     setBillModalData({ 
       duration: optimisticDuration, 
       cost: optimisticCost, 
@@ -415,89 +526,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
 
         {session.status === 'active' && (
           <>
-            {showHourNotification && (
-              <div className="w-full bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded shadow-md relative mb-4 animate-bounce">
-                <p className="font-bold">1 Hour Completed</p>
-                <p>Continue Playing?</p>
-                <button 
-                  onClick={() => setShowHourNotification(false)}
-                  className="absolute top-2 right-2 text-blue-500 hover:text-blue-700 font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            <div className="relative">
-              <div className="text-center mb-6">
-                <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-500/20 shadow-sm">
-                  <span className="relative flex h-2.5 w-2.5 mr-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                  </span>
-                  ACTIVE
-                </span>
-                {shortId && (
-                  <div className="mt-2 text-sm font-medium text-gray-500 dark:text-gray-400">
-                    Session ID: <span className="text-gray-700 dark:text-gray-300 font-mono">#{shortId}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            <div>
-              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
-              <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
-              <div className="flex flex-col gap-1 mb-4">
-                <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
-                  Game: {session.game_type} • {session.customer_name} {session.num_players && session.num_players > 1 ? `(${session.num_players} Players)` : ''}
-                </p>
-                {session.discount && session.discount.percent > 0 && (
-                  <p className="text-orange-500 font-bold text-sm">
-                    {session.discount.percent}% Discount Applied {session.discount.applyToFood ? '(Incl. Food)' : ''}
-                  </p>
-                )}
-              </div>
-              <div className="bg-gray-100 dark:bg-gray-900 px-8 py-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-inner flex flex-col items-center">
-                <p className="text-5xl font-mono tabular-nums font-bold tracking-tight text-gray-800 dark:text-white">
-                  {formatElapsed(elapsedSeconds)}
-                </p>
-                {(session as any).paused_at && (
-                  <span className="mt-2 px-3 py-1 rounded-md text-xs font-bold uppercase tracking-widest bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30">
-                    Paused
-                  </span>
-                )}
-                {session.food_cost ? (
-                  <div className="flex flex-col items-center mt-4">
-                    <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>
-                    <p className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-                      {session.discount && session.discount.percent > 0 && session.discount.applyToFood ? (
-                        <>
-                          <span className="text-gray-400 line-through text-lg mr-2">₹{session.food_cost}</span>
-                          ₹{Math.round(session.food_cost * (1 - (session.discount.percent/100)))}
-                        </>
-                      ) : (
-                        `₹${session.food_cost}`
-                      )}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            
-            <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs mx-auto">
-              <p className="text-gray-500 dark:text-gray-400 font-medium">
-                Active Rate: 
-                {session.discount && session.discount.percent > 0 ? (
-                  <>
-                    <span className="line-through mx-2 text-gray-400">₹{currentActiveRate}</span>
-                    <span className="text-green-600 font-bold">₹{Math.round(currentActiveRate * (1 - (session.discount.percent/100)))} / hour</span>
-                  </>
-                ) : (
-                  ` ₹${currentActiveRate} / hour`
-                )}
-              </p>
-            </div>            
+            <LiveTimer session={session} />            
             {session.menuItems && session.menuItems.length > 0 && (
               <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
                 <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Order Food & Drinks</h2>
