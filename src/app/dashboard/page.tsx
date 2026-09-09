@@ -109,9 +109,27 @@ function DashboardContent() {
   const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
 
   const qkhataMembers = useMemo(() => {
-    if (!memberships || !data?.dbCustomers) return [];
-    const memberPhones = new Set(memberships.map(m => m.mobile));
-    return data.dbCustomers.filter(c => c.phone && memberPhones.has(c.phone));
+    if (!memberships) return [];
+    
+    const balanceMap = new Map();
+    if (data?.dbCustomers) {
+      data.dbCustomers.forEach((c: any) => {
+        if (c.phone) {
+          const norm = c.phone.replace('+91', '').trim();
+          balanceMap.set(norm, c.outstanding_balance || 0);
+        }
+      });
+    }
+
+    return memberships.map((m: any) => {
+      const norm = m.mobile ? m.mobile.replace('+91', '').trim() : '';
+      return {
+        id: m.id,
+        name: m.name,
+        phone: m.mobile,
+        outstanding_balance: balanceMap.get(norm) || 0
+      };
+    });
   }, [memberships, data?.dbCustomers]);
 
   const filteredQkhataMembers = useMemo(() => {
@@ -3498,12 +3516,7 @@ function DashboardContent() {
                     QKhata
                   </button>
                 </div>
-                <input type="text" required list="member-list" value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
-                <datalist id="member-list">
-                  {memberships.map((m: any) => (
-                    <option key={m.id} value={m.name} />
-                  ))}
-                </datalist>
+                <input type="text" required value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
 
                 {showQkhataPopover && (
                   <div className="absolute top-[80px] right-0 w-full sm:w-[340px] bg-bg-card border border-border-theme rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.8)] z-50 overflow-hidden flex flex-col max-h-[350px] animate-in slide-in-from-top-2 fade-in duration-200 ring-1 ring-accent/20">
