@@ -37,6 +37,20 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
         }
         
         fetchData();
+        
+        const subscription = supabase.channel('qkhata_customers')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, (payload) => {
+                if (payload.eventType === 'UPDATE') {
+                    setCustomers(prev => prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c).sort((a, b) => Number(b.outstanding_balance) - Number(a.outstanding_balance)));
+                } else if (payload.eventType === 'INSERT') {
+                    // Refresh completely to handle membership cross-reference correctly
+                    fetchData();
+                }
+            }).subscribe();
+
+        return () => {
+            supabase.removeChannel(subscription);
+        };
     }, [businessId]);
 
     if (isLoading) return <div className="p-8 text-center text-gray-500">Loading Ledger...</div>;
@@ -166,15 +180,17 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
                         </div>
                     </div>
                     
-                    <div className="p-6 pb-2 relative">
-                        <input 
-                            type="text" 
-                            placeholder="Search by name or phone..." 
-                            className="w-full px-4 py-3 pl-10 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary placeholder-text-secondary"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                        <svg className="w-4 h-4 absolute left-9 top-1/2 -translate-y-1/2 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <div className="p-6 pb-2">
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="Search by name or phone..." 
+                                className="w-full px-4 py-3 pl-10 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary placeholder-text-secondary"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
                     </div>
 
                     <div className="overflow-x-auto">

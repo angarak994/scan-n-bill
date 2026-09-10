@@ -193,16 +193,18 @@ export async function endSession(table_id: string, businessId?: string, source: 
       }
 
       // Check if they exist in the customers table for QKhata eligibility
-      const { data: customerRecord } = await supabase
+      const { data: customers } = await supabase
         .from('customers')
-        .select('id')
-        .eq('business_id', businessId)
-        .or(`phone.eq.${session.customer_name},name.eq.${session.customer_name}`)
-        .limit(1)
-        .single();
+        .select('id, name, phone')
+        .eq('business_id', businessId);
       
-      if (customerRecord) {
-        (session as any)._isRegisteredCustomer = true;
+      const cName = session.customer_name?.trim().toLowerCase() || '';
+      if (customers) {
+        const match = customers.find(c => 
+          (c.name && c.name.trim().toLowerCase() === cName) || 
+          (c.phone && c.phone.trim() === cName)
+        );
+        if (match) (session as any)._isRegisteredCustomer = true;
       }
     }
   } catch (e) {

@@ -184,6 +184,9 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       if (data.status === 'idle') {
         setSession((prev) => {
           if (prev.status === 'completed' || billModalData !== null) return prev;
+          if (prev.status === 'active' || prev.status === 'prompt_end') {
+            return { ...prev, status: 'completed' } as any;
+          }
           return { status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules, menuItems: data.menuItems };
         });
       } else if (data.status === 'active') {
@@ -225,6 +228,39 @@ export default function SessionClient({ initialState, business_id, table_id, gam
   }, [fetchTableState]);
 
 
+
+  useEffect(() => {
+    if (session.status === 'completed' && !billModalData && (session as any).start_time) {
+      const now = Date.now();
+      const startMs = new Date((session as any).start_time).getTime();
+      let totalPausedSecs = (session as any).paused_duration_seconds || 0;
+      if ((session as any).paused_at) {
+        totalPausedSecs += Math.max(0, Math.floor((now - new Date((session as any).paused_at).getTime()) / 1000));
+      }
+      const elapsedTotalSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+      const billableSecs = Math.max(0, elapsedTotalSecs - totalPausedSecs);
+      const optimisticDuration = formatElapsed(billableSecs);
+      
+      const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
+      const { cost: optimisticCost } = calculateCost(
+        startMs, 
+        effectiveEndMs, 
+        (session as any).game_type, 
+        (session as any).pricingRules, 
+        (session as any).num_players || 1, 
+        (session as any).discount, 
+        (session as any).paused_duration_seconds || 0, 
+        (session as any).locked_rate, 
+        (session as any).locked_rate_name
+      );
+      
+      setBillModalData({ 
+        duration: optimisticDuration, 
+        cost: optimisticCost, 
+        end_time: new Date().toISOString() 
+      });
+    }
+  }, [session, billModalData]);
 
   const handleStart = async () => {
     if (isStarting) return;
