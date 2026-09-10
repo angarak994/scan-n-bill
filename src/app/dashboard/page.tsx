@@ -1838,7 +1838,7 @@ function DashboardContent() {
                     toReadableIST={toReadableIST}
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
-                    onRequestEndSession={(session, cost) => setEndSessionData({ session, cost, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
+                    onRequestEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
                     getDisplayName={getDisplayName}
                   />
                 ))
@@ -3197,6 +3197,14 @@ function DashboardContent() {
               <p className="text-sm text-text-secondary mt-1">Finalize bill for {getDisplayName(endSessionData.session.customer_name)}</p>
             </div>
             <div className="p-6 space-y-4">
+              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Table</span>
+                <span className="font-mono font-bold text-lg bg-bg-surface px-3 py-1 rounded-lg border border-border-theme">{endSessionData.session.table_id}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
+                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Duration</span>
+                <span className="font-mono font-bold text-lg text-text-primary">{endSessionData.duration}</span>
+              </div>
               <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                 <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Total Bill</span>
                 <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>

@@ -247,7 +247,7 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
   return <>{value}</>;
 };
 
-export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number) => void, getDisplayName?: (name: string) => string }) {
+export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string) => string }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -344,7 +344,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
           }} className="px-4 py-2 text-sm font-bold text-secondary border border-secondary/30 rounded-lg hover:bg-secondary hover:text-black transition-colors shadow-sm">Transfer</button>
           <button onClick={() => {
             if (onRequestEndSession) {
-              onRequestEndSession(session, liveCost);
+              onRequestEndSession(session, liveCost, liveDuration);
             } else {
               if (confirm(`End session for ${getDisplayName ? getDisplayName(session.customer_name) : session.customer_name}? Current bill: ${isPrivacyMode ? '••••••' : formatINR(liveCost)}`)) {
                 handleIntervention('force_end', session.id, liveCost);
