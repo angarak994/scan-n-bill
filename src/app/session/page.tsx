@@ -37,29 +37,35 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
         paymentQrConfig: data.paymentQrConfig,
       };
     } else if (data.status === 'active') {
+      const activeState = {
+        id: data.id,
+        customer_name: data.customer_name,
+        table_id: data.table_id,
+        game_type: data.game_type,
+        date: data.date,
+        start_time: data.start_time,
+        pricingRules: data.pricingRules,
+        businessName: data.businessName,
+        qpayConfig: data.qpayConfig,
+        paymentQrConfig: data.paymentQrConfig,
+        food_cost: data.food_cost,
+        num_players: data.num_players,
+        discount: data.discount,
+        menuItems: data.menuItems,
+        paused_at: data.paused_at,
+        paused_duration_seconds: data.paused_duration_seconds,
+        locked_rate: data.locked_rate,
+        locked_rate_name: data.locked_rate_name,
+      };
       if (!scanNonce) {
         initialState = {
+          ...activeState,
           status: 'prompt_end',
-          id: data.id,
-          table_id: data.table_id,
-          game_type: data.game_type,
-          businessName: data.businessName,
-          qpayConfig: data.qpayConfig,
-          paymentQrConfig: data.paymentQrConfig,
         };
       } else {
         initialState = {
+          ...activeState,
           status: 'active',
-          id: data.id,
-          customer_name: data.customer_name,
-          table_id: data.table_id,
-          game_type: data.game_type,
-          date: data.date,
-          start_time: data.start_time,
-          pricingRules: data.pricingRules,
-          businessName: data.businessName,
-          qpayConfig: data.qpayConfig,
-          paymentQrConfig: data.paymentQrConfig,
         };
       }
     }

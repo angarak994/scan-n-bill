@@ -453,7 +453,8 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               />
             </div>
             
-            {(session.pricingRules?.rules?.[session.game_type]?.is_per_person || 
+            {(session.game_type === 'ps5' || session.game_type === 'console' ||
+              session.pricingRules?.rules?.[session.game_type]?.is_per_person || 
               session.pricingRules?.rules?.[session.game_type]?.multiplayer_mode === 'multiply' || 
               session.pricingRules?.rules?.[session.game_type]?.multiplayer_mode === 'base_plus_extra') && (
               <div className="w-full mt-2 text-left">
@@ -497,6 +498,10 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Session is Active</h1>
               <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Table: {session.table_id}</p>
+            </div>
+            
+            <div className="w-full mt-2">
+              <LiveTimer session={session} />
             </div>
             <div className="w-full mt-4 text-left bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
               <p className="mb-2">This table currently has an active session.</p>
