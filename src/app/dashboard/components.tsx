@@ -247,7 +247,7 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
   return <>{value}</>;
 };
 
-export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number) => void }) {
+export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number) => void, getDisplayName?: (name: string) => string }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -306,7 +306,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
         </span>
       </td>
       <td className="p-4 md:p-5">
-        <p className="text-base font-bold text-text-primary">{session.customer_name}</p>
+        <p className="text-base font-bold text-text-primary">{getDisplayName ? getDisplayName(session.customer_name) : session.customer_name}</p>
         <p className="text-xs text-text-secondary mt-1 capitalize font-mono bg-bg-surface inline-block px-2 py-0.5 rounded border border-border-theme">{session.game_type}</p>
       </td>
       <td className="p-4 md:p-5">
@@ -346,7 +346,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
             if (onRequestEndSession) {
               onRequestEndSession(session, liveCost);
             } else {
-              if (confirm(`End session for ${session.customer_name}? Current bill: ${isPrivacyMode ? '••••••' : formatINR(liveCost)}`)) {
+              if (confirm(`End session for ${getDisplayName ? getDisplayName(session.customer_name) : session.customer_name}? Current bill: ${isPrivacyMode ? '••••••' : formatINR(liveCost)}`)) {
                 handleIntervention('force_end', session.id, liveCost);
               }
             }

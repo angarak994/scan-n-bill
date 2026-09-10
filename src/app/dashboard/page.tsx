@@ -133,6 +133,13 @@ function DashboardContent() {
   const [qkhataSearch, setQkhataSearch] = useState('');
   const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
 
+  const getDisplayName = (rawName: string) => {
+    if (!rawName) return 'Guest';
+    if (!data?.dbCustomers) return rawName;
+    const member = data.dbCustomers.find((c: any) => c.phone === rawName || c.name.toLowerCase() === rawName.toLowerCase());
+    return member ? member.name : rawName;
+  };
+
   const qkhataMembers = useMemo(() => {
     if (!memberships) return [];
     
@@ -804,7 +811,7 @@ function DashboardContent() {
                     <span className="px-2 py-0.5 rounded-md text-xs font-bold font-mono capitalize bg-bg-surface border border-border-theme text-primary">{gameDisplay}</span>
                   </div>
                   <p className="text-sm text-text-secondary mt-1">
-                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{booking.customer_name || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
+                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{getDisplayName(booking.customer_name) || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
                   </p>
                   {isOccupied && (
                     <p className="text-xs font-bold text-danger mt-2 flex items-center gap-1.5 bg-danger/10 px-2.5 py-1 rounded border border-danger/30 w-fit">
@@ -1543,7 +1550,7 @@ function DashboardContent() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold">{booking.customer_name}</p>
+                        <p className="text-sm font-bold">{getDisplayName(booking.customer_name)}</p>
                         {booking.source === 'whatsapp' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-1.5 py-0.5 rounded border border-[#25D366]/20 flex-shrink-0">WhatsApp AI</span>}
                         {booking.source === 'telegram' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-1.5 py-0.5 rounded border border-[#0088cc]/20 flex-shrink-0">Telegram AI</span>}
                       </div>
@@ -1671,7 +1678,7 @@ function DashboardContent() {
                     return (
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
                       <td className="p-4 md:p-5">
-                        <p className="text-base font-bold text-text-primary">{booking.customer_name}</p>
+                        <p className="text-base font-bold text-text-primary">{getDisplayName(booking.customer_name)}</p>
                         {booking.source === 'whatsapp' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-2 py-0.5 rounded-full border border-[#25D366]/20">WhatsApp AI</span>}
                         {booking.source === 'telegram' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-2 py-0.5 rounded-full border border-[#0088cc]/20">Telegram AI</span>}
                       </td>
@@ -1832,6 +1839,7 @@ function DashboardContent() {
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
                     onRequestEndSession={(session, cost) => setEndSessionData({ session, cost, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
+                    getDisplayName={getDisplayName}
                   />
                 ))
               )}
@@ -1919,7 +1927,7 @@ function DashboardContent() {
                   return (
                     <tr key={session.id} className="border-b border-border-light/50 hover:bg-bg-surface transition-all duration-200">
                       <td className="p-4">
-                        <p className="text-sm font-bold text-text-primary">{session.customer_name}</p>
+                        <p className="text-sm font-bold text-text-primary">{getDisplayName(session.customer_name)}</p>
                       </td>
                       <td className="p-4">
                         <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest shadow-sm">
@@ -3186,7 +3194,7 @@ function DashboardContent() {
               <h3 className="text-xl font-bold flex items-center gap-3 text-danger">
                 End Session
               </h3>
-              <p className="text-sm text-text-secondary mt-1">Finalize bill for {endSessionData.session.customer_name}</p>
+              <p className="text-sm text-text-secondary mt-1">Finalize bill for {getDisplayName(endSessionData.session.customer_name)}</p>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
@@ -3302,7 +3310,7 @@ function DashboardContent() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                   <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Player</span>
-                  <span className="text-base font-bold">{overdueSession.customer_name}</span>
+                  <span className="text-base font-bold">{getDisplayName(overdueSession.customer_name)}</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                   <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Table</span>
