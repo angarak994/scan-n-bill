@@ -13,35 +13,8 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
   const [isClosing, setIsClosing] = useState(false);
   const [progress, setProgress] = useState(100);
 
-  useEffect(() => {
-    // Smooth entrance
-    const enterTimer = setTimeout(() => {
-      setIsVisible(true);
-      triggerConfetti();
-    }, 150);
 
-    // Progress bar animation (2.5 seconds total visible time)
-    const DISPLAY_DURATION = 2500;
-    const startTime = Date.now() + 150;
-    
-    const progressInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 100 - (elapsed / DISPLAY_DURATION) * 100);
-      setProgress(remaining);
-      
-      if (elapsed >= DISPLAY_DURATION) {
-        clearInterval(progressInterval);
-        handleClose();
-      }
-    }, 16); // 60fps update
-
-    return () => {
-      clearTimeout(enterTimer);
-      clearInterval(progressInterval);
-    };
-  }, []);
-
-  const triggerConfetti = () => {
+  function triggerConfetti() {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion) return;
 
@@ -72,7 +45,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
     }, 250);
   };
 
-  const handleClose = async () => {
+  async function handleClose() {
     setIsClosing(true);
     
     try {
@@ -85,6 +58,34 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
       onComplete();
     }, 400); // Wait for exit animation
   };
+
+  useEffect(() => {
+    // Smooth entrance
+    const enterTimer = setTimeout(() => {
+      setIsVisible(true);
+      triggerConfetti();
+    }, 150);
+
+    // Progress bar animation (2.5 seconds total visible time)
+    const DISPLAY_DURATION = 2500;
+    const startTime = Date.now() + 150;
+    
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 100 - (elapsed / DISPLAY_DURATION) * 100);
+      setProgress(remaining);
+      
+      if (elapsed >= DISPLAY_DURATION) {
+        clearInterval(progressInterval);
+        handleClose();
+      }
+    }, 16); // 60fps update
+
+    return () => {
+      clearTimeout(enterTimer);
+      clearInterval(progressInterval);
+    };
+  }, []);
 
   return (
     <div className={`fixed inset-0 z-[9990] flex items-center justify-center p-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${isVisible && !isClosing ? 'bg-black/40 backdrop-blur-md' : 'bg-transparent pointer-events-none'}`}>

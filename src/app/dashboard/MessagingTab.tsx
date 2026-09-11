@@ -25,10 +25,10 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
     };
 
     useEffect(() => {
-        fetchLogs();
+        setTimeout(() => fetchLogs(), 0);
         // Set up real-time subscription for status updates
         const channel = supabase.channel('whatsapp_messages_changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `business_id=eq.${businessId}` }, fetchLogs)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `business_id=eq.${businessId}` }, () => setTimeout(() => fetchLogs(), 0))
             .subscribe();
             
         return () => { supabase.removeChannel(channel); };
@@ -68,7 +68,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
             });
         }
 
-        setCustomers(Array.from(unifiedContacts.values()));
+        setTimeout(() => setCustomers(Array.from(unifiedContacts.values())), 0);
     }, [dbCustomers, memberships]);
 
     const filteredCustomers = customers.filter(c => 

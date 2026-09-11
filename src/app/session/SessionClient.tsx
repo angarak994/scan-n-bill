@@ -159,12 +159,7 @@ interface SessionClientProps {
   game_type?: string;
 }
 
-const formatElapsed = (totalSeconds: number) => {
-  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-  const s = String(totalSeconds % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
-};
+
 
 export default function SessionClient({ initialState, business_id, table_id, game_type }: SessionClientProps) {
   const router = useRouter();

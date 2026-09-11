@@ -165,7 +165,7 @@ function DashboardContent() {
         outstanding_balance: balanceMap.get(norm) || 0
       };
     });
-  }, [memberships, data?.dbCustomers]);
+  }, [memberships, data]);
 
   const filteredQkhataMembers = useMemo(() => {
     return qkhataMembers.filter(m => 
@@ -238,7 +238,7 @@ function DashboardContent() {
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string } | null>(null);
+  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, duration?: string, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string } | null>(null);
 
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
@@ -250,7 +250,7 @@ function DashboardContent() {
   const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem('privacy_mode');
-    if (saved === 'true') setIsPrivacyMode(true);
+    if (saved === 'true') setTimeout(() => setIsPrivacyMode(true), 0);
   }, []);
 
   const togglePrivacy = () => {
@@ -322,7 +322,7 @@ function DashboardContent() {
       return;
     }
     reportDateRangeRef.current = reportDateRange;
-    if (isAuthorized) fetchReportsData();
+    if (isAuthorized) setTimeout(() => fetchReportsData(), 0);
   }, [reportDateRange]);
 
   useEffect(() => {
@@ -330,9 +330,9 @@ function DashboardContent() {
       telegramLoadedRef.current = true;
       if (data.pricingRules?.globalSettings) {
         
-        setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []);
+        setTimeout(() => setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []), 0);
         if (data.pricingRules.globalSettings.smart_reminder_interval_minutes !== undefined) {
-          setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes));
+          setTimeout(() => setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes)), 0);
         }
       }
     }
@@ -343,7 +343,7 @@ function DashboardContent() {
     if (!isAuthorized) {
       fetchData().finally(() => setIsInitialLoading(false));
     } else {
-      setIsInitialLoading(false);
+      setTimeout(() => setIsInitialLoading(false), 0);
     }
   }, []);
 
@@ -412,7 +412,7 @@ function DashboardContent() {
     return () => clearInterval(interval);
   }, [isAuthorized]);
 
-  const fetchData = async (pinToUse?: string, isBackground = false) => {
+  async function fetchData(pinToUse?: string, isBackground = false) {
     try {
       if (!isBackground) setLoading(true);
       
@@ -506,7 +506,7 @@ function DashboardContent() {
              if (payload.eventType === 'DELETE') {
                  setData(prev => {
                     if (!prev) return prev;
-                    return { ...prev, bookings: prev.bookings.filter((x: any) => x.id !== payload.old.id) };
+                    return { ...prev, bookings: (prev.bookings || []).filter((x: any) => x.id !== payload.old.id) };
                  });
                  return;
              }

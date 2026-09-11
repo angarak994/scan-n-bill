@@ -60,7 +60,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
         available: formData.available
       };
 
-      let newItems = [...(business.menu_items || [])];
+      let newItems = [...menuItems];
       if (editingItem) {
         // Find by ID or by Name (legacy items might not have ID)
         const idx = newItems.findIndex(i => (i.id && i.id === editingItem.id) || (!i.id && i.name === editingItem.name));

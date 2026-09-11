@@ -39,7 +39,9 @@ export default function HowItWorks() {
 
       <div className="relative">
         {/* Connecting Line (Desktop only) */}
-        <ScrollReveal animation="fade-in" delay={500} className="hidden lg:block absolute top-1/2 left-0 w-full h-[2px] bg-border-light -translate-y-1/2 z-0" />
+        <ScrollReveal animation="fade-in" delay={500} className="hidden lg:block absolute top-1/2 left-0 w-full h-[2px] bg-border-light -translate-y-1/2 z-0">
+          <div />
+        </ScrollReveal>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-6 relative z-10">
           {steps.map((item, index) => (

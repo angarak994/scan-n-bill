@@ -155,7 +155,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
     discount = business.active_discounts?.[table_id];
     
     // Fetch active promotion from db
-    const activePromo = await getCachedActivePromo(business.id);
+    const activePromo = await getCachedActivePromo(business.id || '');
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
     if (!discount && isPromoValid) {
       discount = { percent: activePromo.discount_percent, applyToFood: false };
