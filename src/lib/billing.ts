@@ -55,8 +55,8 @@ export function formatTimeReadable(timeStr?: string, includeToday: boolean = fal
   }
 }
 
-export function getCurrentRate(gameType: string, nowMs: number, pricing?: BusinessPricing, numPlayers: number = 1): { rate: number, slabName: string } {
-  const game = gameType.toLowerCase();
+export function getCurrentRate(gameType: string | null | undefined, nowMs: number, pricing?: BusinessPricing, numPlayers: number = 1): { rate: number, slabName: string } {
+  const game = (gameType || 'pool').trim().toLowerCase();
   
   // Default fallback if no pricing rules are defined for this specific game
   if (!pricing || !pricing.rules || !pricing.rules[game]) {
@@ -118,7 +118,7 @@ export function getCurrentRate(gameType: string, nowMs: number, pricing?: Busine
 export function calculateCost(
   startMs: number, 
   endMs: number, 
-  gameType: string, 
+  gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
   discount?: { percent: number; applyToFood: boolean },
@@ -236,7 +236,7 @@ export function calculateCost(
 export function calculateBilling(
   startString: string, 
   endString: string, 
-  gameType: string, 
+  gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
   discount?: { percent: number; applyToFood: boolean },

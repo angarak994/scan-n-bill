@@ -13,7 +13,7 @@ export interface BusinessData {
   pricing_rules?: BusinessPricing;
   tables?: TableConfig[];
   dashboard_pin?: string;
-  menu_items?: { name: string; price: number }[];
+  menu_items?: { id?: string; name: string; price: number; category?: string; description?: string; image?: string; available?: boolean }[];
   active_discounts?: Record<string, { percent: number; applyToFood: boolean }>;
   goals?: { daily_revenue: number, daily_sessions: number };
   has_logged_in?: boolean;
