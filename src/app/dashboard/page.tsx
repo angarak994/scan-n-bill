@@ -13,6 +13,7 @@ import QKhataTab from './QKhataTab';
 import PaymentsTab from './PaymentsTab';
 import MessagingTab from './MessagingTab';
 import QpulseWidget from '@/components/QpulseWidget';
+import AIAssistantWidget from '@/components/AIAssistantWidget';
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -1003,7 +1004,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (sidebarTab === 'customers') {
-      fetchMemberships();
+      setTimeout(() => fetchMemberships(), 0);
     }
   }, [sidebarTab]);
 
@@ -1504,7 +1505,7 @@ function DashboardContent() {
           </div>
           <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
             <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
-            <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1">+{(Math.random() * 15 + 5).toFixed(1)}%</span>
+            <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1">+12.4%</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-light flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -3700,6 +3701,7 @@ function DashboardContent() {
           <p className="text-text-secondary text-sm font-semibold">© 2026 QControl. Powered by Scan-n-Bill.</p>
           <p className="text-text-secondary text-xs mt-1">Take Control. Drive Growth.</p>
         </footer>
+        <AIAssistantWidget />
       </main>
       
       {/* Manual Session Modal */}

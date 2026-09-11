@@ -159,6 +159,13 @@ interface SessionClientProps {
   game_type?: string;
 }
 
+const formatElapsed = (totalSeconds: number) => {
+  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const s = String(totalSeconds % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+};
+
 export default function SessionClient({ initialState, business_id, table_id, game_type }: SessionClientProps) {
   const router = useRouter();
 
@@ -254,11 +261,13 @@ export default function SessionClient({ initialState, business_id, table_id, gam
         (session as any).locked_rate_name
       );
       
-      setBillModalData({ 
-        duration: optimisticDuration, 
-        cost: optimisticCost, 
-        end_time: new Date().toISOString() 
-      });
+      setTimeout(() => {
+        setBillModalData({ 
+          duration: optimisticDuration, 
+          cost: optimisticCost, 
+          end_time: new Date().toISOString() 
+        });
+      }, 0);
     }
   }, [session, billModalData]);
 
@@ -411,13 +420,6 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     } finally {
       setIsOrdering(false);
     }
-  };
-
-  const formatElapsed = (totalSeconds: number) => {
-    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-    const s = String(totalSeconds % 60).padStart(2, '0');
-    return `${h}:${m}:${s}`;
   };
 
   const shortId = session.status === 'active' && session.id ? session.id.split('-')[0].toUpperCase() : '';
