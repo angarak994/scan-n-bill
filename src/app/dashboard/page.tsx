@@ -452,7 +452,11 @@ function DashboardContent() {
   useEffect(() => {
     if (isAuthorized) {
       fetchData();
-      
+    }
+  }, [isAuthorized]);
+
+  useEffect(() => {
+    if (isAuthorized) {
       // Setup Supabase Realtime for targeted state updates (No polling)
       let subscription: any = null;
       if (supabase && businessId) {
@@ -574,7 +578,7 @@ function DashboardContent() {
         if (subscription && supabase) supabase.removeChannel(subscription);
       };
     }
-  }, [isAuthorized]);
+  }, [isAuthorized, businessId]);
 
   const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string, paymentMethod?: string, dueDate?: string) => {
     if (!businessId || !data) return;
@@ -1665,6 +1669,60 @@ function DashboardContent() {
     link.click();
     document.body.removeChild(link);
   };
+  const generateTimeSlots = () => {
+    const slots = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m of [0, 30]) {
+        slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+      }
+    }
+    return slots;
+  };
+
+  const isSlotOccupied = (slot: string) => {
+    if (!bookingTable || !bookingDate) return false;
+    
+    const todayStr = getLocalDateStr();
+    const [sh, sm] = slot.split(':').map(Number);
+    const slotMins = sh * 60 + sm;
+    const slotEndMins = slotMins + (Number(bookingDuration) || 60);
+
+    if (bookingDate === todayStr) {
+      const now = new Date();
+      const currentH = now.getHours();
+      const currentM = now.getMinutes();
+      if (sh < currentH || (sh === currentH && sm < currentM)) {
+        return true; 
+      }
+    }
+
+    const bookingsOnDate = data?.bookings?.filter((b: any) => b.booking_date === bookingDate && b.table_id === bookingTable && b.status === 'confirmed') || [];
+    
+    for (const b of bookingsOnDate) {
+      const [bh, bm] = b.start_time.split(':').map(Number);
+      const bStartMins = bh * 60 + bm;
+      const bEndMins = bStartMins + (b.duration_minutes || 60);
+      
+      if (slotMins < bEndMins && slotEndMins > bStartMins) {
+        return true; 
+      }
+    }
+
+    if (bookingDate === todayStr) {
+       const activeSession = data?.activeSessions?.find((s: any) => s.table_id === bookingTable && s.status === 'ACTIVE');
+       if (activeSession) {
+          const [ah, am] = (activeSession.start_time || `${new Date().getHours()}:${new Date().getMinutes()}`).split(':').map(Number);
+          const aStartMins = ah * 60 + am;
+          const aEndMins = aStartMins + 60; 
+          if (slotMins < aEndMins && slotEndMins > aStartMins) {
+             return true;
+          }
+       }
+    }
+
+    return false;
+  };
+
   const renderBookings = () => {
     const allBookings = data?.bookings || [];
     // Sort by date descending
@@ -1680,7 +1738,21 @@ function DashboardContent() {
             </div>
             <div className="flex items-center gap-4 flex-wrap">
               <button
-                onClick={() => setIsBookingModalOpen(true)}
+                onClick={() => {
+                  const now = new Date();
+                  let m = now.getMinutes();
+                  let h = now.getHours();
+                  if (m > 30) { m = 0; h = (h + 1) % 24; }
+                  else if (m > 0) { m = 30; }
+                  setBookingDate(getLocalDateStr());
+                  setBookingStartTime(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
+                  setBookingTable('');
+                  setBookingCustomer('');
+                  setBookingDuration('60');
+                  setBookingPlayers('1');
+                  setBookingError('');
+                  setIsBookingModalOpen(true);
+                }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white font-bold rounded-lg shadow-md hover:bg-accent/90 transition-all duration-200 text-sm border border-accent/20"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
@@ -2879,7 +2951,7 @@ function DashboardContent() {
               )}
             </div>
             
-            <div className="p-8 flex-1 flex flex-col justify-center">
+            <div className="p-8 flex-1 flex flex-col">
               {data?.whatsapp_config?.enabled ? (
                 <div className="bg-bg-primary/50 border border-border-theme rounded-xl p-6 flex flex-col items-center text-center h-full justify-center">
                   <div className="w-16 h-16 bg-[#25D366]/10 text-[#25D366] rounded-full flex items-center justify-center mb-4">
@@ -2902,7 +2974,7 @@ function DashboardContent() {
                   </button>
                 </div>
               ) : (
-                <form className="flex flex-col gap-5 h-full justify-center" onSubmit={async (e) => {
+                <form className="flex flex-col gap-5 h-full" onSubmit={async (e) => {
                   e.preventDefault();
                   setIsConnectingWa(true);
                   try {
@@ -2948,7 +3020,7 @@ function DashboardContent() {
               )}
             </div>
             
-            <div className="p-8 flex-1 flex flex-col justify-center">
+            <div className="p-8 flex-1 flex flex-col">
               {data?.sms_config?.enabled ? (
                 <div className="bg-bg-primary/50 border border-border-theme rounded-xl p-6 flex flex-col items-center text-center h-full justify-center">
                   <div className="w-16 h-16 bg-accent/10 text-accent rounded-full flex items-center justify-center mb-4">
@@ -2971,7 +3043,7 @@ function DashboardContent() {
                   </button>
                 </div>
               ) : (
-                <form className="flex flex-col gap-5 h-full justify-center" onSubmit={async (e) => {
+                <form className="flex flex-col gap-5 h-full" onSubmit={async (e) => {
                   e.preventDefault();
                   setIsConnectingSms(true);
                   try {
@@ -3803,34 +3875,85 @@ function DashboardContent() {
               <h2 className="text-2xl font-bold">New Manual Booking</h2>
               <p className="text-text-secondary mt-1 text-sm">Reserve a table directly from the admin command center.</p>
             </div>
-            <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-4">
+            <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-5">
               {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
-                <CustomSelect
-                  value={bookingTable}
-                  onChange={v => {
-                    setBookingTable(v);
-                    const allowed = getAvailableGameTypesForTable(v);
-                    if (allowed.length > 0) {
-                      setBookingGame(allowed[0]);
-                    }
-                  }}
-                  placeholder="-- Choose a table --"
-                  options={data?.tables?.map(t => ({ value: t.id, label: `${t.name} (${t.type || t.id})` })) || []}
-                  className="min-h-[44px]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) <span className="text-danger">*</span></label>
-                <div className="w-full px-4 py-3 bg-bg-primary/50 border border-border-theme rounded-lg text-sm text-text-secondary capitalize cursor-not-allowed">
-                  {bookingGame || 'Select a table first'}
+              
+              <div className="flex gap-4 w-full">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                  <CustomSelect
+                    value={bookingTable}
+                    onChange={v => {
+                      setBookingTable(v);
+                      const allowed = getAvailableGameTypesForTable(v);
+                      if (allowed.length > 0) setBookingGame(allowed[0]);
+                    }}
+                    placeholder="-- Choose a table --"
+                    options={data?.tables?.map((t: any) => ({ value: t.id, label: `${t.name} (${t.type || t.id})` })) || []}
+                    className="min-h-[44px]"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Date <span className="text-danger">*</span></label>
+                  <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary h-[44px]" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name (Optional)</label>
-                <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+
+              {bookingTable && (
+                <div>
+                  <div className="flex justify-between items-end mb-2">
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Select Time <span className="text-danger">*</span></label>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-accent/20 border border-accent/50 mr-1"></span>Available</span>
+                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-border-theme/50 mr-1"></span>Occupied</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                    {generateTimeSlots().map(slot => {
+                      const occupied = isSlotOccupied(slot);
+                      const isSelected = bookingStartTime === slot;
+                      const [h, m] = slot.split(':').map(Number);
+                      const ampm = h >= 12 ? 'PM' : 'AM';
+                      const h12 = h % 12 || 12;
+                      const displayTime = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          disabled={occupied}
+                          onClick={() => setBookingStartTime(slot)}
+                          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-bold border transition-all duration-200 ${isSelected ? 'bg-accent text-white border-accent shadow-md shadow-accent/20' : occupied ? 'bg-bg-primary/50 text-text-secondary border-border-theme/50 opacity-50 cursor-not-allowed' : 'bg-bg-surface text-text-primary border-border-theme hover:border-accent/50'}`}
+                        >
+                          {displayTime}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-4 w-full">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
+                  <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary h-[44px]" placeholder="Optional" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration <span className="text-danger">*</span></label>
+                  <CustomSelect 
+                    value={bookingDuration} 
+                    onChange={v => setBookingDuration(v)} 
+                    options={[
+                      {value: "30", label: "30 Mins"},
+                      {value: "60", label: "1 Hour"},
+                      {value: "90", label: "1.5 Hours"},
+                      {value: "120", label: "2 Hours"}
+                    ]}
+                    className="min-h-[44px]"
+                  />
+                </div>
               </div>
+
               {bookingGame === 'ps5' && (
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Number of Players <span className="text-danger">*</span></label>
@@ -3842,30 +3965,8 @@ function DashboardContent() {
                   />
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Booking Date <span className="text-danger">*</span></label>
-                <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time <span className="text-danger">*</span></label>
-                <TimePicker value={bookingStartTime} onChange={v => setBookingStartTime(v)} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Expected Duration <span className="text-danger">*</span></label>
-                <CustomSelect 
-                  value={bookingDuration} 
-                  onChange={v => setBookingDuration(v)} 
-                  options={[
-                    {value: "30", label: "30 Minutes"},
-                    {value: "60", label: "1 Hour (60 Mins)"},
-                    {value: "90", label: "1 Hour 30 Mins (90 Mins)"},
-                    {value: "120", label: "2 Hours (120 Mins)"},
-                    {value: "180", label: "3 Hours (180 Mins)"},
-                    {value: "240", label: "4 Hours (240 Mins)"}
-                  ]}
-                />
-              </div>
-              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-lg shadow-accent/20">
+              
+              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-2 bg-accent text-white font-bold py-3.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-lg shadow-accent/20">
                 {isCreatingBooking ? 'Saving Booking...' : 'Save Booking'}
               </button>
             </form>
