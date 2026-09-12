@@ -126,6 +126,7 @@ function DashboardContent() {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [isClosingManual, setIsClosingManual] = useState(false);
   const [manualCustomer, setManualCustomer] = useState('');
+  const [manualCustomerId, setManualCustomerId] = useState<string | null>(null);
   const [manualTable, setManualTable] = useState('');
   const [manualGame, setManualGame] = useState('pool');
   const [manualPlayers, setManualPlayers] = useState('1');
@@ -136,7 +137,11 @@ function DashboardContent() {
   const [qkhataSearch, setQkhataSearch] = useState('');
   const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
 
-  const getDisplayName = (rawName: string) => {
+  const getDisplayName = (rawName: string, memberId?: string) => {
+    if (memberId && memberships) {
+      const qkMember = memberships.find((m: any) => m.id === memberId);
+      if (qkMember) return qkMember.name;
+    }
     if (!rawName) return 'Guest';
     if (!data?.dbCustomers) return rawName;
     const member = data.dbCustomers.find((c: any) => c.phone === rawName || c.name.toLowerCase() === rawName.toLowerCase());
@@ -684,7 +689,7 @@ function DashboardContent() {
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id: manualTable, game_type: manualGame, num_players: Number(manualPlayers), customer_name: manualCustomer, business_id: businessId, notes: manualNotes })
+        body: JSON.stringify({ table_id: manualTable, game_type: manualGame, num_players: Number(manualPlayers), customer_name: manualCustomer, business_id: businessId, notes: manualNotes, member_id: manualCustomerId })
       });
       if (res.ok) {
         const result = await res.json();
@@ -706,6 +711,7 @@ function DashboardContent() {
           setIsClosingManual(false);
           setManualTable('');
           setManualCustomer('');
+          setManualCustomerId(null);
           setManualNotes('');
           setManualPlayers('1');
         }, 250);
@@ -855,7 +861,7 @@ function DashboardContent() {
                     <span className="px-2 py-0.5 rounded-md text-xs font-bold font-mono capitalize bg-bg-surface border border-border-theme text-primary">{gameDisplay}</span>
                   </div>
                   <p className="text-sm text-text-secondary mt-1">
-                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{getDisplayName(booking.customer_name) || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
+                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{getDisplayName(booking.customer_name, (booking as any).member_id) || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
                   </p>
                   {isOccupied && (
                     <p className="text-xs font-bold text-danger mt-2 flex items-center gap-1.5 bg-danger/10 px-2.5 py-1 rounded border border-danger/30 w-fit">
@@ -1594,7 +1600,7 @@ function DashboardContent() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold">{getDisplayName(booking.customer_name)}</p>
+                        <p className="text-sm font-bold">{getDisplayName(booking.customer_name, (booking as any).member_id)}</p>
                         {booking.source === 'whatsapp' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-1.5 py-0.5 rounded border border-[#25D366]/20 flex-shrink-0">WhatsApp AI</span>}
                         {booking.source === 'telegram' && <span className="text-[8px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-1.5 py-0.5 rounded border border-[#0088cc]/20 flex-shrink-0">Telegram AI</span>}
                       </div>
@@ -1790,7 +1796,7 @@ function DashboardContent() {
                     return (
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
                       <td className="p-4 md:p-5">
-                        <p className="text-base font-bold text-text-primary">{getDisplayName(booking.customer_name)}</p>
+                        <p className="text-base font-bold text-text-primary">{getDisplayName(booking.customer_name, (booking as any).member_id)}</p>
                         {booking.source === 'whatsapp' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-2 py-0.5 rounded-full border border-[#25D366]/20">WhatsApp AI</span>}
                         {booking.source === 'telegram' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-2 py-0.5 rounded-full border border-[#0088cc]/20">Telegram AI</span>}
                       </td>
@@ -2039,7 +2045,7 @@ function DashboardContent() {
                   return (
                     <tr key={session.id} className="border-b border-border-light/50 hover:bg-bg-surface transition-all duration-200">
                       <td className="p-4">
-                        <p className="text-sm font-bold text-text-primary">{getDisplayName(session.customer_name)}</p>
+                        <p className="text-sm font-bold text-text-primary">{getDisplayName(session.customer_name, session.member_id)}</p>
                       </td>
                       <td className="p-4">
                         <span className="px-2.5 py-1 border border-border-theme bg-bg-surface rounded-md text-xs font-mono font-bold text-text-secondary uppercase tracking-widest shadow-sm">
@@ -3309,7 +3315,7 @@ function DashboardContent() {
               <h3 className="text-xl font-bold flex items-center gap-3 text-danger">
                 End Session
               </h3>
-              <p className="text-sm text-text-secondary mt-1">Finalize bill for {getDisplayName(endSessionData.session.customer_name)}</p>
+              <p className="text-sm text-text-secondary mt-1">Finalize bill for {getDisplayName(endSessionData.session.customer_name, endSessionData.session.member_id)}</p>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
@@ -3436,7 +3442,7 @@ function DashboardContent() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                   <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Player</span>
-                  <span className="text-base font-bold">{getDisplayName(overdueSession.customer_name)}</span>
+                  <span className="text-base font-bold">{getDisplayName(overdueSession.customer_name, overdueSession.member_id)}</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                   <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Table</span>
@@ -3735,7 +3741,7 @@ function DashboardContent() {
                     QKhata
                   </button>
                 </div>
-                <input type="text" required value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+                <input type="text" required value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
 
                 {showQkhataPopover && (
                   <div className="absolute top-[80px] right-0 w-full sm:w-[340px] bg-bg-card border border-border-theme rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.8)] z-50 overflow-hidden flex flex-col max-h-[350px] animate-in slide-in-from-top-2 fade-in duration-200 ring-1 ring-accent/20">
@@ -3769,7 +3775,8 @@ function DashboardContent() {
                               key={member.id}
                               type="button"
                               onClick={() => {
-                                setManualCustomer(member.phone);
+                                setManualCustomer(member.name);
+                                setManualCustomerId(member.id);
                                 setSelectedQkhataMember(member);
                                 setShowQkhataPopover(false);
                                 setQkhataSearch('');
@@ -3850,7 +3857,7 @@ function DashboardContent() {
                       <span className="text-sm font-bold text-text-primary">{selectedQkhataMember.name} <span className="text-text-secondary font-mono text-xs font-normal">({selectedQkhataMember.phone})</span></span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setSelectedQkhataMember(null); setManualCustomer(''); }} className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
+                  <button type="button" onClick={() => { setSelectedQkhataMember(null); setManualCustomer(''); setManualCustomerId(null); }} className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                   </button>
                 </div>

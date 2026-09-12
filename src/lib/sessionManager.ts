@@ -44,7 +44,7 @@ export class ApiError extends Error {
 // In-memory locks to prevent race conditions during rapid simultaneous requests
 const activeTableLocks = new Set<string>();
 
-export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1) {
+export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1, member_id?: string) {
   const lockKey = `${businessId || 'global'}_${table_id}`;
   if (activeTableLocks.has(lockKey)) {
     throw new ApiError(409, 'Action in progress, please wait.');
@@ -123,6 +123,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
     num_players,
     locked_rate: lockedRate,
     locked_rate_name: lockedRateName,
+    member_id,
   };
 
   await sessionRepository.create(session, businessId);
