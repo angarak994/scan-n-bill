@@ -98,7 +98,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 function getMainMenuKeyboard(allActiveMembershipsCount: number = 0) {
   const keyboard = [
     [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
-    [{ text: '🧑 Member Session' }, { text: '📒 Member QKhata' }],
+    [{ text: '📒 Member QKhata' }],
     [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
     [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
   ];
@@ -447,19 +447,6 @@ Time: ${timeStr}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
-        if (replyText.includes('Search Member')) {
-          const searchTerm = text.trim();
-          const { data: members } = await supabase.from('memberships').select('*').eq('business_id', business.id).or(`name.ilike.%${searchTerm}%,mobile.ilike.%${searchTerm}%`).eq('status', 'Active').limit(5);
-          
-          if (!members || members.length === 0) {
-             await sendTelegramMessage(chatId, `❌ No active members found for "${searchTerm}".`, mainMenu);
-             return NextResponse.json({ ok: true });
-          }
-          
-          const memberButtons = members.map(m => [{ text: `👤 ${m.name} (${m.mobile})`, callback_data: `memsel_${m.id}` }]);
-          await sendTelegramMessage(chatId, `🔍 <b>Select Member</b>\n\nFound these members:`, { inline_keyboard: memberButtons });
-          return NextResponse.json({ ok: true });
-        }
 
         if (replyText.includes('Enter payment amount for')) {
           const amountStr = text.replace(/[^0-9.]/g, '');
@@ -505,13 +492,6 @@ Time: ${timeStr}`, mainMenu);
         }
       }
 
-      // Handle Main Menu Commands
-      if (text === '/member' || text === '🧑 Member Session') {
-        await sendTelegramMessage(chatId, `🔍 <b>Search Member</b>\n\nPlease reply to this message with the member's name or phone number:`, {
-          reply_markup: { force_reply: true, selective: true }
-        });
-        return NextResponse.json({ ok: true });
-      }
 
       if (text === '▶️ Start Session') {
         const tables = business.tables || [];
@@ -541,10 +521,26 @@ Time: ${timeStr}`, mainMenu);
           return NextResponse.json({ ok: true });
         }
         
+        const { data: customers } = await supabase.from('customers').select('id, name, phone').eq('business_id', business.id);
+
         for (const session of activeSessions) {
           const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-          const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString(); // Wait, let's write it cleaner below
+          const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString();
+          
+          let isMember = false;
+          let memberId = '';
+          const cName = session.customer_name?.trim().toLowerCase() || '';
+          if (customers) {
+             const match = customers.find(c => 
+               (c.name && c.name.trim().toLowerCase() === cName) || 
+               (c.phone && c.phone.trim() === cName)
+             );
+             if (match) {
+                 isMember = true;
+                 memberId = match.id;
+             }
+          }
           
           let billText = '₹0';
           let durationText = '0m';
@@ -565,6 +561,9 @@ Time: ${timeStr}`, mainMenu);
               { text: `🛑 Stop`, callback_data: `end_${session.id}` }
             ]
           ];
+          if (isMember) {
+             buttons[0].push({ text: `📒 QKhata`, callback_data: `qkhata_init_${session.id}_${memberId}` });
+          }
           await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
         }
       }
@@ -860,33 +859,6 @@ You can still access other businesses associated with your Telegram account.`, {
       const fallbackName = update.callback_query.from?.first_name || update.callback_query.from?.username || 'telegram_bot';
       const ownerName = getOwnerName(business, chatId, fallbackName);
 
-      if (callbackData.startsWith('memsel_')) {
-          const memberId = callbackData.replace('memsel_', '');
-          const { data: member } = await supabase.from('memberships').select('*').eq('id', memberId).single();
-          if (!member) {
-             await sendTelegramMessage(chatId, `❌ Member not found.`);
-             return NextResponse.json({ ok: true });
-          }
-          
-          const tables = business.tables || [];
-          const { data: activeSessions } = await supabase.from('sessions').select('table_id').eq('business_id', business.id).eq('status', 'ACTIVE');
-          const activeTableIds = (activeSessions || []).map(s => s.table_id);
-          const availableTables = tables.filter((t: any) => !activeTableIds.includes(t.id));
-          
-          if (availableTables.length === 0) {
-            await sendTelegramMessage(chatId, 'All tables are currently active.', mainMenu);
-            return NextResponse.json({ ok: true });
-          }
-
-          const tableButtons = availableTables.map((t: any) => ({ text: `🟢 ${t.id}`, callback_data: `memtab_${t.id}_${memberId}` }));
-          const buttons = chunkArray(tableButtons, 2);
-          if (messageId) {
-            await editTelegramMessageText(chatId, messageId, `▶️ Select an available table for <b>${member.name}</b>:`, { inline_keyboard: buttons });
-          } else {
-            await sendTelegramMessage(chatId, `▶️ Select an available table for <b>${member.name}</b>:`, { inline_keyboard: buttons });
-          }
-          return NextResponse.json({ ok: true });
-      }
 
       if (callbackData.startsWith('qkhatamem_')) {
           const customerId = callbackData.replace('qkhatamem_', '');
@@ -962,107 +934,6 @@ You can still access other businesses associated with your Telegram account.`, {
           return NextResponse.json({ ok: true });
       }
 
-      if (callbackData.startsWith('memtab_')) {
-          const parts = callbackData.replace('memtab_', '').split('_');
-          const tableId = parts[0];
-          const memberId = parts.slice(1).join('_');
-          
-          const { data: member } = await supabase.from('memberships').select('*').eq('id', memberId).single();
-          if (!member) return NextResponse.json({ ok: true });
-
-          const table = (business.tables || []).find((t: any) => t.id === tableId);
-          if (!table) return NextResponse.json({ ok: true });
-          
-          let gameTypes: string[] = [];
-          if (table && table.type) {
-              gameTypes = [table.type];
-          } else if (business.pricing_rules?.rules) {
-              gameTypes = Object.keys(business.pricing_rules.rules);
-          }
-
-          if (gameTypes.length === 0) {
-             await sendTelegramMessage(chatId, `❌ No game types configured.`);
-             return NextResponse.json({ ok: true });
-          }
-          const gameType = gameTypes[0]; 
-          
-          if (gameType.toLowerCase() === 'ps5') {
-            const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `memps5_${tableId}_${num}_${memberId}` }));
-            if (messageId) {
-              await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
-            } else {
-              await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
-            }
-          } else {
-             const buttons = [
-                 [{ text: '💸 Pay Now', callback_data: `memstart_${tableId}_${gameType}_1_${memberId}_cash` }],
-                 [{ text: '📒 QKhata', callback_data: `memstart_${tableId}_${gameType}_1_${memberId}_qkhata` }]
-             ];
-             const msg = `💳 <b>Select Payment Method for ${member.name}</b>\n\nTable: ${tableId}\nGame: ${gameType}`;
-             if (messageId) {
-               await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
-             } else {
-               await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
-             }
-          }
-          return NextResponse.json({ ok: true });
-      }
-      
-      if (callbackData.startsWith('memps5_')) {
-          const parts = callbackData.replace('memps5_', '').split('_');
-          const tableId = parts[0];
-          const numPlayers = parseInt(parts[1]);
-          const memberId = parts.slice(2).join('_');
-          
-          const { data: member } = await supabase.from('memberships').select('*').eq('id', memberId).single();
-          if (!member) return NextResponse.json({ ok: true });
-
-          const buttons = [
-              [{ text: '💸 Pay Now', callback_data: `memstart_${tableId}_ps5_${numPlayers}_${memberId}_cash` }],
-              [{ text: '📒 QKhata', callback_data: `memstart_${tableId}_ps5_${numPlayers}_${memberId}_qkhata` }]
-          ];
-          const msg = `💳 <b>Select Payment Method for ${member.name}</b>\n\nTable: ${tableId}\nGame: ps5\nPlayers: ${numPlayers}`;
-          if (messageId) {
-             await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
-          } else {
-             await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
-          }
-          return NextResponse.json({ ok: true });
-      }
-
-      if (callbackData.startsWith('memstart_')) {
-          const parts = callbackData.replace('memstart_', '').split('_');
-          const tableId = parts[0];
-          const gameType = parts[1];
-          const numPlayers = parseInt(parts[2]);
-          const memberId = parts[3];
-          const paymentMethod = parts[4];
-          
-          const { data: member } = await supabase.from('memberships').select('*').eq('id', memberId).single();
-          if (!member) return NextResponse.json({ ok: true });
-
-          try {
-             // Pass memberId to startSession
-             const session = await startSession(tableId, gameType as any, member.name, business.id, numPlayers, memberId);
-             
-             // Optionally record the QKhata intention in session_interventions or custom field
-             if (paymentMethod === 'qkhata') {
-                 // The actual billing amount will be recorded when the session ends
-                 await supabase.from('session_interventions').insert([{
-                    session_id: session.id,
-                    intervention_type: 'QKHATA_INTENDED',
-                    performed_by: 'Qbot'
-                 }]);
-             }
-             
-             const msg = `✅ <b>Session Started for Member</b>\n\nMember: ${member.name}\nTable: ${tableId}\nGame: ${gameType}\nPayment: ${paymentMethod === 'qkhata' ? '📒 QKhata' : '💸 Pay Now'}\nStarted At: ${formatTimeReadable(session.start_time)}`;
-             if (messageId) await editTelegramMessageText(chatId, messageId, msg);
-             else await sendTelegramMessage(chatId, msg, mainMenu);
-          } catch (error: any) {
-             await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, mainMenu);
-          }
-          return NextResponse.json({ ok: true });
-      }
 
       if (callbackData.startsWith('start_table_')) {
         const tableId = callbackData.replace('start_table_', '');
@@ -1220,16 +1091,9 @@ You can still access other businesses associated with your Telegram account.`, {
         msg += `<b>Billable Time:</b> ${billableDuration}\n<b>Current Bill:</b> ${billText}`;
         
         let buttons: any[] = [];
-        if (session.member_id) {
-            buttons.push([
-                { text: `💸 Stop & Cash`, callback_data: `endcash_${session.id}` },
-                { text: `📒 Stop & QKhata`, callback_data: `endqkhata_${session.id}` }
-            ]);
-        } else {
-            buttons.push([
-                { text: `🛑 Stop This Session`, callback_data: `end_${session.id}` }
-            ]);
-        }
+        buttons.push([
+            { text: `🛑 Stop This Session`, callback_data: `end_${session.id}` }
+        ]);
         buttons.push([{ text: `↩️ Back`, callback_data: `stop_menu_back` }]);
         
         if (messageId) {
@@ -1238,7 +1102,7 @@ You can still access other businesses associated with your Telegram account.`, {
           await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
         }
       }
-      else if (callbackData.startsWith('pause_') || callbackData.startsWith('resume_') || callbackData.startsWith('end_') || callbackData.startsWith('endcash_') || callbackData.startsWith('endqkhata_') || callbackData.startsWith('confirm_')) {
+      else if (callbackData.startsWith('pause_') || callbackData.startsWith('resume_') || callbackData.startsWith('end_') || callbackData.startsWith('confirm_')) {
         const actionPrefix = callbackData.split('_')[0];
         const sessionId = callbackData.substring(actionPrefix.length + 1);
         
@@ -1246,8 +1110,6 @@ You can still access other businesses associated with your Telegram account.`, {
           'pause': 'pause',
           'resume': 'resume',
           'end': 'force_end',
-          'endcash': 'force_end',
-          'endqkhata': 'force_end',
           'confirm': 'confirm_playing'
         };
         const action = actionMap[actionPrefix];
@@ -1277,8 +1139,6 @@ You can still access other businesses associated with your Telegram account.`, {
               action,
               session_id: sessionId,
               business_id: business.id,
-              amount_recovered: actionPrefix === 'endqkhata' ? 0 : undefined,
-              payment_method: actionPrefix === 'endqkhata' ? 'QKhata' : 'Cash',
               performed_by: 'Qbot'
             });
             
@@ -1369,7 +1229,7 @@ You can still access other businesses associated with your Telegram account.`, {
                 const status = isPaused ? '⏸ Paused' : '▶️ Active';
                 const msg = `<b>${updatedSession.table_id}</b>\nPlayer: ${updatedSession.customer_name}\nGame: ${updatedSession.game_type}\nStatus: ${status}\nDuration: ${durationText}\nCurrent Bill: ${billText}`;
                 
-                const buttons = [
+                const buttons: any[] = [
                   [
                     isPaused 
                       ? { text: `▶️ Resume`, callback_data: `resume_${updatedSession.id}` }
@@ -1377,6 +1237,19 @@ You can still access other businesses associated with your Telegram account.`, {
                     { text: `🛑 Stop`, callback_data: `end_${updatedSession.id}` }
                   ]
                 ];
+                
+                // Add QKhata back if it was a member
+                const { data: customers } = await supabase.from('customers').select('id, name, phone').eq('business_id', business.id);
+                const cName = updatedSession.customer_name?.trim().toLowerCase() || '';
+                if (customers) {
+                   const match = customers.find(c => 
+                     (c.name && c.name.trim().toLowerCase() === cName) || 
+                     (c.phone && c.phone.trim() === cName)
+                   );
+                   if (match) {
+                       buttons[0].push({ text: `📒 QKhata`, callback_data: `qkhata_init_${updatedSession.id}_${match.id}` });
+                   }
+                }
                 
                 if (messageId) {
                   await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
@@ -1402,6 +1275,95 @@ You can still access other businesses associated with your Telegram account.`, {
              await sendTelegramMessage(chatId, `❌ Failed: ${e.message || 'Error executing action'}`, mainMenu);
           }
         }
+      }
+
+      else if (callbackData.startsWith('qkhata_init_')) {
+          const parts = callbackData.replace('qkhata_init_', '').split('_');
+          const sessionId = parts[0];
+          const memberId = parts.slice(1).join('_');
+          
+          const session = await sessionRepository.findById(sessionId, business.id);
+          if (!session || session.status !== 'ACTIVE') {
+              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Session not found or already completed.`);
+              else await sendTelegramMessage(chatId, `❌ Session not found or already completed.`);
+              return NextResponse.json({ ok: true });
+          }
+          
+          const { data: member } = await supabase.from('customers').select('*').eq('id', memberId).single();
+          if (!member) {
+              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ QKhata is unavailable because this customer is not a registered member.`);
+              else await sendTelegramMessage(chatId, `❌ QKhata is unavailable because this customer is not a registered member.`);
+              return NextResponse.json({ ok: true });
+          }
+          
+          const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
+          const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+          const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString();
+          
+          let billText = '0';
+          try {
+             const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+             billText = `${Math.round(res.cost)}`;
+          } catch(e){}
+          
+          const buttons = [
+              [
+                  { text: `✅ Confirm QKhata`, callback_data: `qkhata_confirm_${session.id}_${memberId}` },
+                  { text: `❌ Cancel`, callback_data: `qkhata_back` }
+              ]
+          ];
+          
+          const msg = `Are you sure you want to add ₹${billText} to QKhata for ${member.name}?`;
+          
+          if (messageId) {
+             await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
+          } else {
+             await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+          }
+      }
+
+      else if (callbackData.startsWith('qkhata_confirm_')) {
+          const parts = callbackData.replace('qkhata_confirm_', '').split('_');
+          const sessionId = parts[0];
+          const memberId = parts.slice(1).join('_');
+          
+          const session = await sessionRepository.findById(sessionId, business.id);
+          if (!session || session.status !== 'ACTIVE') {
+              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Session not found or already completed.`);
+              return NextResponse.json({ ok: true });
+          }
+          
+          const { data: member } = await supabase.from('customers').select('*').eq('id', memberId).single();
+          if (!member) return NextResponse.json({ ok: true });
+
+          try {
+             // Use handleSessionIntervention with payment_method = 'QKhata' which calculates correctly and updates balance
+             const { dbUpdates } = await handleSessionIntervention({
+                action: 'force_end',
+                session_id: sessionId,
+                business_id: business.id,
+                amount_recovered: 0,
+                payment_method: 'QKhata',
+                performed_by: 'Qbot'
+             });
+             
+             // Fetch the freshly updated customer balance
+             const { data: updatedMember } = await supabase.from('customers').select('*').eq('id', memberId).single();
+             const newTotal = updatedMember ? Math.round(updatedMember.outstanding_balance) : 'Unknown';
+             
+             const addedAmount = dbUpdates && (dbUpdates as any).cost ? Math.round((dbUpdates as any).cost) : 'Unknown';
+             
+             const msg = `✅ <b>QKhata Added</b>\n\nMember: ${member.name}\nSession: #${session.id.split('-')[0].toUpperCase()}\nOutstanding Added: ₹${addedAmount}\nTotal Outstanding: ₹${newTotal}`;
+             
+             if (messageId) {
+                await editTelegramMessageText(chatId, messageId, msg);
+             } else {
+                await sendTelegramMessage(chatId, msg, mainMenu);
+             }
+          } catch(e: any) {
+             if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Failed to confirm QKhata: ${e.message}`);
+             else await sendTelegramMessage(chatId, `❌ Failed to confirm QKhata: ${e.message}`, mainMenu);
+          }
       }
 
       else if (callbackData === 'bk_view_today') {
