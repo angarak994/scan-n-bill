@@ -291,8 +291,36 @@ export async function endSession(table_id: string, businessId?: string, source: 
             dueDate: dueDate,
             source: finalSource
         });
+        
+        // --- WhatsApp Notification for Registered Members ---
+        if ((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer) {
+            const { data: customer } = await supabase
+              .from('customers')
+              .select('phone, outstanding_balance')
+              .eq('business_id', businessId)
+              .or(`name.ilike.${session.customer_name},phone.eq.${session.customer_name}`)
+              .limit(1)
+              .single();
+              
+            if (customer && customer.phone) {
+               const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
+               const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
+               
+               const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
+               if (cleanPhone.length >= 10) {
+                  const { sendWhatsAppText } = require('./whatsapp');
+                  let overrideToken;
+                  let overridePhoneId;
+                  if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
+                      overrideToken = business.whatsapp_config.token;
+                      overridePhoneId = business.whatsapp_config.phoneId;
+                  }
+                  await sendWhatsAppText(cleanPhone, msg, false, overrideToken, overridePhoneId);
+               }
+            }
+        }
     } catch (e) {
-        console.error("QKhata/Payment Service Error", e);
+        console.error("QKhata/Payment Service / WhatsApp Error", e);
     }
     }).catch(e => console.error(e));
   }

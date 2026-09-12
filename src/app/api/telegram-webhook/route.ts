@@ -490,8 +490,43 @@ Time: ${timeStr}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
+        
+        if (replyText.includes('Enter charge amount for')) {
+            const parts = text.trim().split(' ');
+            const amountStr = parts[0].replace(/[^0-9.]/g, '');
+            const amount = parseFloat(amountStr);
+            
+            if (isNaN(amount) || amount <= 0) {
+                await sendTelegramMessage(chatId, `❌ Invalid amount. Transaction cancelled.`, mainMenu);
+                return NextResponse.json({ ok: true });
+            }
+            
+            const reason = parts.slice(1).join(' ').trim() || 'Manual Charge';
+            const reasonB64 = Buffer.from(reason).toString('base64');
+            
+            const lines = replyText.split('\n');
+            const idLine = lines.find((l: string) => l.startsWith('ID:'));
+            if (!idLine) return NextResponse.json({ ok: true });
+            
+            const customerId = idLine.replace('ID: addcharge_', '').trim();
+            
+            const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+            if (!customer) {
+                await sendTelegramMessage(chatId, `❌ Member not found.`, mainMenu);
+                return NextResponse.json({ ok: true });
+            }
+            
+            const msg = `Please confirm:\n\nMember: <b>${customer.name}</b>\nAmount to Add: <b>₹${amount}</b>\nReason: <b>${reason}</b>\nCurrent Outstanding: <b>₹${Math.round(customer.outstanding_balance)}</b>\nNew Outstanding: <b>₹${Math.round(customer.outstanding_balance) + amount}</b>`;
+            
+            const buttons = [
+                [{ text: `✅ Confirm Charge`, callback_data: `qkhata_addcharge_confirm_${customer.id}_${amount}_${reasonB64}` }],
+                [{ text: `❌ Cancel`, callback_data: `qkhata_back` }]
+            ];
+            
+            await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+            return NextResponse.json({ ok: true });
+        }
       }
-
 
       if (text === '▶️ Start Session') {
         const tables = business.tables || [];
@@ -885,7 +920,10 @@ You can still access other businesses associated with your Telegram account.`, {
           }
           
           const buttons = [
-             [{ text: `💰 Collect Payment`, callback_data: `qkhatacollect_${customer.id}` }],
+             [
+                 { text: `💰 Collect Payment`, callback_data: `qkhatacollect_${customer.id}` },
+                 { text: `➕ Add Charge`, callback_data: `qkhata_addcharge_init_${customer.id}` }
+             ],
              [{ text: `↩️ Back`, callback_data: `qkhata_back` }]
           ];
           
@@ -899,26 +937,31 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData === 'qkhata_back') {
         const { data: customers } = await supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
+        
+        let msg = `📒 <b>Member QKhata Collections</b>\n\n`;
+        let memberButtons: any[] = [];
+        
         if (!customers || customers.length === 0) {
-           if (messageId) await editTelegramMessageText(chatId, messageId, `🎉 No outstanding QKhata balances found!`);
-           return NextResponse.json({ ok: true });
+           msg += `🎉 No outstanding QKhata balances found!\n\n`;
+        } else {
+           const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstanding_balance), 0);
+           msg += `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\n`;
+           msg += `Members Pending: <b>${customers.length}</b>\n\n`;
+           
+           const topCustomers = customers.slice(0, 15);
+           memberButtons = topCustomers.map(c => [{
+               text: `👤 ${c.name} — ₹${Math.round(c.outstanding_balance)}`,
+               callback_data: `qkhatamem_${c.id}`
+           }]);
+           msg += `Select a member to view details or collect payment:\n`;
         }
         
-        const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstanding_balance), 0);
-        let msg = `📒 <b>Member QKhata Collections</b>\n\n`;
-        msg += `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\n`;
-        msg += `Members Pending: <b>${customers.length}</b>\n\n`;
-        
-        const topCustomers = customers.slice(0, 15);
-        const memberButtons = topCustomers.map(c => [{
-            text: `👤 ${c.name} — ₹${Math.round(c.outstanding_balance)}`,
-            callback_data: `qkhatamem_${c.id}`
-        }]);
+        memberButtons.push([{ text: `➕ Add Manual Charge`, callback_data: `qkhata_addcharge_menu` }]);
         
         if (messageId) {
-           await editTelegramMessageText(chatId, messageId, msg + `Select a member to view details or collect payment:`, { inline_keyboard: memberButtons });
+           await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: memberButtons });
         } else {
-           await sendTelegramMessage(chatId, msg + `Select a member to view details or collect payment:`, { inline_keyboard: memberButtons });
+           await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
         }
         return NextResponse.json({ ok: true });
       }
@@ -934,6 +977,81 @@ You can still access other businesses associated with your Telegram account.`, {
           return NextResponse.json({ ok: true });
       }
 
+      if (callbackData === 'qkhata_addcharge_menu') {
+          const { data: customers } = await supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', business.id).order('created_at', { ascending: false }).limit(20);
+          
+          if (!customers || customers.length === 0) {
+             if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No registered members found.`);
+             else await sendTelegramMessage(chatId, `❌ No registered members found.`);
+             return NextResponse.json({ ok: true });
+          }
+          
+          let msg = `➕ <b>Add Manual Charge</b>\n\nSelect a member to add a charge to:\n`;
+          
+          const memberButtons = customers.map(c => [{
+              text: `👤 ${c.name} — Bal: ₹${Math.round(c.outstanding_balance)}`,
+              callback_data: `qkhata_addcharge_init_${c.id}`
+          }]);
+          
+          memberButtons.push([{ text: `↩️ Back`, callback_data: `qkhata_back` }]);
+          
+          if (messageId) {
+             await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: memberButtons });
+          } else {
+             await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
+          }
+          return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('qkhata_addcharge_init_')) {
+          const customerId = callbackData.replace('qkhata_addcharge_init_', '');
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          
+          if (!customer) return NextResponse.json({ ok: true });
+          
+          const msg = `💰 <b>Enter charge amount for ${customer.name}</b>\n\nID: addcharge_${customer.id}\n\n(Reply with Amount and Reason, e.g. "500 Food" or just "500")`;
+          await sendTelegramMessage(chatId, msg, { force_reply: true });
+          return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('qkhata_addcharge_confirm_')) {
+          const parts = callbackData.replace('qkhata_addcharge_confirm_', '').split('_');
+          const customerId = parts[0];
+          const amount = parseFloat(parts[1]);
+          const reasonB64 = parts[2];
+          
+          const reason = reasonB64 && reasonB64 !== 'none' ? Buffer.from(reasonB64, 'base64').toString('utf-8') : 'Manual Charge';
+          
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          if (!customer) return NextResponse.json({ ok: true });
+          
+          try {
+             // We update balance safely by fetching latest inside paymentService.
+             const { createLedgerEntryAndPayment } = require('../../../lib/services/paymentService');
+             
+             await createLedgerEntryAndPayment({
+                businessId: business.id,
+                customerName: customer.name, 
+                totalBilled: amount,
+                amountPaid: 0,
+                paymentMethod: 'QKhata',
+                paymentStatus: 'Pending',
+                source: `Telegram Bot - ${reason}`
+             });
+             
+             const { data: updatedCustomer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+             const newTotal = updatedCustomer ? Math.round(updatedCustomer.outstanding_balance) : (Math.round(customer.outstanding_balance) + amount);
+             
+             const msg = `✅ <b>QKhata Added Successfully</b>\n\nMember: ${customer.name}\nAdded: ₹${amount}\nReason: ${reason}\nPrevious Outstanding: ₹${Math.round(customer.outstanding_balance)}\nNew Outstanding: ₹${newTotal}`;
+             
+             if (messageId) await editTelegramMessageText(chatId, messageId, msg);
+             else await sendTelegramMessage(chatId, msg, mainMenu);
+          } catch(e: any) {
+             if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Failed to add charge: ${e.message}`);
+             else await sendTelegramMessage(chatId, `❌ Failed to add charge: ${e.message}`, mainMenu);
+          }
+          return NextResponse.json({ ok: true });
+      }
 
       if (callbackData.startsWith('start_table_')) {
         const tableId = callbackData.replace('start_table_', '');
