@@ -55,7 +55,35 @@ export async function GET(request: Request) {
     const targetDateStr = startDate; // Legacy variable for today Start
     const todayStr = startDate === endDate ? toReadableDate(new Date(startDate)) : `${toReadableDate(new Date(startDate))} - ${toReadableDate(new Date(endDate))}`;
 
-    const sessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
+    const localTodayStart = new Date();
+    localTodayStart.setHours(0, 0, 0, 0);
+    const startOfDayUTC = localTodayStart.toISOString();
+
+    const [
+      sessions,
+      { data: interventions },
+      { data: bookings },
+      { data: activePromotions },
+      { data: dbCustomers }
+    ] = await Promise.all([
+      sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
+      supabase
+        .from('session_interventions')
+        .select('amount_recovered, intervention_type, sessions!inner(business_id)')
+        .eq('sessions.business_id', businessId)
+        .eq('intervention_type', 'force_close')
+        .gte('created_at', startOfDayUTC),
+      supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate),
+      supabase
+        .from('promotions')
+        .select('*')
+        .eq('business_id', businessId)
+        .eq('status', 'Active'),
+      supabase
+        .from('customers')
+        .select('id, name, phone, outstanding_balance')
+        .eq('business_id', businessId)
+    ]);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
     
@@ -76,35 +104,8 @@ export async function GET(request: Request) {
     const dailyRevenue = completedSessions.reduce((acc, session) => acc + (session.cost || 0), 0);
     const pricingRules = business.pricing_rules;
 
-    const todayStart = new Date();
-    todayStart.setHours(0,0,0,0);
-
-    const localTodayStart = new Date();
-    localTodayStart.setHours(0, 0, 0, 0);
-    const startOfDayUTC = localTodayStart.toISOString();
-
-    const { data: interventions } = await supabase
-      .from('session_interventions')
-      .select('amount_recovered, intervention_type, sessions!inner(business_id)')
-      .eq('sessions.business_id', businessId)
-      .eq('intervention_type', 'force_close')
-      .gte('created_at', startOfDayUTC);
-
     const manualClosuresToday = interventions?.length || 0;
-    const { data: bookings } = await supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate);
-
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
-
-    const { data: activePromotions } = await supabase
-      .from('promotions')
-      .select('*')
-      .eq('business_id', businessId)
-      .eq('status', 'Active');
-
-    const { data: dbCustomers } = await supabase
-      .from('customers')
-      .select('id, name, phone, outstanding_balance')
-      .eq('business_id', businessId);
 
     return NextResponse.json({
       activeSessions,

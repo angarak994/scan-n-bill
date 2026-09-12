@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { calculateCost, getCurrentRate } from '../../lib/billing';
+import { supabase } from '@/lib/supabaseClient';
 
 function formatElapsed(totalSeconds: number) {
   const h = Math.floor(totalSeconds / 3600);
@@ -53,7 +54,7 @@ function LiveTimer({ session }: { session: any }) {
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session, notifiedOneHour]);
 
   return (
     <>
@@ -220,14 +221,28 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     } catch {
       // Don't override with error on intermittent network failures to avoid flickering the UI for active users
     }
-  }, [table_id, game_type, business_id]);
+  }, [table_id, game_type, business_id, billModalData]);
 
   useEffect(() => {
-    const pollInterval = setInterval(() => {
-      fetchTableState();
-    }, 5000);
-    return () => clearInterval(pollInterval);
-  }, [fetchTableState]);
+    // Initial fetch (deferred to avoid synchronous setState lint warning)
+    setTimeout(() => fetchTableState(), 0);
+
+    // Subscribe to realtime updates for this specific table to replace heavy interval polling
+    const channel = supabase.channel(`session_updates_${table_id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'sessions', 
+        filter: `table_id=eq.${table_id}` 
+      }, () => {
+        fetchTableState();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchTableState, table_id]);
 
 
 

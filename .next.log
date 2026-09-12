@@ -1,0 +1,490 @@
+
+> temp-app@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.0.0.2:3000
+- Environments: .env.local
+✓ Ready in 1062ms
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/angaraktate/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/angaraktate/Downloads/QR-based-billing/package-lock.json
+
+
+○ Compiling /api/start-session ...
+ POST /api/start-session 500 in 16.9s (next.js: 15.3s, application-code: 1605ms)
+✓ Finished filesystem cache database compaction in 12.0s
+ POST /api/start-session 500 in 3.0s (next.js: 2.1s, application-code: 902ms)
+ GET / 200 in 2.9s (next.js: 670ms, application-code: 2.2s)
+ GET /login 200 in 561ms (next.js: 377ms, application-code: 184ms)
+ POST /api/auth/login 200 in 1606ms (next.js: 251ms, application-code: 1355ms)
+ GET /dashboard?b=df48af40-af67-43da-96de-6c83de72bf21 200 in 609ms (next.js: 76ms, proxy.ts: 140ms, application-code: 393ms)
+ GET /api/dashboard-data?b=df48af40-af67-43da-96de-6c83de72bf21&startDate=2026-09-12&endDate=2026-09-12 200 in 2.6s (next.js: 2.3s, application-code: 336ms)
+ GET /api/notifications?b=df48af40-af67-43da-96de-6c83de72bf21 200 in 465ms (next.js: 238ms, application-code: 227ms)
+ GET /api/notifications?b=df48af40-af67-43da-96de-6c83de72bf21 200 in 68ms (next.js: 4ms, application-code: 64ms)
+ GET /api/qpulse 200 in 572ms (next.js: 348ms, application-code: 224ms)
+ GET /api/qpulse 200 in 236ms (next.js: 5ms, application-code: 232ms)
+ GET /api/dashboard-data?b=df48af40-af67-43da-96de-6c83de72bf21&startDate=2026-09-11&endDate=2026-09-11 200 in 133ms (next.js: 12ms, application-code: 121ms)
+ GET /api/dashboard-data?b=df48af40-af67-43da-96de-6c83de72bf21&startDate=2026-09-05&endDate=2026-09-12 200 in 108ms (next.js: 9ms, application-code: 98ms)
+ GET /api/dashboard-data?b=df48af40-af67-43da-96de-6c83de72bf21&startDate=2026-09-01&endDate=2026-09-12 200 in 147ms (next.js: 12ms, application-code: 136ms)
+ GET /api/dashboard-data?b=df48af40-af67-43da-96de-6c83de72bf21&startDate=2026-09-12&endDate=2026-09-12 200 in 92ms (next.js: 4ms, application-code: 87ms)
+ GET /api/qpulse 200 in 213ms (next.js: 15ms, application-code: 198ms)
+ GET /api/qpulse 200 in 183ms (next.js: 3ms, application-code: 180ms)
+ POST /api/qpulse 200 in 151ms (next.js: 5ms, application-code: 146ms)
+ GET /api/memberships 200 in 244ms (next.js: 161ms, application-code: 83ms)
+ POST /api/start-session 201 in 468ms (next.js: 161ms, application-code: 307ms)
+[WARN] Google Sheets API failed, retrying (1/3)...
+[WARN] Google Sheets API failed, retrying (2/3)...
+[CRITICAL] Failed to append row to Active Sessions after 3 attempts: Error: Unable to parse range: Active Sessions!A1
+    at async appendRow (src/lib/googleSheets.ts:35:7)
+    at async logSessionStartToSheet (src/lib/googleSheets.ts:70:3)
+    at async (src/app/api/start-session/route.ts:41:9)
+  33 |     try {
+  34 |       const sheets = await getGoogleSheetsClient();
+> 35 |       await sheets.spreadsheets.values.append({
+     |       ^
+  36 |         spreadsheetId,
+  37 |         range: `${sheetName}!A1`,
+  38 |         valueInputOption: 'USER_ENTERED', {
+  config: {
+    url: URL {
+      href: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append?valueInputOption=USER_ENTERED',
+      origin: 'https://sheets.googleapis.com',
+      protocol: 'https:',
+      username: '',
+      password: '',
+      host: 'sheets.googleapis.com',
+      hostname: 'sheets.googleapis.com',
+      port: '',
+      pathname: '/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append',
+      search: '?valueInputOption=USER_ENTERED',
+      searchParams: URLSearchParams { 'valueInputOption' => 'USER_ENTERED' },
+      hash: ''
+    },
+    method: 'POST',
+    apiVersion: '',
+    userAgentDirectives: [ [Object] ],
+    paramsSerializer: [Function (anonymous)],
+    data: { values: [Array] },
+    headers: Headers {
+      'accept-encoding': 'gzip',
+      authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+      'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+      'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+      'content-type': 'application/json'
+    },
+    params: { valueInputOption: 'USER_ENTERED' },
+    validateStatus: [Function (anonymous)],
+    retry: true,
+    body: '{"values":[["29f9c865-28d1-4896-a209-cce8d80312d4",null,"Angarak","S1","2026-09-12T12:36:06.488Z","ACTIVE"]]}',
+    responseType: 'unknown',
+    errorRedactor: [Function: defaultErrorRedactor],
+    duplex: 'half',
+    retryConfig: {
+      currentRetryAttempt: 0,
+      retry: 3,
+      httpMethodsToRetry: [Array],
+      noResponseRetries: 2,
+      retryDelayMultiplier: 2,
+      timeOfFirstRequest: 1789216571818,
+      totalTimeout: 9007199254740991,
+      maxRetryDelay: 9007199254740991,
+      statusCodesToRetry: [Array]
+    }
+  },
+  response: Response {
+    size: 0,
+    data: { error: [Object] },
+    config: {
+      url: URL {},
+      method: 'POST',
+      apiVersion: '',
+      userAgentDirectives: [Array],
+      paramsSerializer: [Function (anonymous)],
+      data: [Object],
+      headers: Headers {
+        'accept-encoding': 'gzip',
+        authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+        'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+        'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+        'content-type': 'application/json'
+      },
+      params: [Object],
+      validateStatus: [Function (anonymous)],
+      retry: true,
+      body: '{"values":[["29f9c865-28d1-4896-a209-cce8d80312d4",null,"Angarak","S1","2026-09-12T12:36:06.488Z","ACTIVE"]]}',
+      responseType: 'unknown',
+      errorRedactor: [Function: defaultErrorRedactor],
+      duplex: 'half'
+    },
+    Symbol(Body internals): {
+      body: [Gunzip],
+      stream: [Gunzip],
+      boundary: null,
+      disturbed: true,
+      error: null
+    },
+    Symbol(Response internals): {
+      type: 'default',
+      url: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append?valueInputOption=USER_ENTERED',
+      status: 400,
+      statusText: 'Bad Request',
+      headers: [Object],
+      counter: 0,
+      highWaterMark: 16384
+    }
+  },
+  code: 400,
+  status: 400,
+  error: undefined,
+  [cause]: {
+    message: 'Unable to parse range: Active Sessions!A1',
+    code: 400,
+    status: 'INVALID_ARGUMENT',
+    errors: [ [Object] ]
+  }
+}
+[WARN] Google Sheets API failed, retrying (1/3)...
+[WARN] Google Sheets API failed, retrying (2/3)...
+[CRITICAL] Failed to append row to Activity Logs after 3 attempts: Error: Unable to parse range: Activity Logs!A1
+    at async appendRow (src/lib/googleSheets.ts:35:7)
+    at async logActivityToSheet (src/lib/googleSheets.ts:58:3)
+    at async logSessionStartToSheet (src/lib/googleSheets.ts:79:3)
+    at async (src/app/api/start-session/route.ts:41:9)
+  33 |     try {
+  34 |       const sheets = await getGoogleSheetsClient();
+> 35 |       await sheets.spreadsheets.values.append({
+     |       ^
+  36 |         spreadsheetId,
+  37 |         range: `${sheetName}!A1`,
+  38 |         valueInputOption: 'USER_ENTERED', {
+  config: {
+    url: URL {
+      href: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append?valueInputOption=USER_ENTERED',
+      origin: 'https://sheets.googleapis.com',
+      protocol: 'https:',
+      username: '',
+      password: '',
+      host: 'sheets.googleapis.com',
+      hostname: 'sheets.googleapis.com',
+      port: '',
+      pathname: '/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append',
+      search: '?valueInputOption=USER_ENTERED',
+      searchParams: URLSearchParams { 'valueInputOption' => 'USER_ENTERED' },
+      hash: ''
+    },
+    method: 'POST',
+    apiVersion: '',
+    userAgentDirectives: [ [Object] ],
+    paramsSerializer: [Function (anonymous)],
+    data: { values: [Array] },
+    headers: Headers {
+      'accept-encoding': 'gzip',
+      authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+      'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+      'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+      'content-type': 'application/json'
+    },
+    params: { valueInputOption: 'USER_ENTERED' },
+    validateStatus: [Function (anonymous)],
+    retry: true,
+    body: '{"values":[["2026-09-12T12:36:12.055Z","START_SESSION","Club Owner","S1","29f9c865-28d1-4896-a209-cce8d80312d4","Session started for Angarak"]]}',
+    responseType: 'unknown',
+    errorRedactor: [Function: defaultErrorRedactor],
+    duplex: 'half',
+    retryConfig: {
+      currentRetryAttempt: 0,
+      retry: 3,
+      httpMethodsToRetry: [Array],
+      noResponseRetries: 2,
+      retryDelayMultiplier: 2,
+      timeOfFirstRequest: 1789216576602,
+      totalTimeout: 9007199254740991,
+      maxRetryDelay: 9007199254740991,
+      statusCodesToRetry: [Array]
+    }
+  },
+  response: Response {
+    size: 0,
+    data: { error: [Object] },
+    config: {
+      url: URL {},
+      method: 'POST',
+      apiVersion: '',
+      userAgentDirectives: [Array],
+      paramsSerializer: [Function (anonymous)],
+      data: [Object],
+      headers: Headers {
+        'accept-encoding': 'gzip',
+        authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+        'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+        'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+        'content-type': 'application/json'
+      },
+      params: [Object],
+      validateStatus: [Function (anonymous)],
+      retry: true,
+      body: '{"values":[["2026-09-12T12:36:12.055Z","START_SESSION","Club Owner","S1","29f9c865-28d1-4896-a209-cce8d80312d4","Session started for Angarak"]]}',
+      responseType: 'unknown',
+      errorRedactor: [Function: defaultErrorRedactor],
+      duplex: 'half'
+    },
+    Symbol(Body internals): {
+      body: [Gunzip],
+      stream: [Gunzip],
+      boundary: null,
+      disturbed: true,
+      error: null
+    },
+    Symbol(Response internals): {
+      type: 'default',
+      url: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append?valueInputOption=USER_ENTERED',
+      status: 400,
+      statusText: 'Bad Request',
+      headers: [Object],
+      counter: 0,
+      highWaterMark: 16384
+    }
+  },
+  code: 400,
+  status: 400,
+  error: undefined,
+  [cause]: {
+    message: 'Unable to parse range: Activity Logs!A1',
+    code: 400,
+    status: 'INVALID_ARGUMENT',
+    errors: [ [Object] ]
+  }
+}
+ POST /api/start-session 201 in 273ms (next.js: 23ms, application-code: 250ms)
+[WARN] Google Sheets API failed, retrying (1/3)...
+[WARN] Google Sheets API failed, retrying (2/3)...
+[CRITICAL] Failed to append row to Active Sessions after 3 attempts: Error: Unable to parse range: Active Sessions!A1
+    at async appendRow (src/lib/googleSheets.ts:35:7)
+    at async logSessionStartToSheet (src/lib/googleSheets.ts:70:3)
+    at async (src/app/api/start-session/route.ts:41:9)
+  33 |     try {
+  34 |       const sheets = await getGoogleSheetsClient();
+> 35 |       await sheets.spreadsheets.values.append({
+     |       ^
+  36 |         spreadsheetId,
+  37 |         range: `${sheetName}!A1`,
+  38 |         valueInputOption: 'USER_ENTERED', {
+  config: {
+    url: URL {
+      href: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append?valueInputOption=USER_ENTERED',
+      origin: 'https://sheets.googleapis.com',
+      protocol: 'https:',
+      username: '',
+      password: '',
+      host: 'sheets.googleapis.com',
+      hostname: 'sheets.googleapis.com',
+      port: '',
+      pathname: '/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append',
+      search: '?valueInputOption=USER_ENTERED',
+      searchParams: URLSearchParams { 'valueInputOption' => 'USER_ENTERED' },
+      hash: ''
+    },
+    method: 'POST',
+    apiVersion: '',
+    userAgentDirectives: [ [Object] ],
+    paramsSerializer: [Function (anonymous)],
+    data: { values: [Array] },
+    headers: Headers {
+      'accept-encoding': 'gzip',
+      authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+      'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+      'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+      'content-type': 'application/json'
+    },
+    params: { valueInputOption: 'USER_ENTERED' },
+    validateStatus: [Function (anonymous)],
+    retry: true,
+    body: '{"values":[["83284d7f-a3fa-4a50-b948-54b570a5465c",null,"indraheet","P2","2026-09-12T12:36:36.735Z","ACTIVE"]]}',
+    responseType: 'unknown',
+    errorRedactor: [Function: defaultErrorRedactor],
+    duplex: 'half',
+    retryConfig: {
+      currentRetryAttempt: 0,
+      retry: 3,
+      httpMethodsToRetry: [Array],
+      noResponseRetries: 2,
+      retryDelayMultiplier: 2,
+      timeOfFirstRequest: 1789216601719,
+      totalTimeout: 9007199254740991,
+      maxRetryDelay: 9007199254740991,
+      statusCodesToRetry: [Array]
+    }
+  },
+  response: Response {
+    size: 0,
+    data: { error: [Object] },
+    config: {
+      url: URL {},
+      method: 'POST',
+      apiVersion: '',
+      userAgentDirectives: [Array],
+      paramsSerializer: [Function (anonymous)],
+      data: [Object],
+      headers: Headers {
+        'accept-encoding': 'gzip',
+        authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+        'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+        'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+        'content-type': 'application/json'
+      },
+      params: [Object],
+      validateStatus: [Function (anonymous)],
+      retry: true,
+      body: '{"values":[["83284d7f-a3fa-4a50-b948-54b570a5465c",null,"indraheet","P2","2026-09-12T12:36:36.735Z","ACTIVE"]]}',
+      responseType: 'unknown',
+      errorRedactor: [Function: defaultErrorRedactor],
+      duplex: 'half'
+    },
+    Symbol(Body internals): {
+      body: [Gunzip],
+      stream: [Gunzip],
+      boundary: null,
+      disturbed: true,
+      error: null
+    },
+    Symbol(Response internals): {
+      type: 'default',
+      url: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Active%20Sessions%21A1:append?valueInputOption=USER_ENTERED',
+      status: 400,
+      statusText: 'Bad Request',
+      headers: [Object],
+      counter: 0,
+      highWaterMark: 16384
+    }
+  },
+  code: 400,
+  status: 400,
+  error: undefined,
+  [cause]: {
+    message: 'Unable to parse range: Active Sessions!A1',
+    code: 400,
+    status: 'INVALID_ARGUMENT',
+    errors: [ [Object] ]
+  }
+}
+[WARN] Google Sheets API failed, retrying (1/3)...
+[WARN] Google Sheets API failed, retrying (2/3)...
+[CRITICAL] Failed to append row to Activity Logs after 3 attempts: Error: Unable to parse range: Activity Logs!A1
+    at async appendRow (src/lib/googleSheets.ts:35:7)
+    at async logActivityToSheet (src/lib/googleSheets.ts:58:3)
+    at async logSessionStartToSheet (src/lib/googleSheets.ts:79:3)
+    at async (src/app/api/start-session/route.ts:41:9)
+  33 |     try {
+  34 |       const sheets = await getGoogleSheetsClient();
+> 35 |       await sheets.spreadsheets.values.append({
+     |       ^
+  36 |         spreadsheetId,
+  37 |         range: `${sheetName}!A1`,
+  38 |         valueInputOption: 'USER_ENTERED', {
+  config: {
+    url: URL {
+      href: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append?valueInputOption=USER_ENTERED',
+      origin: 'https://sheets.googleapis.com',
+      protocol: 'https:',
+      username: '',
+      password: '',
+      host: 'sheets.googleapis.com',
+      hostname: 'sheets.googleapis.com',
+      port: '',
+      pathname: '/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append',
+      search: '?valueInputOption=USER_ENTERED',
+      searchParams: URLSearchParams { 'valueInputOption' => 'USER_ENTERED' },
+      hash: ''
+    },
+    method: 'POST',
+    apiVersion: '',
+    userAgentDirectives: [ [Object] ],
+    paramsSerializer: [Function (anonymous)],
+    data: { values: [Array] },
+    headers: Headers {
+      'accept-encoding': 'gzip',
+      authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+      'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+      'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+      'content-type': 'application/json'
+    },
+    params: { valueInputOption: 'USER_ENTERED' },
+    validateStatus: [Function (anonymous)],
+    retry: true,
+    body: '{"values":[["2026-09-12T12:36:41.759Z","START_SESSION","Club Owner","P2","83284d7f-a3fa-4a50-b948-54b570a5465c","Session started for indraheet"]]}',
+    responseType: 'unknown',
+    errorRedactor: [Function: defaultErrorRedactor],
+    duplex: 'half',
+    retryConfig: {
+      currentRetryAttempt: 0,
+      retry: 3,
+      httpMethodsToRetry: [Array],
+      noResponseRetries: 2,
+      retryDelayMultiplier: 2,
+      timeOfFirstRequest: 1789216606790,
+      totalTimeout: 9007199254740991,
+      maxRetryDelay: 9007199254740991,
+      statusCodesToRetry: [Array]
+    }
+  },
+  response: Response {
+    size: 0,
+    data: { error: [Object] },
+    config: {
+      url: URL {},
+      method: 'POST',
+      apiVersion: '',
+      userAgentDirectives: [Array],
+      paramsSerializer: [Function (anonymous)],
+      data: [Object],
+      headers: Headers {
+        'accept-encoding': 'gzip',
+        authorization: '<<REDACTED> - See `errorRedactor` option in `gaxios` for configuration>.',
+        'user-agent': 'google-api-nodejs-client/8.0.2 (gzip)',
+        'x-goog-api-client': 'gdcl/8.0.2 gl-node/26.0.0',
+        'content-type': 'application/json'
+      },
+      params: [Object],
+      validateStatus: [Function (anonymous)],
+      retry: true,
+      body: '{"values":[["2026-09-12T12:36:41.759Z","START_SESSION","Club Owner","P2","83284d7f-a3fa-4a50-b948-54b570a5465c","Session started for indraheet"]]}',
+      responseType: 'unknown',
+      errorRedactor: [Function: defaultErrorRedactor],
+      duplex: 'half'
+    },
+    Symbol(Body internals): {
+      body: [Gunzip],
+      stream: [Gunzip],
+      boundary: null,
+      disturbed: true,
+      error: null
+    },
+    Symbol(Response internals): {
+      type: 'default',
+      url: 'https://sheets.googleapis.com/v4/spreadsheets/1EW3tTzaD5ZWShdmK4sAdr0PkH2AqQqdBOaANiaeB4xY/values/Activity%20Logs%21A1:append?valueInputOption=USER_ENTERED',
+      status: 400,
+      statusText: 'Bad Request',
+      headers: [Object],
+      counter: 0,
+      highWaterMark: 16384
+    }
+  },
+  code: 400,
+  status: 400,
+  error: undefined,
+  [cause]: {
+    message: 'Unable to parse range: Activity Logs!A1',
+    code: 400,
+    status: 'INVALID_ARGUMENT',
+    errors: [ [Object] ]
+  }
+}
+✓ Compiled in 233ms
+✓ Compiled in 881ms
+✓ Compiled in 1581ms
+[?25h

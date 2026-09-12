@@ -66,24 +66,21 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
       triggerConfetti();
     }, 150);
 
-    // Progress bar animation (2.5 seconds total visible time)
+    // Progress bar animation using CSS transition instead of 60fps React state updates
     const DISPLAY_DURATION = 2500;
-    const startTime = Date.now() + 150;
     
-    const progressInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, 100 - (elapsed / DISPLAY_DURATION) * 100);
-      setProgress(remaining);
-      
-      if (elapsed >= DISPLAY_DURATION) {
-        clearInterval(progressInterval);
-        handleClose();
-      }
-    }, 16); // 60fps update
+    const progressTimer = setTimeout(() => {
+      setProgress(0); // Trigger CSS transition
+    }, 200);
+    
+    const closeTimer = setTimeout(() => {
+      handleClose();
+    }, DISPLAY_DURATION + 200);
 
     return () => {
       clearTimeout(enterTimer);
-      clearInterval(progressInterval);
+      clearTimeout(progressTimer);
+      clearTimeout(closeTimer);
     };
   }, []);
 
@@ -111,7 +108,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
         {/* Progress Bar Container */}
         <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-border-theme/50">
           <div 
-            className="h-full bg-accent transition-all duration-75 ease-linear"
+            className="h-full bg-accent ease-linear transition-all duration-[2500ms]"
             style={{ width: `${progress}%` }}
           />
         </div>

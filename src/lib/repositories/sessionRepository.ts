@@ -181,7 +181,6 @@ export const sessionRepository = {
         num_players: session.num_players || 1,
         locked_rate: session.locked_rate,
         locked_rate_name: session.locked_rate_name,
-        member_id: session.member_id,
         base_cost: session.base_cost || 0,
         discount_amount: session.discount_amount || 0,
         payment_status: session.payment_status || 'Pending',

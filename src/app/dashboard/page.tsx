@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState, Suspense, useMemo, useRef } from 'react';
+import { useEffect, useState, Suspense, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { MenuManagerTab } from './MenuManagerTab';
@@ -301,40 +301,97 @@ function DashboardContent() {
 
   const [isReportsLoading, setIsReportsLoading] = useState(false);
 
-  const fetchReportsData = async () => {
+  // Deduplication ref for active fetches to avoid redundant network calls
+  const activeFetch = useRef<{ url: string, promise: Promise<any> } | null>(null);
+
+  const fetchDashboardData = useCallback(async (targetStartDate: string, targetEndDate: string, isBackground = false) => {
     try {
-      setIsReportsLoading(true);
-      setReportsData(null); // Prevent showing stale data
+      if (!isBackground) {
+         if (targetStartDate === currentDay && targetEndDate === currentDay) setLoading(true);
+         else setIsReportsLoading(true);
+      }
+
       let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      url += (url.includes('?') ? '&' : '?') + `startDate=${reportDateRange.start}&endDate=${reportDateRange.end}&_t=${Date.now()}`;
-      const res = await fetch(url, { cache: 'no-store' });
+      url += (url.includes('?') ? '&' : '?') + `startDate=${targetStartDate}&endDate=${targetEndDate}`;
+
+      // Deduplicate identical in-flight requests
+      if (activeFetch.current && activeFetch.current.url === url) {
+         await activeFetch.current.promise;
+         return;
+      }
+
+      const fetchPromise = fetch(url, { cache: 'no-store' });
+      activeFetch.current = { url, promise: fetchPromise };
+      const res = await fetchPromise;
+
+      if (res.status === 401) {
+        setIsAuthorized(false);
+        setLoading(false);
+        setIsReportsLoading(false);
+        return;
+      }
+
       if (res.ok) {
         const json = await res.json();
-        setReportsData(json);
+        
+        // If this fetch was for the current day, update the main dashboard data
+        if (targetStartDate === currentDay && targetEndDate === currentDay) {
+          setData(json);
+          if (json.businessId) setBusinessId(json.businessId);
+          setIsAuthorized(true);
+          if (json.has_logged_in === false) {
+            setShowCelebration(prev => !prev ? true : prev);
+          }
+        }
+        
+        // Update reports explicitly
+        if (targetStartDate === reportDateRange.start && targetEndDate === reportDateRange.end) {
+          setReportsData(json);
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch reports data", e);
+      console.error("Failed to fetch dashboard data", e);
+      if (!isBackground) toast.error('Network error. Unable to fetch dashboard data.');
     } finally {
-      setIsReportsLoading(false);
+      const activeUrl = activeFetch.current?.url;
+      if (activeUrl && activeUrl.includes(`startDate=${targetStartDate}&endDate=${targetEndDate}`)) {
+         activeFetch.current = null;
+      }
+      if (!isBackground) {
+         setLoading(false);
+         setIsReportsLoading(false);
+      }
     }
-  };
+  }, [businessId, currentDay, reportDateRange.start, reportDateRange.end]);
 
-  const isFirstRender = useRef(true);
+  const fetchData = useCallback(async (pinToUse?: string, isBackground = false) => {
+    return fetchDashboardData(currentDay, currentDay, isBackground);
+  }, [fetchDashboardData, currentDay]);
 
+  // Initial load check
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    if (!isAuthorized) {
+      fetchDashboardData(currentDay, currentDay).finally(() => setIsInitialLoading(false));
+    } else {
+      setTimeout(() => setIsInitialLoading(false), 0);
     }
-    reportDateRangeRef.current = reportDateRange;
-    if (isAuthorized) setTimeout(() => fetchReportsData(), 0);
-  }, [reportDateRange]);
+  }, [isAuthorized, currentDay, fetchDashboardData]);
+
+  // React to explicit report date changes
+  const lastReportDates = useRef({ start: reportDateRange.start, end: reportDateRange.end });
+  useEffect(() => {
+    if (!isAuthorized) return;
+    if (lastReportDates.current.start !== reportDateRange.start || lastReportDates.current.end !== reportDateRange.end) {
+      lastReportDates.current = { start: reportDateRange.start, end: reportDateRange.end };
+      setReportsData(null); // Clear stale data instantly
+      fetchDashboardData(reportDateRange.start, reportDateRange.end);
+    }
+  }, [reportDateRange.start, reportDateRange.end, isAuthorized, fetchDashboardData]);
 
   useEffect(() => {
     if (data && !telegramLoadedRef.current) {
       telegramLoadedRef.current = true;
       if (data.pricingRules?.globalSettings) {
-        
         setTimeout(() => setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []), 0);
         if (data.pricingRules.globalSettings.smart_reminder_interval_minutes !== undefined) {
           setTimeout(() => setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes)), 0);
@@ -342,15 +399,6 @@ function DashboardContent() {
       }
     }
   }, [data]);
-
-  // Initial load check
-  useEffect(() => {
-    if (!isAuthorized) {
-      fetchData().finally(() => setIsInitialLoading(false));
-    } else {
-      setTimeout(() => setIsInitialLoading(false), 0);
-    }
-  }, []);
 
   // Midnight roll-over logic
   useEffect(() => {
@@ -413,52 +461,6 @@ function DashboardContent() {
     };
     
     checkOverdue();
-    const interval = setInterval(checkOverdue, 15000);
-    return () => clearInterval(interval);
-  }, [isAuthorized]);
-
-  async function fetchData(pinToUse?: string, isBackground = false) {
-    try {
-      if (!isBackground) setLoading(true);
-      
-      let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      url += (url.includes('?') ? '&' : '?') + `startDate=${currentDay}&endDate=${currentDay}`;
-      
-      const res = await fetch(url, { cache: 'no-store' });
-      if (res.status === 401) {
-        setIsAuthorized(false);
-        setLoading(false);
-        return;
-      }
-
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-        if (currentDay === reportDateRange.start && currentDay === reportDateRange.end) {
-           setReportsData({
-              completedSessions: json.completedSessions || [],
-              dailyRevenue: json.dailyRevenue || 0,
-              manualClosuresToday: json.manualClosuresToday || 0,
-              revenueSavedToday: json.revenueSavedToday || 0
-           });
-        }
-        if (json.businessId) setBusinessId(json.businessId);
-        setIsAuthorized(true);
-        if (json.has_logged_in === false && !showCelebration) {
-          setShowCelebration(true);
-        }
-      }
-    } catch (e) {
-      toast.error('Network error. Unable to fetch dashboard data.');
-    } finally {
-      if (!isBackground) setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthorized) {
-      fetchData();
-    }
   }, [isAuthorized]);
 
   useEffect(() => {
@@ -3594,6 +3596,30 @@ function DashboardContent() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 </button>
               </Tooltip>
+              <Tooltip text="Open Telegram Bot">
+                <button
+                  onClick={() => {
+                    if (telegramOwners.length === 0) {
+                      toast.error('Telegram is not connected for this business. Please configure it in settings.');
+                      setSidebarTab('settings');
+                      return;
+                    }
+                    const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'Qcontr01_bot';
+                    window.open(`https://t.me/${botUsername}`, '_blank');
+                  }}
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-[#0088cc] transition-colors hover-lift"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+              </Tooltip>
+              <Tooltip text="Quick Scan">
+                <button
+                  onClick={() => setIsQRModalOpen(true)}
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-accent transition-colors hover-lift"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+                </button>
+              </Tooltip>
               <Tooltip text="Toggle Privacy Mode">
                 <button
                   onClick={togglePrivacy}
@@ -4165,14 +4191,7 @@ function DashboardContent() {
           }} 
         />
       )}
-      {/* Quick Scan FAB */}
-      <button 
-        onClick={() => setIsQRModalOpen(true)}
-        className="fixed bottom-24 lg:bottom-10 right-6 lg:right-10 w-14 h-14 bg-accent text-bg-primary rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(141,213,182,0.4)] hover:scale-105 hover:bg-accent/90 transition-all z-40 group"
-        title="Quick Scan"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-      </button>
+
 
     </div>
   );

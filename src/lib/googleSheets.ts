@@ -103,8 +103,7 @@ export async function logSessionEndToSheet(sessionData: any, businessId?: string
     durationStr,
     sessionData.applied_pricing || 'Fixed Rate',
     sessionData.cost || 0,
-    'COMPLETED',
-    sessionData.completed_by || 'Unknown'
+    'COMPLETED'
   ], businessId);
   
   await logActivityToSheet('END_SESSION', {

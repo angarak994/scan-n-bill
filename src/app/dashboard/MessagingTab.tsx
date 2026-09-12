@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 
@@ -13,7 +13,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState<'compose' | 'logs'>('compose');
 
-    const fetchLogs = async () => {
+    const fetchLogs = useCallback(async () => {
         if (!businessId) return;
         const { data } = await supabase
             .from('whatsapp_messages')
@@ -22,7 +22,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
             .order('created_at', { ascending: false })
             .limit(50);
         if (data) setDeliveryLogs(data);
-    };
+    }, [businessId]);
 
     useEffect(() => {
         setTimeout(() => fetchLogs(), 0);
@@ -32,7 +32,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
             .subscribe();
             
         return () => { supabase.removeChannel(channel); };
-    }, [businessId]);
+    }, [businessId, fetchLogs]);
 
     useEffect(() => {
         const unifiedContacts = new Map<string, any>();

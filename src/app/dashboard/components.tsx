@@ -1,5 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import { calculateBilling, formatTimeReadable } from '@/lib/billing';
+
+// --- Global Timer Store to prevent massive React interval re-renders ---
+let globalNow = new Date();
+const listeners = new Set<() => void>();
+
+setInterval(() => {
+  globalNow = new Date();
+  listeners.forEach(l => l());
+}, 1000);
+
+const subscribeToTimer = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+const getGlobalNow = () => globalNow;
+// -----------------------------------------------------------------------
+
 export function Tooltip({ text, children }: { text: string, children: React.ReactNode }) {
   return (
     <div className="group relative inline-flex justify-center items-center">
@@ -92,8 +111,14 @@ export function NotificationBell({ businessId }: { businessId: string }) {
       } catch (e) {}
     };
     fetchNotifs();
-    const interval = setInterval(fetchNotifs, 15000);
-    return () => clearInterval(interval);
+    
+    const channel = supabase.channel(`notifs_${businessId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, () => {
+        fetchNotifs();
+      })
+      .subscribe();
+      
+    return () => { supabase.removeChannel(channel); };
   }, [businessId]);
   
   const handleOpen = async () => {
@@ -186,57 +211,40 @@ export function NotificationBell({ businessId }: { businessId: string }) {
 }
 
 export function LiveTotalOpenCounter({ activeSessions, pricingRules, currentDiscounts, activePromo }: any) {
-  const [totalOpenBill, setTotalOpenBill] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
-      
-      const total = activeSessions.reduce((acc: number, session: any) => {
-        const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-        try {
-          let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
-          if (!tableDiscount && isPromoValid && activePromo) {
-            tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
-          }
-          const endFull = session.paused_at ? session.paused_at : now.toISOString();
-          const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
-          return acc + res.cost;
-        } catch { return acc; }
-      }, 0);
-      setTotalOpenBill(total);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeSessions, pricingRules, currentDiscounts, activePromo]);
+  const now = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
+  
+  const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
+  
+  const totalOpenBill = activeSessions.reduce((acc: number, session: any) => {
+    const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+    try {
+      let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
+      if (!tableDiscount && isPromoValid && activePromo) {
+        tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
+      }
+      const endFull = session.paused_at ? session.paused_at : now.toISOString();
+      const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+      return acc + res.cost;
+    } catch { return acc; }
+  }, 0);
 
   return <span className="font-mono tabular-nums">{totalOpenBill.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).replace('₹', '₹')}</span>;
 }
 
 export function LivePromoTimer({ activePromo }: { activePromo: any }) {
-  const [timeLeft, setTimeLeft] = useState("00:00:00");
+  const now = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
 
-  useEffect(() => {
-    if (!activePromo) return;
-    
-    const updateTimer = () => {
-      const now = new Date().getTime();
-      const end = new Date(activePromo.end_time).getTime();
-      if (end > now) {
-        const diffSecs = Math.floor((end - now) / 1000);
-        const h = Math.floor(diffSecs / 3600);
-        const m = Math.floor((diffSecs % 3600) / 60);
-        const s = diffSecs % 60;
-        setTimeLeft(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-      } else {
-        setTimeLeft("00:00:00");
-      }
-    };
-    
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [activePromo]);
+  let timeLeft = "00:00:00";
+  if (activePromo) {
+    const end = new Date(activePromo.end_time).getTime();
+    if (end > now.getTime()) {
+      const diffSecs = Math.floor((end - now.getTime()) / 1000);
+      const h = Math.floor(diffSecs / 3600);
+      const m = Math.floor((diffSecs % 3600) / 60);
+      const s = diffSecs % 60;
+      timeLeft = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+  }
 
   return <span className="font-mono tabular-nums">{timeLeft}</span>;
 }
@@ -248,14 +256,11 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
 };
 
 export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
-  const [now, setNow] = useState(new Date());
-
-  useEffect(() => {
-    // Only update if the session is ACTIVE and NOT paused
-    if (session.status !== 'ACTIVE' || session.paused_at) return;
-    const interval = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, [session.status, session.paused_at]);
+  const globalNowDate = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
+  const isRunning = session.status === 'ACTIVE' && !session.paused_at;
+  
+  // Freeze the time visually when not active, otherwise sync to the global timer (this prevents unnecessary renders for paused sessions)
+  const now = isRunning ? globalNowDate : new Date(session.paused_at || new Date());
 
   const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
   const endFull = session.paused_at ? session.paused_at : now.toISOString();
