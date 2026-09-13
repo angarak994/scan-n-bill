@@ -83,7 +83,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string } } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -131,6 +131,7 @@ function DashboardContent() {
   const [manualGame, setManualGame] = useState('pool');
   const [manualPlayers, setManualPlayers] = useState('1');
   const [manualNotes, setManualNotes] = useState('');
+  const [manualStartTime, setManualStartTime] = useState('');
   const [isStartingManual, setIsStartingManual] = useState(false);
   const [memberships, setMemberships] = useState<any[]>([]);
   const [showQkhataPopover, setShowQkhataPopover] = useState(false);
@@ -691,7 +692,16 @@ function DashboardContent() {
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table_id: manualTable, game_type: manualGame, num_players: Number(manualPlayers), customer_name: manualCustomer, business_id: businessId, notes: manualNotes, member_id: manualCustomerId })
+        body: JSON.stringify({ 
+          table_id: manualTable, 
+          game_type: manualGame, 
+          num_players: Number(manualPlayers), 
+          customer_name: manualCustomer, 
+          business_id: businessId, 
+          notes: manualNotes, 
+          member_id: manualCustomerId,
+          start_time: manualStartTime ? new Date(manualStartTime).toISOString() : undefined
+        })
       });
       if (res.ok) {
         const result = await res.json();
@@ -715,6 +725,7 @@ function DashboardContent() {
           setManualCustomer('');
           setManualCustomerId(null);
           setManualNotes('');
+          setManualStartTime('');
           setManualPlayers('1');
         }, 250);
       } else {
@@ -1011,10 +1022,10 @@ function DashboardContent() {
 
 
   useEffect(() => {
-    if (sidebarTab === 'customers') {
+    if (isAuthorized) {
       setTimeout(() => fetchMemberships(), 0);
     }
-  }, [sidebarTab]);
+  }, [isAuthorized]);
 
   const handleEditSessionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2108,7 +2119,7 @@ function DashboardContent() {
         <div className="p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center">
           <div>
             <h3 className="text-xl font-bold text-text-primary">Membership Directory</h3>
-            <p className="text-xs text-text-secondary mt-1 italic">Manage your loyal customers</p>
+            <p className="text-xs text-text-secondary mt-1 italic">Manage your loyal members</p>
           </div>
           <div className="flex gap-3 items-center">
             {selectedBulkSmsCustomers.length > 0 && (
@@ -3515,7 +3526,7 @@ function DashboardContent() {
             <IconBookings /> Reports
           </button>
           <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconCustomers /> Customers
+            <IconCustomers /> Members
           </button>
           
           <button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
@@ -3573,7 +3584,9 @@ function DashboardContent() {
                   <p className="text-xs lg:text-sm text-text-secondary mt-1 hidden sm:block">Complete control over your business. Everything you need, all in one place.</p>
                 </div>
               ) : (
-                <h2 className="text-lg lg:text-xl font-bold text-text-primary capitalize">{sidebarTab}</h2>
+                <h2 className="text-lg lg:text-xl font-bold text-text-primary capitalize">
+                  {sidebarTab === 'qkhata' ? 'QKhata' : sidebarTab === 'menu' ? 'Food & Beverages' : sidebarTab === 'customers' ? 'Members' : sidebarTab}
+                </h2>
               )}
               <p className="text-[10px] lg:text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
                 {toReadableIST(now)}
@@ -3723,6 +3736,7 @@ function DashboardContent() {
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'support' && renderSupport()}
+          {sidebarTab === 'menu' && <MenuManagerTab businessId={businessId!} initialMenuItems={data?.menu_items || []} />}
           {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} />}
           {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
           {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
@@ -3867,6 +3881,11 @@ function DashboardContent() {
                   />
                 </div>
               )}
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
+                <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                <p className="text-[10px] text-text-secondary mt-1">Leave empty to use current time.</p>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
                 <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Special requests..." />

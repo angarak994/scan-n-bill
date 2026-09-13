@@ -578,15 +578,14 @@ Time: ${timeStr}`, mainMenu);
           }
           
           let billText = '₹0';
-          let durationText = '0m';
           try {
             const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
             billText = `₹${Math.round(res.cost)}`;
-            durationText = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
           } catch(e){}
 
-          const status = isPaused ? '⏸ Paused' : '▶️ Active';
-          const msg = `<b>${session.table_id}</b>\nPlayer: ${escapeHtml(session.customer_name || "")}\nGame: ${session.game_type}\nStatus: ${status}\nDuration: ${durationText}\nCurrent Bill: ${billText}`;
+          const startedTime = formatTimeReadable(startFull);
+          const customerLabel = isMember ? 'Member' : 'Customer';
+          const msg = `<b>${session.table_id} — ${session.game_type}</b>\n${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\nStarted: ${startedTime}\nAmount: ${billText}${isPaused ? '\n(⏸ Paused)' : ''}`;
           
           const buttons = [
             [
@@ -597,7 +596,7 @@ Time: ${timeStr}`, mainMenu);
             ]
           ];
           if (isMember) {
-             buttons[0].push({ text: `📒 QKhata`, callback_data: `qkhata_init_${session.id}_${memberId}` });
+             buttons[0].push({ text: `📒 QKhata`, callback_data: `qkhatainit_${session.id}` });
           }
           await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
         }
@@ -1077,6 +1076,9 @@ You can still access other businesses associated with your Telegram account.`, {
                 await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
               }
             } else {
+              if (messageId) {
+                await editTelegramMessageText(chatId, messageId, `✅ Table ${tableId} selected. Please reply to the prompt below.`, { inline_keyboard: [] });
+              }
               await sendTelegramMessage(chatId, `👤 Enter Customer Name\n\nTable: ${tableId}\nGame: ${gameType}\n\n(Reply to this message with the customer's name, e.g., "John")`, {
                   force_reply: true
               });
@@ -1108,6 +1110,9 @@ You can still access other businesses associated with your Telegram account.`, {
             await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
           }
         } else {
+          if (messageId) {
+            await editTelegramMessageText(chatId, messageId, `✅ Game ${gameType} selected for Table ${tableId}. Please reply to the prompt below.`, { inline_keyboard: [] });
+          }
           await sendTelegramMessage(chatId, `👤 Enter Customer Name\n\nTable: ${tableId}\nGame: ${gameType}\n\n(Reply to this message with the customer's name, e.g., "John")`, {
             force_reply: true
           });
@@ -1144,6 +1149,9 @@ You can still access other businesses associated with your Telegram account.`, {
         const tableId = parts[0];
         const numPlayers = parts[1];
         
+        if (messageId) {
+          await editTelegramMessageText(chatId, messageId, `✅ PS5 selected for Table ${tableId} (${numPlayers} Players). Please reply to the prompt below.`, { inline_keyboard: [] });
+        }
         await sendTelegramMessage(chatId, `👤 Enter Customer Name\n\nTable: ${tableId}\nGame: ps5\nPlayers: ${numPlayers}\n\n(Reply to this message with the customer's name, e.g., "John")`, {
           force_reply: true
         });
@@ -1395,10 +1403,8 @@ You can still access other businesses associated with your Telegram account.`, {
         }
       }
 
-      else if (callbackData.startsWith('qkhata_init_')) {
-          const parts = callbackData.replace('qkhata_init_', '').split('_');
-          const sessionId = parts[0];
-          const memberId = parts.slice(1).join('_');
+      else if (callbackData.startsWith('qkhatainit_')) {
+          const sessionId = callbackData.replace('qkhatainit_', '');
           
           const session = await sessionRepository.findById(sessionId, business.id);
           if (!session || session.status !== 'ACTIVE') {
@@ -1407,7 +1413,13 @@ You can still access other businesses associated with your Telegram account.`, {
               return NextResponse.json({ ok: true });
           }
           
-          const { data: member } = await supabase.from('customers').select('*').eq('id', memberId).single();
+          const cName = session.customer_name?.trim().toLowerCase() || '';
+          const { data: customers } = await supabase.from('customers').select('*').eq('business_id', business.id);
+          const member = customers?.find(c => 
+              (c.name && c.name.trim().toLowerCase() === cName) || 
+              (c.phone && c.phone.trim() === cName)
+          );
+          
           if (!member) {
               if (messageId) await editTelegramMessageText(chatId, messageId, `❌ QKhata is unavailable because this customer is not a registered member.`);
               else await sendTelegramMessage(chatId, `❌ QKhata is unavailable because this customer is not a registered member.`);
@@ -1426,12 +1438,12 @@ You can still access other businesses associated with your Telegram account.`, {
           
           const buttons = [
               [
-                  { text: `✅ Confirm QKhata`, callback_data: `qkhata_confirm_${session.id}_${memberId}` },
+                  { text: `✅ Confirm QKhata`, callback_data: `qkhata_conf_${session.id}` },
                   { text: `❌ Cancel`, callback_data: `qkhata_back` }
               ]
           ];
           
-          const msg = `Are you sure you want to add ₹${billText} to QKhata for ${member.name}?`;
+          const msg = `Are you sure you want to close this session and add ₹${billText} to QKhata for ${member.name}?`;
           
           if (messageId) {
              await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
@@ -1440,10 +1452,8 @@ You can still access other businesses associated with your Telegram account.`, {
           }
       }
 
-      else if (callbackData.startsWith('qkhata_confirm_')) {
-          const parts = callbackData.replace('qkhata_confirm_', '').split('_');
-          const sessionId = parts[0];
-          const memberId = parts.slice(1).join('_');
+      else if (callbackData.startsWith('qkhata_conf_')) {
+          const sessionId = callbackData.replace('qkhata_conf_', '');
           
           const session = await sessionRepository.findById(sessionId, business.id);
           if (!session || session.status !== 'ACTIVE') {
@@ -1451,7 +1461,12 @@ You can still access other businesses associated with your Telegram account.`, {
               return NextResponse.json({ ok: true });
           }
           
-          const { data: member } = await supabase.from('customers').select('*').eq('id', memberId).single();
+          const cName = session.customer_name?.trim().toLowerCase() || '';
+          const { data: customers } = await supabase.from('customers').select('*').eq('business_id', business.id);
+          const member = customers?.find(c => 
+              (c.name && c.name.trim().toLowerCase() === cName) || 
+              (c.phone && c.phone.trim() === cName)
+          );
           if (!member) return NextResponse.json({ ok: true });
 
           try {
@@ -1466,7 +1481,7 @@ You can still access other businesses associated with your Telegram account.`, {
              });
              
              // Fetch the freshly updated customer balance
-             const { data: updatedMember } = await supabase.from('customers').select('*').eq('id', memberId).single();
+             const { data: updatedMember } = await supabase.from('customers').select('*').eq('id', member.id).single();
              const newTotal = updatedMember ? Math.round(updatedMember.outstanding_balance) : 'Unknown';
              
              const addedAmount = dbUpdates && (dbUpdates as any).cost ? Math.round((dbUpdates as any).cost) : 'Unknown';

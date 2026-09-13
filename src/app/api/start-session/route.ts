@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth';
 export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
-    let { table_id, game_type, customer_name, business_id, num_players, member_id } = await request.json();
+    let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time } = await request.json();
     
     // Note: Cookie validation is intentionally omitted here to allow 
     // QR code scans (which are inherently unauthenticated) to start sessions,
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       customer_name = membership.name;
     }
 
-    const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id);
+    const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id, start_time);
     
     // Sync to Google Sheets asynchronously (non-blocking)
     Promise.resolve().then(async () => {

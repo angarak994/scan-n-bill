@@ -65,26 +65,51 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
         }
     }
 
-    // 2. Create Payment Transaction Record
+    // 2. Create Ledger Transaction Records (Double-Entry)
     if (customerId) {
-        const paymentRecord = {
-            id: uuidv4(),
-            business_id: businessId,
-            customer_id: customerId,
-            session_id: sessionId || null,
-            amount: amountPaid,
-            payment_method: paymentMethod || 'Cash',
-            status: paymentStatus,
-            metadata: {
-                due_date: dueDate || null,
-                source: source || 'System'
-            }
-        };
+        const records = [];
         
-        await supabase.from('payments').insert([paymentRecord]);
+        // A. Record the Charge (Credit added to QKhata)
+        if (totalBilled > 0) {
+            records.push({
+                id: uuidv4(),
+                business_id: businessId,
+                customer_id: customerId,
+                session_id: sessionId || null,
+                amount: totalBilled,
+                payment_method: 'QKhata',
+                status: 'Billed',
+                metadata: {
+                    type: 'CHARGE',
+                    source: source || 'System',
+                    due_date: dueDate || null
+                }
+            });
+        }
+        
+        // B. Record the Payment (Debt settled)
+        if (amountPaid > 0) {
+            records.push({
+                id: uuidv4(),
+                business_id: businessId,
+                customer_id: customerId,
+                session_id: sessionId || null,
+                amount: amountPaid,
+                payment_method: paymentMethod || 'Cash',
+                status: paymentStatus,
+                metadata: {
+                    type: 'PAYMENT',
+                    source: source || 'System'
+                }
+            });
+        }
+        
+        if (records.length > 0) {
+            await supabase.from('payments').insert(records);
+        }
 
         // Send SMS Confirmation if configured and paid
-        if (paymentStatus === 'Paid') {
+        if (paymentStatus === 'Paid' && amountPaid > 0) {
             const { data: business } = await supabase.from('businesses').select('sms_config, business_name').eq('id', businessId).single();
             const smsConfig = business?.sms_config as SMSConfig;
             

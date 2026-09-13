@@ -44,7 +44,7 @@ export class ApiError extends Error {
 // In-memory locks to prevent race conditions during rapid simultaneous requests
 const activeTableLocks = new Set<string>();
 
-export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1, member_id?: string) {
+export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1, member_id?: string, custom_start_time?: string) {
   const lockKey = `${businessId || 'global'}_${table_id}`;
   if (activeTableLocks.has(lockKey)) {
     throw new ApiError(409, 'Action in progress, please wait.');
@@ -57,7 +57,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
       throw new ApiError(400, 'Customer Name is mandatory');
     }
 
-    const now = new Date();
+    const now = custom_start_time ? new Date(custom_start_time) : new Date();
     
     // Fetch dependencies concurrently
     let existingSession = null;
@@ -104,7 +104,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
       }
     }
 
-  const dateStr = getCurrentISTDateStr(); // IST Date
+  const dateStr = getCurrentISTDateStr(now.getTime()); // IST Date
   const timeStr = now.toISOString(); // Full ISO timestamp
   
   const session: Session = {

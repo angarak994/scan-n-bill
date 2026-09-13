@@ -127,7 +127,8 @@ export async function GET(request: Request) {
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
       google_sheet_id: business.google_sheet_id,
       payment_qr_config: business.payment_qr_config,
-      whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false }
+      whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false },
+      menu_items: business.menu_items || []
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);
