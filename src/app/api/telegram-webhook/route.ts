@@ -1486,7 +1486,7 @@ You can still access other businesses associated with your Telegram account.`, {
              
              const addedAmount = dbUpdates && (dbUpdates as any).cost ? Math.round((dbUpdates as any).cost) : 'Unknown';
              
-             const msg = `✅ <b>QKhata Added</b>\n\nMember: ${member.name}\nSession: #${session.id.split('-')[0].toUpperCase()}\nOutstanding Added: ₹${addedAmount}\nTotal Outstanding: ₹${newTotal}`;
+             const msg = `✅ <b>QKhata Added</b>\n\nMember: ${member.name}\nSession: #${(session.id || sessionId).split('-')[0].toUpperCase()}\nOutstanding Added: ₹${addedAmount}\nTotal Outstanding: ₹${newTotal}`;
              
              if (messageId) {
                 await editTelegramMessageText(chatId, messageId, msg);

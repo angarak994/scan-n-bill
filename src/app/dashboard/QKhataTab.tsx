@@ -81,7 +81,7 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
     if (isLoading) return <div className="p-8 text-center text-gray-500">Loading Ledger...</div>;
 
     const filteredCustomers = customers.filter((c: any) => 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (c.name || 'Unknown').toLowerCase().includes(searchTerm.toLowerCase()) || 
         (c.phone && c.phone.includes(searchTerm))
     );
 
@@ -306,7 +306,8 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
                                         <thead className="sticky top-0 bg-bg-card/95 backdrop-blur z-10 shadow-sm">
                                             <tr className="text-[10px] font-semibold text-text-secondary uppercase tracking-widest border-b border-border-theme">
                                                 <th className="p-4 pl-6 lg:pl-8 whitespace-nowrap">Date / Time</th>
-                                                <th className="p-4">Description</th>
+                                                <th className="p-4">Details</th>
+                                                <th className="p-4">Session Info</th>
                                                 <th className="p-4 text-right">Credit (Billed)</th>
                                                 <th className="p-4 text-right">Debit (Paid)</th>
                                                 <th className="p-4 pr-6 lg:pr-8 text-right">Balance</th>
@@ -322,6 +323,17 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
                                                     <td className="p-4">
                                                         <div className="text-sm font-medium text-text-primary">{row.description}</div>
                                                         {row.source && <div className="text-[10px] text-text-secondary uppercase tracking-wider mt-1 border border-border-theme inline-block px-1.5 py-0.5 rounded bg-bg-primary/50">{row.source}</div>}
+                                                    </td>
+                                                    <td className="p-4">
+                                                        {row.session_id ? (
+                                                            <div className="text-xs text-text-secondary">
+                                                                <div><span className="font-semibold">ID:</span> {row.session_id.split('-')[0]}</div>
+                                                                {row.table_id && <div><span className="font-semibold">Table:</span> {row.table_id}</div>}
+                                                                {row.game_type && <div><span className="font-semibold">Game:</span> {row.game_type}</div>}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-text-secondary/50">-</span>
+                                                        )}
                                                     </td>
                                                     <td className="p-4 text-right">
                                                         {row.credit > 0 ? <span className="text-sm font-semibold font-mono text-red-500">₹{row.credit.toFixed(2)}</span> : <span className="text-text-secondary/30">-</span>}

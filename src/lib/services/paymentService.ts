@@ -124,6 +124,21 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
                 }
             }
         }
+        
+        // Sync to Google Sheets
+        Promise.resolve().then(async () => {
+            try {
+                const { syncSessionToSheet, syncMemberToSheet } = require('../googleSheets');
+                if (sessionId) {
+                    await syncSessionToSheet(sessionId, businessId);
+                }
+                if (customerId) {
+                    await syncMemberToSheet(customerId, businessId);
+                }
+            } catch(e) {
+                console.error('Failed to sync payment to sheets', e);
+            }
+        }).catch(e => console.error(e));
     }
 }
 

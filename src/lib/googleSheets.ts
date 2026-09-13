@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { businessManager } from './businessManager';
+import { supabase } from './supabaseClient';
 import { formatTimeReadable, getCurrentISTDateStr } from './billing';
 const REQUIRED_SHEETS = [
   'Dashboard', 'Active Sessions', 'Completed Sessions', 'Players',
@@ -161,4 +162,131 @@ export async function syncBookingToSheet(bookingData: any, businessId?: string) 
     new Date().toISOString(),
     new Date().toISOString()
   ], businessId);
+}
+
+export async function upsertRow(sheetName: string, idColumnIndex: number, uniqueId: string, values: any[], businessId?: string, maxRetries = 3) {
+  let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    if (business && business.google_sheet_id) spreadsheetId = business.google_sheet_id;
+  }
+  if (!spreadsheetId) return;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const sheets = await getGoogleSheetsClient();
+      // 1. Fetch existing rows to find ID
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetName}!A:Z`,
+      });
+      const rows = res.data.values || [];
+      let rowIndex = -1;
+      
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i][idColumnIndex] === uniqueId) {
+          rowIndex = i;
+          break;
+        }
+      }
+
+      if (rowIndex >= 0) {
+        // Update existing row
+        const range = `${sheetName}!A${rowIndex + 1}`;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [values] }
+        });
+      } else {
+        // Append new row
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${sheetName}!A1`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [values] }
+        });
+      }
+      return; // Success
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(`[CRITICAL] Failed to upsert row to ${sheetName} after ${maxRetries} attempts:`, error);
+      } else {
+        console.warn(`[WARN] Google Sheets API failed, retrying (${attempt}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+}
+
+export async function syncSessionToSheet(sessionId: string, businessId?: string) {
+  try {
+    const { data: session } = await supabase.from('sessions').select('*').eq('id', sessionId).single();
+    if (!session) return;
+
+    // Fetch related QKhata charge if any
+    const { data: qkhata } = await supabase.from('payments')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('payment_method', 'QKhata')
+      .limit(1).single();
+
+    const startReadable = session.start_time ? formatTimeReadable(session.start_time) : '';
+    const endReadable = session.end_time ? formatTimeReadable(session.end_time) : '';
+    const qkhataStatus = qkhata ? 'Charged' : (session.payment_status === 'Pending' ? 'Pending' : 'N/A');
+    const qkhataAmount = qkhata ? qkhata.amount : 0;
+
+    const values = [
+      session.id,
+      session.date || getCurrentISTDateStr(),
+      session.customer_name || 'Guest',
+      session.member_id || '',
+      session.table_id || '',
+      session.game_type || '',
+      startReadable,
+      endReadable,
+      session.duration || '0m',
+      session.paused_duration_seconds || 0,
+      session.applied_pricing || 'Fixed Rate',
+      session.cost || 0,
+      session.payment_status || 'Pending',
+      session.status || 'ACTIVE',
+      session.completed_by || 'System',
+      qkhataStatus,
+      qkhataAmount,
+      qkhata?.id || ''
+    ];
+
+    await upsertRow('Sessions', 0, session.id, values, businessId || session.business_id);
+  } catch (err) {
+    console.error('syncSessionToSheet Error:', err);
+  }
+}
+
+export async function syncMemberToSheet(customerId: string, businessId?: string) {
+  try {
+    const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+    if (!customer) return;
+
+    const { data: membership } = await supabase.from('memberships').select('*').eq('id', customer.id).single();
+
+    const values = [
+      customer.id,
+      customer.name || 'Unknown',
+      customer.phone || '',
+      customer.email || '',
+      membership ? membership.tier : 'None',
+      new Date(customer.created_at).toLocaleDateString(),
+      customer.total_billed || 0,
+      customer.total_paid || 0,
+      customer.outstanding_balance || 0,
+      customer.updated_at ? new Date(customer.updated_at).toLocaleString() : '',
+      'Active'
+    ];
+
+    await upsertRow('Members', 0, customer.id, values, businessId || customer.business_id);
+  } catch (err) {
+    console.error('syncMemberToSheet Error:', err);
+  }
 }

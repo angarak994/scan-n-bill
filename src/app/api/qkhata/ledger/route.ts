@@ -60,7 +60,9 @@ export async function GET(req: Request) {
                 credit,
                 payment,
                 balance: runningBalance,
-                session_id: p.session_id
+                session_id: p.session_id,
+                table_id: p.sessions?.table_id,
+                game_type: p.sessions?.game_type
             };
         });
 

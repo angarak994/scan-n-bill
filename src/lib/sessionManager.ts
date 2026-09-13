@@ -127,6 +127,12 @@ export async function startSession(table_id: string, game_type: GameType, custom
   };
 
   await sessionRepository.create(session, businessId);
+  Promise.resolve().then(async () => {
+    try {
+      const { syncSessionToSheet } = require('./googleSheets');
+      await syncSessionToSheet(session.id, businessId);
+    } catch(e) { console.error('Failed to sync session to sheet', e); }
+  }).catch(e => console.error(e));
   return session;
   } finally {
     activeTableLocks.delete(lockKey);
@@ -374,6 +380,13 @@ export async function endSession(table_id: string, businessId?: string, source: 
   } catch (e) {
     console.error('Failed to sync booking completion', e);
   }
+  }).catch(e => console.error(e));
+
+  Promise.resolve().then(async () => {
+    try {
+      const { syncSessionToSheet } = require('./googleSheets');
+      await syncSessionToSheet(session.id, businessId);
+    } catch(e) { console.error('Failed to sync session to sheet', e); }
   }).catch(e => console.error(e));
 
   return { 

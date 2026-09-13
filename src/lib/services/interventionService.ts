@@ -140,7 +140,13 @@ export async function handleSessionIntervention(params: {
           applied_pricing: dbUpdates.applied_pricing,
           completed_by: dbUpdates.completed_by
         }, business_id)
-      : Promise.resolve()
+      : Promise.resolve(),
+    
+    // Add unified session sync
+    (async () => {
+      const { syncSessionToSheet } = require('../googleSheets');
+      await syncSessionToSheet(session_id, business_id);
+    })()
   ]).catch(e => console.error('Google Sheets Intervention Sync Error:', e));
 
   return { success: true, dbUpdates };
