@@ -1,0 +1,147 @@
+      if (callbackData === 'start_guest_init') {
+        const tables = business.tables || [];
+        if (tables.length === 0) {
+          if (messageId) await editTelegramMessageText(chatId, messageId, 'No tables configured for this business.', { inline_keyboard: [] });
+          else await sendTelegramMessage(chatId, 'No tables configured for this business.', mainMenu);
+          return NextResponse.json({ ok: true });
+        }
+        
+        const { data: activeSessions } = await supabase.from('sessions').select('table_id').eq('business_id', business.id).eq('status', 'ACTIVE');
+        const activeTableIds = (activeSessions || []).map(s => s.table_id);
+        
+        const availableTables = tables.filter((t: any) => !activeTableIds.includes(t.id));
+        
+        if (availableTables.length === 0) {
+          if (messageId) await editTelegramMessageText(chatId, messageId, 'All tables are currently active.', { inline_keyboard: [] });
+          else await sendTelegramMessage(chatId, 'All tables are currently active.', mainMenu);
+          return NextResponse.json({ ok: true });
+        }
+
+        const tableButtons = availableTables.map((t: any) => ({ text: `🟢 ${t.id}`, callback_data: `start_table_${t.id}` }));
+        const buttons = chunkArray(tableButtons, 2);
+        if (messageId) await editTelegramMessageText(chatId, messageId, '▶️ Select an available table for Guest:', { inline_keyboard: buttons });
+        else await sendTelegramMessage(chatId, '▶️ Select an available table for Guest:', { inline_keyboard: buttons });
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData === 'start_member_init') {
+        const { data: customers } = await supabase.from('customers').select('id, name, phone, outstanding_balance').eq('business_id', business.id).order('created_at', { ascending: false }).limit(20);
+        
+        if (!customers || customers.length === 0) {
+           if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No registered members found.`);
+           else await sendTelegramMessage(chatId, `❌ No registered members found.`);
+           return NextResponse.json({ ok: true });
+        }
+        
+        let msg = `👤 <b>Select Member for Session</b>\n\n`;
+        const memberButtons = customers.map(c => [{
+            text: `👤 ${c.name} (Bal: ₹${Math.round(c.outstanding_balance)})`,
+            callback_data: `start_mem_game_${c.id}`
+        }]);
+        
+        memberButtons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
+        
+        if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: memberButtons });
+        else await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('start_mem_game_')) {
+        const memberId = callbackData.replace('start_mem_game_', '');
+        
+        let gameTypes: string[] = [];
+        if (business.pricing_rules?.rules) {
+            gameTypes = Object.keys(business.pricing_rules.rules);
+        } else {
+            // fallback
+            gameTypes = ['pool', 'snooker', 'ps5'];
+        }
+
+        const gameButtons = gameTypes.map((g) => ({ text: g.charAt(0).toUpperCase() + g.slice(1), callback_data: `start_mem_table_${memberId}_${g}` }));
+        const buttons = chunkArray(gameButtons, 2);
+        buttons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
+
+        if (messageId) {
+          await editTelegramMessageText(chatId, messageId, `🎱 Select Game Type:`, { inline_keyboard: buttons });
+        } else {
+          await sendTelegramMessage(chatId, `🎱 Select Game Type:`, { inline_keyboard: buttons });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('start_mem_table_')) {
+        const parts = callbackData.replace('start_mem_table_', '').split('_');
+        const memberId = parts[0];
+        const gameType = parts[1];
+
+        const tables = business.tables || [];
+        const { data: activeSessions } = await supabase.from('sessions').select('table_id').eq('business_id', business.id).eq('status', 'ACTIVE');
+        const activeTableIds = (activeSessions || []).map(s => s.table_id);
+        
+        const availableTables = tables.filter((t: any) => !activeTableIds.includes(t.id));
+        
+        if (availableTables.length === 0) {
+          if (messageId) await editTelegramMessageText(chatId, messageId, '❌ All tables are currently occupied.', { inline_keyboard: [] });
+          else await sendTelegramMessage(chatId, '❌ All tables are currently occupied.');
+          return NextResponse.json({ ok: true });
+        }
+
+        const tableButtons = availableTables.map((t: any) => ({ text: `🟢 ${t.id}`, callback_data: `start_mem_preexec_${memberId}_${gameType}_${t.id}` }));
+        const buttons = chunkArray(tableButtons, 2);
+        buttons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
+
+        if (messageId) {
+          await editTelegramMessageText(chatId, messageId, `▶️ Select an available table:`, { inline_keyboard: buttons });
+        } else {
+          await sendTelegramMessage(chatId, `▶️ Select an available table:`, { inline_keyboard: buttons });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('start_mem_preexec_')) {
+        const parts = callbackData.replace('start_mem_preexec_', '').split('_');
+        const memberId = parts[0];
+        const gameType = parts[1];
+        const tableId = parts[2];
+
+        if (gameType.toLowerCase() === 'ps5') {
+            const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `start_mem_exec_${memberId}_${gameType}_${tableId}_${num}` }));
+            if (messageId) await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+            else await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+        } else {
+            // Direct confirm for non-PS5
+            const buttons = [
+                [{ text: `✅ Start Session Now`, callback_data: `start_mem_exec_${memberId}_${gameType}_${tableId}_1` }],
+                [{ text: `❌ Cancel`, callback_data: `cancel_action` }]
+            ];
+            if (messageId) await editTelegramMessageText(chatId, messageId, `⚠️ Confirm starting ${gameType} on ${tableId}?`, { inline_keyboard: buttons });
+            else await sendTelegramMessage(chatId, `⚠️ Confirm starting ${gameType} on ${tableId}?`, { inline_keyboard: buttons });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('start_mem_exec_')) {
+        const parts = callbackData.replace('start_mem_exec_', '').split('_');
+        const memberId = parts[0];
+        const gameType = parts[1];
+        const tableId = parts[2];
+        const numPlayers = parseInt(parts[3], 10) || 1;
+
+        const { data: member } = await supabase.from('customers').select('name').eq('id', memberId).single();
+        if (!member) {
+            if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Member not found.`);
+            return NextResponse.json({ ok: true });
+        }
+
+        try {
+            const session = await startSession(tableId, gameType as any, member.name, business.id, numPlayers, memberId);
+            const msg = `✅ <b>Member Session Started</b>\n\nPlayer: ${member.name}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg);
+            else await sendTelegramMessage(chatId, msg, mainMenu);
+        } catch (error: any) {
+            const msg = `❌ Failed to start session: ${error.message}`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg);
+            else await sendTelegramMessage(chatId, msg, mainMenu);
+        }
+        return NextResponse.json({ ok: true });
+      }
