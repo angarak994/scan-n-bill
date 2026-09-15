@@ -1,0 +1,8 @@
+      if (callbackData === 'start_member_init') {
+        const msg = `👤 <b>Search Member for Session</b>\n\n(Reply to this message with the member's name or phone number)`;
+        if (messageId) {
+           await editTelegramMessageText(chatId, messageId, `✅ <b>Member Session Started</b>\n\nPlease reply to the prompt below.`, { inline_keyboard: [] });
+        }
+        await sendTelegramMessage(chatId, msg, { force_reply: true });
+        return NextResponse.json({ ok: true });
+      }
