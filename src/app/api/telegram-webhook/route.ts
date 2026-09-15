@@ -375,31 +375,6 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       if (update.message.reply_to_message) {
         const replyText = update.message.reply_to_message.text;
 
-        if (replyText.includes('Search Member')) {
-          const searchTerm = text.trim();
-          const { data: customers } = await supabase
-            .from('customers')
-            .select('id, name, phone, outstanding_balance')
-            .eq('business_id', business.id)
-            .or(`name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
-            .limit(10);
-
-          if (!customers || customers.length === 0) {
-             await sendTelegramMessage(chatId, `❌ No members found matching "<b>${searchTerm}</b>".\n\nClick "▶️ Start Session" to try again.`, mainMenu);
-             return NextResponse.json({ ok: true });
-          }
-
-          let msg = `🔍 <b>Search Results for "${searchTerm}"</b>\n\nSelect a member:`;
-          const memberButtons = customers.map(c => [{
-              text: `👤 ${c.name} (Bal: ₹${Math.round(c.outstanding_balance)})`,
-              callback_data: `start_mem_game_${c.id}`
-          }]);
-          
-          memberButtons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
-          await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
-          return NextResponse.json({ ok: true });
-        }
-
         if (replyText.includes('Enter Customer Name') || replyText.includes('Enter player name')) {
           const lines = replyText.split('\n');
           const tableLine = lines.find((l: string) => l.startsWith('Table:') || l.startsWith('Enter player name for table:'));
@@ -1090,9 +1065,55 @@ You can still access other businesses associated with your Telegram account.`, {
         return NextResponse.json({ ok: true });
       }
 
-      if (callbackData === 'start_member_init') {
-        if (messageId) await editTelegramMessageText(chatId, messageId, `✅ <b>Member Session</b>\n\nCheck your messages for the search prompt.`, { inline_keyboard: [] });
-        await sendTelegramMessage(chatId, `🔍 <b>Search Member</b>\n\nPlease reply to this message with the member's name or phone number.`, { force_reply: true });
+      if (callbackData === 'start_member_init' || callbackData.startsWith('start_mem_page_')) {
+        let page = 0;
+        if (callbackData.startsWith('start_mem_page_')) {
+            page = parseInt(callbackData.replace('start_mem_page_', ''), 10) || 0;
+        }
+        
+        const limit = 10;
+        const from = page * limit;
+        const to = from + limit - 1;
+
+        // Note: we fetch limit + 1 to know if there is a next page
+        const { data: customers } = await supabase
+            .from('customers')
+            .select('id, name')
+            .eq('business_id', business.id)
+            .order('created_at', { ascending: false })
+            .range(from, to + 1);
+
+        if (!customers || customers.length === 0) {
+           if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No registered members found for this business.`);
+           else await sendTelegramMessage(chatId, `❌ No registered members found for this business.`);
+           return NextResponse.json({ ok: true });
+        }
+
+        const hasNext = customers.length > limit;
+        const displayCustomers = customers.slice(0, limit);
+        
+        let msg = `👤 <b>Select Member for Session</b>\n\n(Page ${page + 1})`;
+        const memberButtons = displayCustomers.map(c => [{
+            text: `👤 ${c.name}`,
+            callback_data: `start_mem_game_${c.id}`
+        }]);
+        
+        const navButtons = [];
+        if (page > 0) {
+            navButtons.push({ text: `⬅️ Prev`, callback_data: `start_mem_page_${page - 1}` });
+        }
+        if (hasNext) {
+            navButtons.push({ text: `Next ➡️`, callback_data: `start_mem_page_${page + 1}` });
+        }
+        
+        if (navButtons.length > 0) {
+            memberButtons.push(navButtons);
+        }
+        
+        memberButtons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
+        
+        if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: memberButtons });
+        else await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
         return NextResponse.json({ ok: true });
       }
 
