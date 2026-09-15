@@ -41,12 +41,13 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
         fetchData();
         
         // Listen to both customers (balances) and payments (ledger rows)
-        const custSub = supabase.channel('qkhata_customers')
+        // Scoped channel names to businessId to prevent cross-talk between different businesses
+        const custSub = supabase.channel(`qkhata_customers_${businessId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, () => {
                 fetchData();
             }).subscribe();
             
-        const paySub = supabase.channel('qkhata_payments')
+        const paySub = supabase.channel(`qkhata_payments_${businessId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `business_id=eq.${businessId}` }, () => {
                 if (selectedCustomer) fetchLedgerHistory(selectedCustomer.id);
             }).subscribe();
