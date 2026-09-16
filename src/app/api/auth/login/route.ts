@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'; // Service role client
 import bcrypt from 'bcryptjs';
 import { setSession } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/rateLimit';
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +20,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Phone Number and PIN are required' }, { status: 400 });
     }
 
-    if (!/^\d{10}$/.test(identifier)) {
+    const normalizedPhone = normalizePhone(identifier);
+    if (!normalizedPhone) {
       return NextResponse.json({ error: 'Please enter a valid 10-digit mobile number.' }, { status: 400 });
     }
 
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
     const { data } = await supabase
       .from('businesses')
       .select('id, dashboard_pin')
-      .eq('contact_number', identifier)
+      .eq('contact_number', normalizedPhone)
       .limit(1)
       .single();
 

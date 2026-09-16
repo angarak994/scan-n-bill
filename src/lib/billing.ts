@@ -5,6 +5,12 @@ export const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 export function parseDateString(dateStr: string): number {
   if (!dateStr) return NaN;
   let cleanStr = dateStr.replace(/^'/, '').trim();
+  
+  // Safari/iOS strict Date parsing fix: replace ", " with "T"
+  if (cleanStr.includes(', ')) {
+    cleanStr = cleanStr.replace(', ', 'T');
+  }
+  // If no timezone is present, append IST
   if (!cleanStr.includes('+') && !cleanStr.includes('Z') && !cleanStr.includes('GMT')) {
     cleanStr = `${cleanStr}+05:30`;
   }

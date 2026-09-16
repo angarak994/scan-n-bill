@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { calculateBilling, formatTimeReadable } from '@/lib/billing';
+import { calculateBilling, formatTimeReadable, parseDateString } from '@/lib/billing';
 
 // --- Global Timer Store to prevent massive React interval re-renders ---
 let globalNow = new Date();
@@ -255,12 +255,12 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
   return <>{value}</>;
 };
 
-export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
+export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPromoValid, activePromo, pricingRules, preferences, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromo: any, pricingRules: any, preferences?: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
   const globalNowDate = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
   const isRunning = session.status === 'ACTIVE' && !session.paused_at;
   
   // Freeze the time visually when not active, otherwise sync to the global timer (this prevents unnecessary renders for paused sessions)
-  const now = isRunning ? globalNowDate : new Date(session.paused_at || new Date());
+  const now = isRunning ? globalNowDate : new Date(session.paused_at ? parseDateString(session.paused_at) : Date.now());
 
   const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
   const endFull = session.paused_at ? session.paused_at : now.toISOString();
@@ -286,7 +286,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
   
   // If last_checked_at is available use it, else fallback to last_activity_at or startFull
   const lastCheckedStr = session.last_checked_at || session.last_activity_at || startFull;
-  const lastCheckedAt = new Date(lastCheckedStr).getTime();
+  const lastCheckedAt = parseDateString(lastCheckedStr);
   const minutesSinceLastCheck = (now.getTime() - lastCheckedAt) / 60000;
   
   const isOverdue = reminderIntervalMinutes > 0 && minutesSinceLastCheck >= reminderIntervalMinutes;
@@ -326,7 +326,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
       <td className="p-4 md:p-5">
         <div className="flex items-center gap-2">
           <p className="text-base font-bold font-mono text-accent tabular-nums">
-            <PrivacyText value={liveCost} isPrivacyMode={isPrivacyMode} formatINR={formatINR} />
+            {preferences?.show_pricing_on_dashboard === false ? '---' : <PrivacyText value={liveCost} isPrivacyMode={isPrivacyMode} formatINR={formatINR} />}
           </p>
           {tableDiscount && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 shadow-sm animate-pulse">
@@ -339,9 +339,9 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
       <td className="p-4 md:p-5 text-right">
          <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
           {session.paused_at ? (
-            <button onClick={() => handleIntervention('resume', session.id)} className="px-4 py-2 text-sm font-bold text-warning border border-warning/30 rounded-lg hover:bg-warning hover:text-black transition-colors shadow-sm">Resume</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Resume session?')) handleIntervention('resume', session.id); }} className={`px-4 py-2 ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-warning text-black shadow-lg' : 'text-sm font-bold text-warning border border-warning/30'} rounded-lg hover:bg-warning hover:text-black transition-colors shadow-sm`}>Resume</button>
           ) : (
-            <button onClick={() => handleIntervention('pause', session.id)} className="px-4 py-2 text-sm font-bold text-text-primary border border-border-theme rounded-lg hover:bg-bg-surface transition-colors shadow-sm">Pause</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Pause session?')) handleIntervention('pause', session.id); }} className={`px-4 py-2 ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-bg-surface text-text-primary shadow-lg' : 'text-sm font-bold text-text-primary border border-border-theme'} rounded-lg hover:bg-bg-surface transition-colors shadow-sm`}>Pause</button>
           )}
           <button onClick={() => {
             const tid = prompt('Enter table number to transfer to:');
@@ -355,7 +355,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
                 handleIntervention('force_end', session.id, liveCost);
               }
             }
-          }} className="px-4 py-2 text-sm font-bold text-white bg-danger rounded-lg hover:bg-red-600 transition-colors shadow-md shadow-danger/20 border border-transparent">End</button>
+          }} className={`${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full shadow-lg' : 'px-4 py-2 text-sm'} font-bold text-white bg-danger rounded-lg hover:bg-red-600 transition-colors shadow-md shadow-danger/20 border border-transparent`}>End</button>
          </div>
       </td>
     </tr>

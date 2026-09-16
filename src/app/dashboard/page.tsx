@@ -1,6 +1,6 @@
-
 'use client';
 
+import { formatPhoneInput } from '@/lib/utils/formatPhoneInput';
 import { useEffect, useState, Suspense, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
@@ -134,6 +134,69 @@ function DashboardContent() {
   const [manualStartTime, setManualStartTime] = useState('');
   const [isStartingManual, setIsStartingManual] = useState(false);
   const [memberships, setMemberships] = useState<any[]>([]);
+
+  const [membershipPlans, setMembershipPlans] = useState<any[]>([]);
+  const [isPlansLoading, setIsPlansLoading] = useState(false);
+  const [newPlan, setNewPlan] = useState({ name: '', price: 0, duration_months: 1, benefits: '', discount_percent: 0 });
+  const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<any>(null);
+
+  // Registration OTP State
+  const [registrationStep, setRegistrationStep] = useState<1 | 2 | 3>(1);
+  const [otp, setOtp] = useState('');
+  const [verificationId, setVerificationId] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  
+  const defaultPreferences = {
+    simple_mode: false,
+    require_customer_name: true,
+    require_phone: false,
+    enable_memberships: true,
+    enable_qkhata: true,
+    show_pricing_on_dashboard: true,
+    show_member_details: true,
+    default_view: 'overview'
+  };
+  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [isUpdatingPreferences, setIsUpdatingPreferences] = useState(false);
+
+  const handleUpdatePreference = async (key: string, value: any) => {
+    const newPreferences = { ...preferences, [key]: value };
+    setPreferences(newPreferences);
+    
+    // Auto-save logic
+    setIsUpdatingPreferences(true);
+    try {
+      const updatedPricingRules = {
+        ...data?.pricingRules,
+        globalSettings: {
+          ...data?.pricingRules?.globalSettings,
+          preferences: newPreferences
+        }
+      };
+
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+
+      if (!res.ok) {
+        toast.error('Failed to save preference');
+      }
+    } catch (e) {
+      toast.error('Network error saving preference');
+    } finally {
+      setIsUpdatingPreferences(false);
+    }
+  };
+
   const [showQkhataPopover, setShowQkhataPopover] = useState(false);
   const [qkhataSearch, setQkhataSearch] = useState('');
   const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
@@ -156,14 +219,14 @@ function DashboardContent() {
     if (data?.dbCustomers) {
       data.dbCustomers.forEach((c: any) => {
         if (c.phone) {
-          const norm = c.phone.replace('+91', '').trim();
+          const norm = c.phone;
           balanceMap.set(norm, c.outstanding_balance || 0);
         }
       });
     }
 
     return memberships.map((m: any) => {
-      const norm = m.mobile ? m.mobile.replace('+91', '').trim() : '';
+      const norm = m.mobile ? m.mobile : '';
       return {
         id: m.id,
         name: m.name,
@@ -185,7 +248,7 @@ function DashboardContent() {
   const [bulkSmsMessage, setBulkSmsMessage] = useState('');
   const [bulkSmsTemplateId, setBulkSmsTemplateId] = useState('promotional_v1');
   const [isSendingBulkSms, setIsSendingBulkSms] = useState(false);
-  const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
+  const [newMember, setNewMember] = useState({ name: '', mobile: '', email: '', plan_id: '' });
   const [isCreatingMember, setIsCreatingMember] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -393,6 +456,11 @@ function DashboardContent() {
     if (data && !telegramLoadedRef.current) {
       telegramLoadedRef.current = true;
       if (data.pricingRules?.globalSettings) {
+        
+      if (data.pricingRules?.globalSettings?.preferences) {
+        setTimeout(() => setPreferences({ ...defaultPreferences, ...data.pricingRules.globalSettings.preferences }), 0);
+      }
+
         setTimeout(() => setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []), 0);
         if (data.pricingRules.globalSettings.smart_reminder_interval_minutes !== undefined) {
           setTimeout(() => setReminderInterval(String(data.pricingRules.globalSettings.smart_reminder_interval_minutes)), 0);
@@ -962,6 +1030,20 @@ function DashboardContent() {
     }
   };
 
+  
+  const fetchMembershipPlans = async () => {
+    setIsPlansLoading(true);
+    try {
+      const res = await fetch('/api/membership-plans');
+      if (res.ok) {
+        const data = await res.json();
+        setMembershipPlans(data.plans || []);
+      }
+    } finally {
+      setIsPlansLoading(false);
+    }
+  };
+
   const fetchMemberships = async () => {
     setIsMembershipsLoading(true);
     try {
@@ -975,6 +1057,89 @@ function DashboardContent() {
     }
   };
 
+  
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMember.mobile || newMember.mobile.length < 10) return toast.error('Enter a valid mobile number');
+    setIsSendingOtp(true);
+    try {
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: newMember.mobile })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('OTP Sent! Check console.');
+        setRegistrationStep(2);
+      } else {
+        toast.error(data.error || 'Failed to send OTP');
+      }
+    } catch(e) { toast.error('Network error'); }
+    setIsSendingOtp(false);
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) return toast.error('Enter OTP');
+    setIsVerifyingOtp(true);
+    try {
+      const res = await fetch('/api/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: newMember.mobile, otp })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setVerificationId(data.verificationId);
+        setVerificationToken(data.verificationToken);
+        setRegistrationStep(3);
+        toast.success('Mobile verified!');
+      } else {
+        toast.error(data.error || 'Invalid OTP');
+      }
+    } catch(e) { toast.error('Network error'); }
+    setIsVerifyingOtp(false);
+  };
+
+  const handleCreatePlan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingPlan(true);
+    try {
+      const res = await fetch('/api/membership-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+           ...newPlan,
+           benefits: newPlan.benefits.split(',').map(b => b.trim()).filter(b => b)
+        })
+      });
+      if (res.ok) {
+        fetchMembershipPlans();
+        setNewPlan({ name: '', price: 0, duration_months: 1, benefits: '', discount_percent: 0 });
+        toast.success('Plan created');
+      } else {
+        const err = await res.json();
+        toast.error(err.error);
+      }
+    } catch(e) { toast.error('Error'); }
+    setIsCreatingPlan(false);
+  };
+
+  const handleTogglePlanStatus = async (plan: any) => {
+    try {
+      const res = await fetch('/api/membership-plans', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...plan, status: plan.status === 'Active' ? 'Archived' : 'Active' })
+      });
+      if (res.ok) {
+        fetchMembershipPlans();
+        toast.success('Plan updated');
+      }
+    } catch(e) { toast.error('Error'); }
+  };
+
   const handleCreateMembership = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isCreatingMember) return;
@@ -983,11 +1148,15 @@ function DashboardContent() {
       const res = await fetch('/api/memberships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newMember, duration_months: newMember.duration })
+        body: JSON.stringify({ ...newMember, verificationToken, verificationId, tier: newMember.plan_id, duration_months: (membershipPlans.find((p:any) => p.id === newMember.plan_id)?.duration_months || 12) })
       });
       if (res.ok) {
-        setNewMember({ name: '', mobile: '', email: '', tier: 'VIP', duration: '12' });
+        setNewMember({ name: '', mobile: '', email: '', plan_id: '' });
+        setRegistrationStep(1);
+        setOtp('');
+        setVerificationToken('');
         fetchMemberships();
+      fetchMembershipPlans();
         toast.success('✓ Customer profile created.');
       } else {
         const err = await res.json();
@@ -1958,7 +2127,7 @@ function DashboardContent() {
                 <tr><td colSpan={6} className="p-12 text-center text-text-secondary text-base">Your business is ready. Assign a customer to a table to start tracking.</td></tr>
               ) : (
                 data.activeSessions.map(session => (
-                  <LiveSessionRow 
+                  <LiveSessionRow preferences={preferences} 
                     key={session.id}
                     session={session}
                     currentDiscounts={currentDiscounts}
@@ -2279,52 +2448,63 @@ function DashboardContent() {
 
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
         <h2 className="text-2xl font-bold mb-6">Register New Member</h2>
-        <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
-          <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name <span className="text-danger">*</span></label>
-            <input required type="text" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="John Doe" />
-          </div>
-          <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number <span className="text-danger">*</span></label>
-            <input required type="tel" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono" placeholder="9876543210" />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email (Optional)</label>
-            <input type="email" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="john@example.com" />
-          </div>
-          <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Membership Tier <span className="text-danger">*</span></label>
-            <CustomSelect 
-              value={newMember.tier} 
-              onChange={v => setNewMember({...newMember, tier: v})} 
-              className="font-bold text-accent"
-              options={[
-                {value: "Standard", label: "Standard"},
-                {value: "Pro", label: "Pro"},
-                {value: "VIP", label: "VIP"},
-                {value: "Elite", label: "Elite"}
-              ]}
-            />
-          </div>
-          <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Months) <span className="text-danger">*</span></label>
-            <CustomSelect 
-              value={newMember.duration} 
-              onChange={v => setNewMember({...newMember, duration: v})} 
-              options={[
-                {value: "1", label: "1 Month"},
-                {value: "3", label: "3 Months"},
-                {value: "6", label: "6 Months"},
-                {value: "12", label: "12 Months (1 Year)"}
-              ]}
-            />
-          </div>
-          <div className="col-span-2 mt-2">
-            <button type="submit" disabled={isCreatingMember} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-              {isCreatingMember ? 'Registering...' : 'Register Member'}
+        
+        {registrationStep === 1 && (
+          <form onSubmit={handleSendOtp} className="max-w-xl grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number <span className="text-danger">*</span></label>
+              <input required type="tel" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: formatPhoneInput(e.target.value)})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono" placeholder="9876543210" />
+            </div>
+            <button type="submit" disabled={isSendingOtp} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
+              {isSendingOtp ? 'Sending OTP...' : 'Send OTP'}
             </button>
-          </div>
-        </form>
+          </form>
+        )}
+
+        {registrationStep === 2 && (
+          <form onSubmit={handleVerifyOtp} className="max-w-xl grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Enter OTP <span className="text-danger">*</span></label>
+              <input required type="text" value={otp} onChange={e => setOtp(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono text-center tracking-widest" placeholder="123456" maxLength={6} />
+              <p className="text-xs text-text-secondary mt-2">OTP sent to {newMember.mobile}. <button type="button" onClick={() => setRegistrationStep(1)} className="text-accent hover:underline">Change number</button></p>
+            </div>
+            <button type="submit" disabled={isVerifyingOtp} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
+              {isVerifyingOtp ? 'Verifying...' : 'Verify OTP'}
+            </button>
+          </form>
+        )}
+
+        {registrationStep === 3 && (
+          <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name <span className="text-danger">*</span></label>
+              <input required type="text" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="John Doe" />
+            </div>
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number (Verified)</label>
+              <input disabled type="tel" value={newMember.mobile} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg opacity-50 cursor-not-allowed outline-none text-sm font-mono" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email (Optional)</label>
+              <input type="email" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="john@example.com" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Membership Plan <span className="text-danger">*</span></label>
+              <select required value={newMember.plan_id} onChange={e => setNewMember({...newMember, plan_id: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-bold text-accent">
+                <option value="" disabled>Select a plan...</option>
+                {membershipPlans.filter((p:any) => p.status === 'Active').map((p:any) => (
+                  <option key={p.id} value={p.id}>{p.name} - ₹{p.price} ({p.duration_months} Months)</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2 mt-2">
+              <button type="submit" disabled={isCreatingMember} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
+                {isCreatingMember ? 'Registering...' : 'Complete Registration'}
+              </button>
+            </div>
+          </form>
+        )}
+
       </div>
     </div>
   );
@@ -2852,6 +3032,138 @@ function DashboardContent() {
                 </div>
               </div>
             </div>
+
+      
+      
+      {/* SIMPLE MODE / BUSINESS CUSTOMIZATION */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mb-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-3">
+              QControl Customization
+              {isUpdatingPreferences && <span className="text-xs font-normal text-text-secondary animate-pulse">Saving...</span>}
+            </h2>
+            <p className="text-sm text-text-secondary mt-1">Configure how QControl looks and works for your business.</p>
+          </div>
+          <button 
+            onClick={() => handleUpdatePreference('simple_mode', !preferences.simple_mode)}
+            className={`px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${preferences.simple_mode ? 'bg-success text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-bg-surface text-text-secondary border border-border-theme hover:border-accent'}`}
+          >
+            {preferences.simple_mode ? 'Simple Mode ON' : 'Simple Mode OFF'}
+          </button>
+        </div>
+
+        {!preferences.simple_mode && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
+            <div>
+              <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Workflow Features</h3>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.require_customer_name} onChange={(e) => handleUpdatePreference('require_customer_name', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Require Customer Name for Sessions</span>
+              </label>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.enable_memberships} onChange={(e) => handleUpdatePreference('enable_memberships', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Enable Memberships System</span>
+              </label>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.enable_qkhata} onChange={(e) => handleUpdatePreference('enable_qkhata', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Enable QKhata (Credit) System</span>
+              </label>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Display Preferences</h3>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.show_pricing_on_dashboard} onChange={(e) => handleUpdatePreference('show_pricing_on_dashboard', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Show Live Pricing on Active Sessions</span>
+              </label>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.show_member_details} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Show Member Details in Tables</span>
+              </label>
+            </div>
+            <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
+               <p className="text-xs text-text-secondary">Changes save automatically and apply immediately across the dashboard and Telegram bot.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+
+      {/* Membership Plans Management */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <h2 className="text-2xl font-bold mb-6">Membership Plans</h2>
+        
+        <form onSubmit={handleCreatePlan} className="max-w-2xl grid grid-cols-2 gap-4 mb-8 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
+          <h3 className="col-span-2 text-sm font-black uppercase tracking-widest text-text-primary mb-2">Create New Plan</h3>
+          <div className="col-span-2 md:col-span-1">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Plan Name</label>
+            <input required type="text" value={newPlan.name} onChange={e => setNewPlan({...newPlan, name: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="VIP Annual" />
+          </div>
+          <div className="col-span-2 md:col-span-1">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Price (₹)</label>
+            <input required type="number" value={newPlan.price || ''} onChange={e => setNewPlan({...newPlan, price: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="1000" />
+          </div>
+          <div className="col-span-2 md:col-span-1">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Months)</label>
+            <input required type="number" min="1" value={newPlan.duration_months} onChange={e => setNewPlan({...newPlan, duration_months: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" />
+          </div>
+          <div className="col-span-2 md:col-span-1">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount (%)</label>
+            <input type="number" min="0" max="100" value={newPlan.discount_percent} onChange={e => setNewPlan({...newPlan, discount_percent: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="10" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Benefits (Comma separated)</label>
+            <input type="text" value={newPlan.benefits} onChange={e => setNewPlan({...newPlan, benefits: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="Free Locker, 10% off F&B" />
+          </div>
+          <div className="col-span-2 mt-2">
+             <button type="submit" disabled={isCreatingPlan} className="bg-accent text-white px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+               {isCreatingPlan ? 'Creating...' : '+ Create Plan'}
+             </button>
+          </div>
+        </form>
+
+        {isPlansLoading ? (
+          <p className="text-sm text-text-secondary">Loading plans...</p>
+        ) : membershipPlans.length === 0 ? (
+          <p className="text-sm text-text-secondary italic bg-bg-surface p-4 rounded-lg border border-border-theme">No membership plans created yet.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-border-theme">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-bg-surface border-b border-border-theme">
+                <tr>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Plan Name</th>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Price</th>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Duration</th>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Benefits</th>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Status</th>
+                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-theme/50">
+                {membershipPlans.map((plan: any) => (
+                  <tr key={plan.id} className="hover:bg-bg-surface/50 transition-colors">
+                    <td className="px-5 py-4 font-bold text-text-primary">{plan.name}</td>
+                    <td className="px-5 py-4 font-mono font-bold text-accent">₹{plan.price}</td>
+                    <td className="px-5 py-4">{plan.duration_months} M</td>
+                    <td className="px-5 py-4 text-xs text-text-secondary">{(plan.benefits || []).join(', ')}</td>
+                    <td className="px-5 py-4">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
+                        {plan.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button onClick={() => handleTogglePlanStatus(plan)} className="text-xs font-bold text-accent hover:underline">
+                        {plan.status === 'Active' ? 'Archive' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
 
       {/* Change PIN UI */}
             <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
@@ -3522,26 +3834,36 @@ function DashboardContent() {
           <button onClick={() => setSidebarTab('bookings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'bookings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconBookings /> Bookings
           </button>
-          <button onClick={() => setSidebarTab('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'reports' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+          {!preferences.simple_mode && (
+<button onClick={() => setSidebarTab('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'reports' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconBookings /> Reports
           </button>
-          <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+)}
+          {(!preferences.simple_mode || true) && preferences.enable_memberships && (
+<button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconCustomers /> Members
           </button>
+)}
           
-          <button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+          {!preferences.simple_mode && (
+<button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <IconMenu /> Food & Beverages
           </button>
+)}
           
-          <button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+          {(!preferences.simple_mode || true) && preferences.enable_qkhata && (
+<button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
             QKhata
           </button>
+)}
 
-          <button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+          {!preferences.simple_mode && (
+<button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
             Messaging
           </button>
+)}
 
           <button onClick={() => setSidebarTab('payments')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'payments' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 
@@ -3737,7 +4059,7 @@ function DashboardContent() {
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'support' && renderSupport()}
           {sidebarTab === 'menu' && <MenuManagerTab businessId={businessId!} initialMenuItems={data?.menu_items || []} />}
-          {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} />}
+          {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
           {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
           {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
         </div>
@@ -4191,11 +4513,13 @@ function DashboardContent() {
             <IconBookings />
             <span className="text-[10px] font-bold tracking-wide">Bookings</span>
           </button>
-          <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+          {!preferences.simple_mode && (
+<button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
             {sidebarTab === 'reports' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconBookings />
             <span className="text-[10px] font-bold tracking-wide">Reports</span>
           </button>
+)}
         </div>
       </div>
 

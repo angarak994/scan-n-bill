@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 
-export default function QKhataTab({ businessId }: { businessId: string }) {
+export default function QKhataTab({ businessId, dbCustomers = [], memberships = [] }: { businessId: string, dbCustomers?: any[], memberships?: any[] }) {
     const [customers, setCustomers] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -18,14 +18,43 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
 
     const fetchData = async () => {
         try {
-            const { data, error } = await supabase.from('customers').select('*').eq('business_id', businessId).order('outstanding_balance', { ascending: false });
+            const customersData = dbCustomers;
+            const membersData = memberships;
 
-            if (data) {
-                setCustomers(data);
+            if (customersData || membersData) {
+                const mergedMap = new Map();
+                
+                // Add all existing customers first (they have the true ledger balances)
+                if (customersData) {
+                    customersData.forEach(c => {
+                        mergedMap.set(c.phone || c.name, { ...c, is_customer_record: true });
+                    });
+                }
+                
+                // Add registered members if they don't exist in customers yet (with 0 balance pseudo-record)
+                if (membersData) {
+                    membersData.forEach(m => {
+                        const key = m.mobile || m.name;
+                        if (!mergedMap.has(key)) {
+                            mergedMap.set(key, {
+                                id: m.id, // This is a membership ID (used temporarily until settlement)
+                                name: m.name,
+                                phone: m.mobile,
+                                outstanding_balance: 0,
+                                total_billed: 0,
+                                total_paid: 0,
+                                is_customer_record: false
+                            });
+                        }
+                    });
+                }
+                
+                const mergedArray = Array.from(mergedMap.values()).sort((a, b) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
+                setCustomers(mergedArray);
                 
                 // If a customer is currently selected, refresh their specific data locally
                 if (selectedCustomer) {
-                    const freshCust = data.find(c => c.id === selectedCustomer.id);
+                    const freshCust = mergedArray.find(c => c.id === selectedCustomer.id);
                     if (freshCust) setSelectedCustomer(freshCust);
                 }
             }
@@ -38,30 +67,31 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
 
     useEffect(() => {
         if (!businessId) return;
-        fetchData();
         
-        // Listen to both customers (balances) and payments (ledger rows)
-        // Scoped channel names to businessId to prevent cross-talk between different businesses
-        const custSub = supabase.channel(`qkhata_customers_${businessId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, () => {
-                fetchData();
-            }).subscribe();
-            
+        // Listen to payments (ledger rows)
         const paySub = supabase.channel(`qkhata_payments_${businessId}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `business_id=eq.${businessId}` }, () => {
-                if (selectedCustomer) fetchLedgerHistory(selectedCustomer.id);
+                if (selectedCustomer) fetchLedgerHistory(selectedCustomer);
             }).subscribe();
 
         return () => {
-            supabase.removeChannel(custSub);
             supabase.removeChannel(paySub);
         };
-    }, [businessId]);
+    }, [businessId, selectedCustomer]);
 
-    const fetchLedgerHistory = async (customerId: string) => {
+    useEffect(() => {
+        fetchData();
+    }, [dbCustomers, memberships]);
+
+    const fetchLedgerHistory = async (customer: any) => {
         setIsLedgerLoading(true);
+        if (customer && customer.is_customer_record === false) {
+            setLedgerHistory([]);
+            setIsLedgerLoading(false);
+            return;
+        }
         try {
-            const res = await fetch(`/api/qkhata/ledger?businessId=${businessId}&customerId=${customerId}`);
+            const res = await fetch(`/api/qkhata/ledger?businessId=${businessId}&customerId=${customer.id}`);
             const data = await res.json();
             if (data.ledger) {
                 setLedgerHistory(data.ledger);
@@ -75,7 +105,7 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
 
     const handleSelectCustomer = (c: any) => {
         setSelectedCustomer(c);
-        fetchLedgerHistory(c.id);
+        fetchLedgerHistory(c);
         setSettlementAmount('');
     };
 
@@ -94,32 +124,31 @@ export default function QKhataTab({ businessId }: { businessId: string }) {
         const amount = Number(settlementAmount);
         
         try {
-            // Use API or direct supabase. Directly mimicking paymentService architecture for PAYMENT type.
-            const paymentRecord = {
-                business_id: businessId,
-                customer_id: selectedCustomer.id,
-                amount: amount,
-                payment_method: settlementMethod,
-                status: 'Paid',
-                metadata: {
-                    type: 'PAYMENT',
-                    source: 'Dashboard Settlement'
-                }
-            };
+            const res = await fetch('/api/qkhata/settle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    businessId,
+                    customerId: selectedCustomer.id,
+                    amount,
+                    settlementMethod,
+                    selectedCustomerName: selectedCustomer.name,
+                    selectedCustomerPhone: selectedCustomer.phone,
+                    isCustomerRecord: selectedCustomer.is_customer_record
+                })
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to settle');
+            }
+
+            const data = await res.json();
             
-            const { error: paymentError } = await supabase.from('payments').insert([paymentRecord]);
-            if (paymentError) throw paymentError;
-
-            const newTotalPaid = Number(selectedCustomer.total_paid) + amount;
-            const newOutstanding = Number(selectedCustomer.total_billed) - newTotalPaid;
-
-            const { error: customerError } = await supabase.from('customers').update({
-                total_paid: newTotalPaid,
-                outstanding_balance: newOutstanding,
-                updated_at: new Date().toISOString()
-            }).eq('id', selectedCustomer.id);
-
-            if (customerError) throw customerError;
+            // If it was a new record auto-created, update local selection to new ID immediately
+            if (selectedCustomer.is_customer_record === false && data.customerId) {
+                setSelectedCustomer({ ...selectedCustomer, id: data.customerId, is_customer_record: true });
+            }
 
             toast.success('Payment recorded successfully');
             setSettlementAmount('');

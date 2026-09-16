@@ -6,6 +6,7 @@ import { getSession } from '@/lib/auth';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { sendSMS, SMSConfig } from '@/lib/services/smsService';
 import { bookingService } from '@/lib/services/bookingService';
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 
 export async function POST(request: Request) {
   try {
@@ -26,6 +27,13 @@ export async function POST(request: Request) {
     }
 
     const nameToSave = (customer_name && customer_name.trim() !== '') ? customer_name.trim() : 'Walk-In / Guest';
+    let normalizedPhone = customer_phone;
+    if (customer_phone && customer_phone !== 'Manual / Walk-In') {
+        normalizedPhone = normalizePhone(customer_phone);
+        if (!normalizedPhone) {
+            return NextResponse.json({ error: 'Customer phone must be exactly 10 digits' }, { status: 400 });
+        }
+    }
     const durationNum = Number(duration_minutes) || 60;
     const parts = start_time.split(':');
     const startMins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
@@ -61,7 +69,7 @@ export async function POST(request: Request) {
       .insert({
         business_id: business_id,
         customer_name: nameToSave,
-        customer_phone: customer_phone || 'Manual / Walk-In',
+        customer_phone: normalizedPhone || 'Manual / Walk-In',
         table_id: table_id,
         booking_date: booking_date,
         start_time: formattedStartTime,
@@ -101,8 +109,8 @@ export async function POST(request: Request) {
             const smsConfig = business?.sms_config as SMSConfig;
             
             if (smsConfig && smsConfig.enabled && customer_phone && customer_phone !== 'Manual / Walk-In') {
-                const cleanPhone = customer_phone.replace(/\D/g, '');
-                if (cleanPhone.length >= 10) {
+                const cleanPhone = normalizedPhone;
+                if (cleanPhone) {
                     const smsMessage = `Hi ${nameToSave}, your booking at ${business?.business_name || 'us'} for ${formattedStartTime} is confirmed. See you soon!`;
                     await sendSMS(business_id, cleanPhone, nameToSave, smsMessage, "booking_confirmed_v1", smsConfig);
                 }

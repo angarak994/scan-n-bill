@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { formatPhoneInput } from '@/lib/utils/formatPhoneInput';
 
 export default function Login() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function Login() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.name === 'identifier') {
-      const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+      const val = formatPhoneInput(e.target.value);
       setFormData({ ...formData, identifier: val });
       if (val.length > 0 && val.length !== 10) {
         setPhoneError('Please enter a valid 10-digit mobile number.');

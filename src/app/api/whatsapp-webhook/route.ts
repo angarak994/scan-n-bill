@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { businessManager } from '@/lib/businessManager';
 import { supabase } from '@/lib/supabaseClient';
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from '@/lib/whatsapp';
 import { bookingService } from '@/lib/services/bookingService';

@@ -185,6 +185,7 @@ export const sessionRepository = {
         discount_amount: session.discount_amount || 0,
         payment_status: session.payment_status || 'Pending',
         completed_by: session.completed_by || 'System',
+        member_id: session.member_id || null,
       }])
       .select('id')
       .single();

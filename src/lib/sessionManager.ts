@@ -1,3 +1,4 @@
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 import { v4 as uuid } from 'uuid';
 import { sessionRepository, Session } from './repositories/sessionRepository';
 import { GameType } from './pricing';
@@ -173,13 +174,20 @@ export async function endSession(table_id: string, businessId?: string, source: 
   // Membership Discount Logic via Native DB
   try {
     if (businessId) {
-      const { data: member } = await supabase
-        .from('memberships')
-        .select('*')
-        .eq('business_id', businessId)
-        .or(`mobile.eq.${session.customer_name},name.eq.${session.customer_name}`)
-        .limit(1)
-        .single();
+      let member = null;
+      if (session.member_id) {
+         const { data } = await supabase.from('memberships').select('*').eq('id', session.member_id).single();
+         member = data;
+      } else {
+         const { data } = await supabase
+           .from('memberships')
+           .select('*')
+           .eq('business_id', businessId)
+           .or(`mobile.eq.${session.customer_name},name.eq.${session.customer_name}`)
+           .limit(1)
+           .single();
+         member = data;
+      }
         
       if (member && member.status === 'Active') {
         // Define tier discounts
@@ -199,19 +207,23 @@ export async function endSession(table_id: string, businessId?: string, source: 
         (session as any)._matchedMemberId = member.id;
       }
 
-      // Check if they exist in the customers table for QKhata eligibility
-      const { data: customers } = await supabase
-        .from('customers')
-        .select('id, name, phone')
-        .eq('business_id', businessId);
-      
-      const cName = session.customer_name?.trim().toLowerCase() || '';
-      if (customers) {
-        const match = customers.find(c => 
-          (c.name && c.name.trim().toLowerCase() === cName) || 
-          (c.phone && c.phone.trim() === cName)
-        );
-        if (match) (session as any)._isRegisteredCustomer = true;
+      if (session.member_id && member) {
+          (session as any)._isRegisteredCustomer = true;
+      } else {
+          // Check if they exist in the customers table for QKhata eligibility
+          const { data: customers } = await supabase
+            .from('customers')
+            .select('id, name, phone')
+            .eq('business_id', businessId);
+          
+          const cName = session.customer_name?.trim().toLowerCase() || '';
+          if (customers) {
+            const match = customers.find(c => 
+              (c.name && c.name.trim().toLowerCase() === cName) || 
+              (c.phone && c.phone.trim() === cName)
+            );
+            if (match) (session as any)._isRegisteredCustomer = true;
+          }
       }
     }
   } catch (e) {
@@ -312,7 +324,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
                const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
                const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
                
-               const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
+               const cleanPhone = normalizePhone(customer.phone) || '';
                if (cleanPhone.length >= 10) {
                   const { sendWhatsAppText } = require('./whatsapp');
                   let overrideToken;

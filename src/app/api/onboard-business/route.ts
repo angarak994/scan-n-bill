@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import QRCode from 'qrcode';
 import { businessManager } from '@/lib/businessManager';
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 
 const getSheetsClient = () => {
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
@@ -24,6 +25,11 @@ export async function POST(request: Request) {
 
     if (!business_name || !owner_name || !contact_number || !google_sheet_id || !dashboard_pin) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const normalizedPhone = normalizePhone(contact_number);
+    if (!normalizedPhone) {
+      return NextResponse.json({ error: 'Contact number must be exactly 10 digits' }, { status: 400 });
     }
 
     // Extract ID if user pasted full URL
@@ -69,7 +75,7 @@ export async function POST(request: Request) {
     const businessId = await businessManager.registerBusiness({
       business_name,
       owner_name,
-      contact_number,
+      contact_number: normalizedPhone,
       address,
       google_sheet_id: finalSheetId,
       business_type,

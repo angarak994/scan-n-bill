@@ -1,3 +1,4 @@
+import { normalizePhone } from '@/lib/utils/phoneValidation';
 import { supabase } from '../supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 import { sendSMS, SMSConfig } from './smsService';
@@ -117,7 +118,7 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
             const { data: cData } = await supabase.from('customers').select('phone').eq('id', customerId).single();
             
             if (smsConfig && smsConfig.enabled && cData?.phone) {
-                const cleanPhone = cData.phone.replace(/\D/g, '');
+                const cleanPhone = normalizePhone(cData.phone) || '';
                 if (cleanPhone.length >= 10) {
                     const smsMessage = `Thank you ${customerName}, your payment of Rs.${amountPaid} at ${business?.business_name || 'our store'} has been received successfully.`;
                     sendSMS(businessId, cleanPhone, customerName, smsMessage, "payment_success_v1", smsConfig).catch(console.error); // Fire and forget
