@@ -1856,9 +1856,17 @@ function DashboardContent() {
       const headers = ['Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Payment Method', 'Total Amount'];
       const csvContent = [
         headers.join(','),
-        ...reportData.completedSessions.map((s: any) => [
-          s.date, s.start_time, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
-        ].map(field => `"${field}"`).join(','))
+        ...reportData.completedSessions.map((s: any) => {
+          let readableTime = s.start_time || '';
+          if (readableTime.includes('T')) {
+            try {
+              readableTime = new Date(readableTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch (err) {}
+          }
+          return [
+            s.date, readableTime, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
+          ].map(field => `"${field === null || field === undefined ? '' : field}"`).join(',')
+        })
       ].join('\n');
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
