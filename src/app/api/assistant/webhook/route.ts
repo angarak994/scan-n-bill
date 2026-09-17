@@ -34,8 +34,21 @@ export async function POST(request: Request) {
     // Route message through our Assistant Service (AI intent parsing & logic)
     const responseText = await processAssistantMessage(globalCustomer, text, platform);
 
-    // Normally we'd fire this response back to Twilio/WhatsApp API or Telegram send API here
-    // For now, return it in the HTTP response for testing
+    // Fire this response back to WhatsApp API or Telegram send API
+    if (platform === 'whatsapp') {
+        const { sendWhatsAppText } = await import('@/lib/whatsapp');
+        await sendWhatsAppText(phone, responseText);
+    } else if (platform === 'telegram') {
+        const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+        if (TELEGRAM_BOT_TOKEN) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: phone, text: responseText })
+            });
+        }
+    }
+
     return NextResponse.json({ reply: responseText }, { status: 200 });
 
   } catch (error: any) {

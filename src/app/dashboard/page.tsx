@@ -357,6 +357,7 @@ function DashboardContent() {
   const [newStationId, setNewStationId] = useState('');
   const [newStationName, setNewStationName] = useState('');
   const [newStationType, setNewStationType] = useState('ps5');
+  const [newStationMaxPlayers, setNewStationMaxPlayers] = useState('4');
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [stationToDelete, setStationToDelete] = useState<{id: string, name: string} | null>(null);
   const [selectedGameRule, setSelectedGameRule] = useState('ps5');
@@ -874,10 +875,12 @@ function DashboardContent() {
       toast.error(`Station ID "${newStationId}" already exists.`);
       return;
     }
-    const updatedTables = [...existing, { id: newStationId, name: newStationName, type: newStationType }];
+    const maxPlayersNum = parseInt(newStationMaxPlayers, 10) || 4;
+    const updatedTables = [...existing, { id: newStationId, name: newStationName, type: newStationType, max_players: newStationType === 'ps5' ? maxPlayersNum : undefined }];
     await handleSaveConfig(undefined, updatedTables);
     setNewStationId('');
     setNewStationName('');
+    setNewStationMaxPlayers('4');
   };
 
   const confirmDeleteStation = (t: any) => {
@@ -1838,30 +1841,54 @@ function DashboardContent() {
     </>
   );
 
-  const handleDownloadCSV = () => {
-    // Generate CSV from history
-    if (data.completedSessions.length === 0) return toast.error("We couldn't find any history data to download.");
-    const headers = ['Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Payment Method', 'Total Amount'];
-    const csvContent = [
-      headers.join(','),
-      ...data.completedSessions.map(s => [
-        s.date, s.start_time, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
-      ].map(field => `"${field}"`).join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `revenue_report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadCSV = async () => {
+    try {
+      toast.loading('Generating report...', { id: 'csv-download' });
+      const bId = sessionCookie?.businessId || businessId;
+      const res = await fetch(`/api/dashboard-data?b=${bId}&startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`);
+      const reportData = await res.json();
+      
+      if (!reportData.completedSessions || reportData.completedSessions.length === 0) {
+        toast.error("We couldn't find any history data to download for this range.", { id: 'csv-download' });
+        return;
+      }
+      
+      const headers = ['Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Payment Method', 'Total Amount'];
+      const csvContent = [
+        headers.join(','),
+        ...reportData.completedSessions.map((s: any) => [
+          s.date, s.start_time, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
+        ].map(field => `"${field}"`).join(','))
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `revenue_report_${reportDateRange.start}_to_${reportDateRange.end}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Report downloaded!', { id: 'csv-download' });
+    } catch (e) {
+      toast.error('Failed to generate report', { id: 'csv-download' });
+    }
   };
   const generateTimeSlots = () => {
     const slots = [];
+    const todayStr = getLocalDateStr();
+    const now = new Date();
+    const currentH = now.getHours();
+    const currentM = now.getMinutes();
+
     for (let h = 0; h < 24; h++) {
       for (let m of [0, 30]) {
+        // If booking for today, omit slots that are in the past
+        if (bookingDate === todayStr) {
+          if (h < currentH || (h === currentH && m < currentM)) {
+            continue;
+          }
+        }
         slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
       }
     }
@@ -1875,15 +1902,6 @@ function DashboardContent() {
     const [sh, sm] = slot.split(':').map(Number);
     const slotMins = sh * 60 + sm;
     const slotEndMins = slotMins + (Number(bookingDuration) || 60);
-
-    if (bookingDate === todayStr) {
-      const now = new Date();
-      const currentH = now.getHours();
-      const currentM = now.getMinutes();
-      if (sh < currentH || (sh === currentH && sm < currentM)) {
-        return true; 
-      }
-    }
 
     const bookingsOnDate = data?.bookings?.filter((b: any) => b.booking_date === bookingDate && b.table_id === bookingTable && b.status === 'confirmed') || [];
     
@@ -2801,6 +2819,21 @@ function DashboardContent() {
                         options={Object.keys(data?.pricingRules?.rules || { snooker: {}, pool: {}, ps5: {} }).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
                         className="py-2 min-h-[40px] text-xs font-bold capitalize"
                       />
+                      {newStationType === 'ps5' && (
+                        <div>
+                          <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1.5 ml-1">Max Players</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="8"
+                            required
+                            value={newStationMaxPlayers}
+                            onChange={e => setNewStationMaxPlayers(e.target.value)}
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                            placeholder="e.g. 4"
+                          />
+                        </div>
+                      )}
                       <button type="submit" disabled={isUpdatingConfig || !newStationId} className="w-full bg-accent text-black font-extrabold py-2.5 rounded-lg hover:bg-accent/90 transition-colors text-xs uppercase shadow-md shadow-accent/10 min-h-[42px]">
                         {isUpdatingConfig ? 'Adding...' : '+ Create Station'}
                       </button>

@@ -442,6 +442,8 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let discount;
     let qpayConfig = undefined;
     let paymentQrConfig = undefined;
+    let maxPlayers = 4;
+    let configuredGameType = 'pool';
     if (businessId) {
       const business = await businessManager.getBusiness(businessId);
       pricingRules = business?.pricing_rules;
@@ -450,6 +452,19 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       businessName = business?.business_name || businessName;
       qpayConfig = business?.qpay_config;
       paymentQrConfig = business?.payment_qr_config;
+      
+      const tableConfig = business?.tables?.find(t => t.id === table_id);
+      if (tableConfig) {
+        if ((tableConfig as any).game_type) {
+          configuredGameType = (tableConfig as any).game_type;
+        } else if ((tableConfig as any).type) {
+          configuredGameType = (tableConfig as any).type;
+        }
+        if ((tableConfig as any).max_players) {
+          maxPlayers = parseInt((tableConfig as any).max_players, 10);
+        }
+      }
+
       // Fetch active promotion
       const activePromo = await getCachedActivePromo(businessId);
       const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
@@ -478,6 +493,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       businessName,
       qpayConfig,
       paymentQrConfig,
+      max_players: maxPlayers,
     };
   }
 
@@ -485,6 +501,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let menuItems;
   let discount;
   let configuredGameType = 'pool';
+  let maxPlayers = 4;
 
   let qpayConfig = undefined;
   let paymentQrConfig = undefined;
@@ -498,8 +515,15 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     paymentQrConfig = business?.payment_qr_config;
     
     const tableConfig = business?.tables?.find(t => t.id === table_id);
-    if (tableConfig && (tableConfig as any).game_type) {
-      configuredGameType = (tableConfig as any).game_type;
+    if (tableConfig) {
+      if ((tableConfig as any).game_type) {
+        configuredGameType = (tableConfig as any).game_type;
+      } else if ((tableConfig as any).type) {
+        configuredGameType = (tableConfig as any).type;
+      }
+      if ((tableConfig as any).max_players) {
+        maxPlayers = parseInt((tableConfig as any).max_players, 10);
+      }
     }
 
     // Fetch active promotion
@@ -517,6 +541,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     menuItems,
     discount,
     game_type: configuredGameType,
+    max_players: maxPlayers,
     businessName,
     qpayConfig,
     paymentQrConfig,

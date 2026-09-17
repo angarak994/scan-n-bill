@@ -70,12 +70,13 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
         newItems.push(newItem);
       }
 
-      const { error } = await supabase
-        .from('businesses')
-        .update({ menu_items: newItems })
-        .eq('id', businessId);
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, menu_items: newItems })
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error('Failed to update config');
 
       setMenuItems(newItems);
       setIsAdding(false);
@@ -98,12 +99,13 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
         newItems = newItems.filter(i => i.id !== idOrName);
       }
 
-      const { error } = await supabase
-        .from('businesses')
-        .update({ menu_items: newItems })
-        .eq('id', businessId);
+      const res = await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, menu_items: newItems })
+      });
 
-      if (error) throw error;
+      if (!res.ok) throw new Error('Failed to delete item');
       setMenuItems(newItems);
     } catch (err) {
       console.error(err);
@@ -122,10 +124,11 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
       setMenuItems(newItems);
 
-      await supabase
-        .from('businesses')
-        .update({ menu_items: newItems })
-        .eq('id', businessId);
+      await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, menu_items: newItems })
+      });
     } catch (err) {
       console.error(err);
     }

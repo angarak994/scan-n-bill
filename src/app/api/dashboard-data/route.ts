@@ -64,7 +64,8 @@ export async function GET(request: Request) {
       { data: interventions },
       { data: bookings },
       { data: activePromotions },
-      { data: dbCustomers }
+      { data: dbCustomers },
+      { data: memberships }
     ] = await Promise.all([
       sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
       supabase
@@ -82,6 +83,10 @@ export async function GET(request: Request) {
       supabase
         .from('customers')
         .select('id, name, phone, outstanding_balance')
+        .eq('business_id', businessId),
+      supabase
+        .from('memberships')
+        .select('id, name, mobile, points')
         .eq('business_id', businessId)
     ]);
 
@@ -120,6 +125,7 @@ export async function GET(request: Request) {
       bookings: bookings || [],
       activePromotions: activePromotions || [],
       dbCustomers: dbCustomers || [],
+      memberships: memberships || [],
       businessId,
       businessName: business.business_name,
       ownerName: business.owner_name,

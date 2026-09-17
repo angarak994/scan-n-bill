@@ -516,7 +516,10 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                   </button>
                   <div className="flex-1 text-center font-bold text-2xl">{numPlayers}</div>
                   <button 
-                    onClick={() => setNumPlayers(numPlayers + 1)}
+                    onClick={() => {
+                      const maxP = (session as any).max_players || 4;
+                      setNumPlayers(Math.min(maxP, numPlayers + 1));
+                    }}
                     className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xl hover:bg-blue-200 dark:hover:bg-blue-900/50"
                   >
                     +
@@ -579,50 +582,58 @@ export default function SessionClient({ initialState, business_id, table_id, gam
 
         {session.status === 'active' && (
           <>
-            <LiveTimer session={session} />            
-            {session.menuItems && session.menuItems.length > 0 && (
-              <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
-                <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Order Food & Drinks</h2>
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                  {session.menuItems.map((item: any) => (
-                    <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
-                      <div>
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{item.name}</p>
-                        <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => setCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }))}
-                          className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 font-bold"
-                        >
-                          -
-                        </button>
-                        <span className="w-4 text-center font-bold">{cart[item.name] || 0}</span>
-                        <button 
-                          onClick={() => setCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
-                          className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold"
-                        >
-                          +
-                        </button>
-                      </div>
+            <LiveTimer session={session} />
+          </>
+        )}
+        
+        {session.menuItems && session.menuItems.length > 0 && (
+          <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Food & Drinks Menu</h2>
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+              {session.menuItems.map((item: any) => (
+                <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                  <div>
+                    <p className="font-bold text-gray-800 dark:text-gray-200">{item.name}</p>
+                    <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
+                  </div>
+                  {session.status === 'active' && (
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }))}
+                        className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 font-bold"
+                      >
+                        -
+                      </button>
+                      <span className="w-4 text-center font-bold">{cart[item.name] || 0}</span>
+                      <button 
+                        onClick={() => setCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
+                        className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold"
+                      >
+                        +
+                      </button>
                     </div>
-                  ))}
+                  )}
                 </div>
-                
-                {Object.values(cart).some(q => q > 0) && (
-                  <button
-                    onClick={handlePlaceOrder}
-                    disabled={isOrdering}
-                    className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all"
-                  >
-                    {isOrdering ? 'Placing Order...' : `Place Order (₹${Object.entries(cart).reduce((acc, [name, qty]) => {
-                      const price = session.menuItems.find((i: any) => i.name === name)?.price || 0;
-                      return acc + (price * qty);
-                    }, 0)})`}
-                  </button>
-                )}
-              </div>
+              ))}
+            </div>
+            
+            {session.status === 'active' && Object.values(cart).some(q => q > 0) && (
+              <button
+                onClick={handlePlaceOrder}
+                disabled={isOrdering}
+                className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all"
+              >
+                {isOrdering ? 'Placing Order...' : `Place Order (₹${Object.entries(cart).reduce((acc, [name, qty]) => {
+                  const price = session.menuItems.find((i: any) => i.name === name)?.price || 0;
+                  return acc + (price * qty);
+                }, 0)})`}
+              </button>
             )}
+          </div>
+        )}
+
+        {session.status === 'active' && (
+          <>
 
             <div className="w-full mt-4 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-black/10 dark:border-white/10 text-gray-600 dark:text-gray-400 text-center text-sm">
               To end this session, please scan the table's QR code again.

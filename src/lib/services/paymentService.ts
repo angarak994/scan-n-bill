@@ -18,41 +18,45 @@ export interface PaymentPayload {
 export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
     const { businessId, sessionId, customerName, totalBilled, amountPaid, paymentMethod, paymentStatus, dueDate, source } = payload;
 
-    if (!businessId || !customerName) return;
+    if (!businessId) return;
+    const finalCustomerName = customerName || 'Walk-in';
 
     // 1. Resolve or Create Customer (for Ledger)
     let customerId;
     
     // First, try matching by phone if it's a mobile number (assume 10 digits as simple heuristic or just match exactly)
-    const { data: existingCustomer } = await supabase
-        .from('customers')
-        .select('id, total_billed, total_paid, outstanding_balance')
-        .eq('business_id', businessId)
-        .or(`name.ilike.${customerName},phone.eq.${customerName}`)
-        .limit(1)
-        .single();
+    if (finalCustomerName !== 'Walk-in') {
+        const { data: existingCustomer } = await supabase
+            .from('customers')
+            .select('id, total_billed, total_paid, outstanding_balance')
+            .eq('business_id', businessId)
+            .or(`name.ilike.${finalCustomerName},phone.eq.${finalCustomerName}`)
+            .limit(1)
+            .single();
+        if (existingCustomer) {
+            customerId = existingCustomer.id;
+            // Update outstanding balance
+            const newTotalBilled = Number(existingCustomer.total_billed) + totalBilled;
+            const newTotalPaid = Number(existingCustomer.total_paid) + amountPaid;
+            const newOutstanding = newTotalBilled - newTotalPaid;
+            
+            await supabase.from('customers').update({
+                total_billed: newTotalBilled,
+                total_paid: newTotalPaid,
+                outstanding_balance: newOutstanding,
+                updated_at: new Date().toISOString()
+            }).eq('id', customerId);
+        }
+    }
 
-    if (existingCustomer) {
-        customerId = existingCustomer.id;
-        // Update outstanding balance
-        const newTotalBilled = Number(existingCustomer.total_billed) + totalBilled;
-        const newTotalPaid = Number(existingCustomer.total_paid) + amountPaid;
-        const newOutstanding = newTotalBilled - newTotalPaid;
-        
-        await supabase.from('customers').update({
-            total_billed: newTotalBilled,
-            total_paid: newTotalPaid,
-            outstanding_balance: newOutstanding,
-            updated_at: new Date().toISOString()
-        }).eq('id', customerId);
-    } else {
+    if (!customerId) {
         // Create new customer
-        const isPhone = /^\d+$/.test(customerName.replace(/[\s\-\+]/g, ''));
+        const isPhone = /^\d+$/.test(finalCustomerName.replace(/[\s\-\+]/g, ''));
         const newCustomer = {
             id: uuidv4(),
             business_id: businessId,
-            name: isPhone ? 'Unknown' : customerName,
-            phone: isPhone ? customerName : null,
+            name: isPhone ? 'Unknown' : finalCustomerName,
+            phone: isPhone ? finalCustomerName : null,
             total_billed: totalBilled,
             total_paid: amountPaid,
             outstanding_balance: totalBilled - amountPaid
@@ -120,8 +124,8 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
             if (smsConfig && smsConfig.enabled && cData?.phone) {
                 const cleanPhone = normalizePhone(cData.phone) || '';
                 if (cleanPhone.length >= 10) {
-                    const smsMessage = `Thank you ${customerName}, your payment of Rs.${amountPaid} at ${business?.business_name || 'our store'} has been received successfully.`;
-                    sendSMS(businessId, cleanPhone, customerName, smsMessage, "payment_success_v1", smsConfig).catch(console.error); // Fire and forget
+                    const smsMessage = `Thank you ${finalCustomerName}, your payment of Rs.${amountPaid} at ${business?.business_name || 'our store'} has been received successfully.`;
+                    sendSMS(businessId, cleanPhone, finalCustomerName, smsMessage, "payment_success_v1", smsConfig).catch(console.error); // Fire and forget
                 }
             }
         }

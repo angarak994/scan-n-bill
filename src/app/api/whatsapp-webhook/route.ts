@@ -162,7 +162,27 @@ export async function POST(request: Request) {
     }
 
     if (!state) {
-      // Ignore random messages if no active state and no direct business matched
+      // Fallback to Assistant Service for general queries
+      const { processAssistantMessage } = await import('@/lib/services/assistantService');
+      
+      let { data: globalCustomer } = await supabase
+          .from('global_customers')
+          .select('*')
+          .eq('phone', phone)
+          .single();
+          
+      if (!globalCustomer) {
+          const { data: newCustomer } = await supabase
+              .from('global_customers')
+              .insert({ phone })
+              .select()
+              .single();
+          globalCustomer = newCustomer;
+      }
+
+      const responseText = await processAssistantMessage(globalCustomer, incomingText, 'whatsapp');
+      await sendWhatsAppText(phone, responseText, false, overrideToken, overridePhoneId);
+      
       return NextResponse.json({ ok: true });
     }
 
