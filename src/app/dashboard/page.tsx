@@ -1870,8 +1870,9 @@ function DashboardContent() {
       link.click();
       document.body.removeChild(link);
       toast.success('Report downloaded!', { id: 'csv-download' });
-    } catch (e) {
-      toast.error('Failed to generate report', { id: 'csv-download' });
+    } catch (e: any) {
+      console.error("CSV Download Error:", e);
+      toast.error(`Failed to generate report: ${e.message}`, { id: 'csv-download' });
     }
   };
   const generateTimeSlots = () => {
