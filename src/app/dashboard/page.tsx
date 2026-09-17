@@ -1844,7 +1844,7 @@ function DashboardContent() {
   const handleDownloadCSV = async () => {
     try {
       toast.loading('Generating report...', { id: 'csv-download' });
-      const bId = sessionCookie?.businessId || businessId;
+      const bId = businessId;
       const res = await fetch(`/api/dashboard-data?b=${bId}&startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`);
       const reportData = await res.json();
       
