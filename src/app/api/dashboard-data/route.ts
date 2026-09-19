@@ -110,13 +110,13 @@ export async function GET(request: Request) {
     });
 
     const dailyRevenue = completedSessions.reduce((acc, session) => {
-      if (session.amount_paid !== undefined && session.amount_paid !== null) {
-        return acc + Number(session.amount_paid);
-      }
+      let paid = 0;
       if (session.payment_status === 'Paid') {
-        return acc + (session.cost || 0);
+          paid = (session.amount_paid && session.amount_paid > 0) ? Number(session.amount_paid) : (session.cost || 0);
+      } else {
+          paid = (session.amount_paid && session.amount_paid > 0) ? Number(session.amount_paid) : 0;
       }
-      return acc;
+      return acc + paid;
     }, 0);
     const pricingRules = business.pricing_rules;
 
