@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { calculateBilling } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
-import { logActivityToSheet, logSessionEndToSheet } from '@/lib/googleSheets';
+import { logActivityToSheet } from '@/lib/googleSheets';
 
 export async function handleSessionIntervention(params: {
   action: string;
@@ -122,26 +122,7 @@ export async function handleSessionIntervention(params: {
       details: `Session ${interventionType}`
     }, business_id),
     
-    action === 'force_end' 
-      ? logSessionEndToSheet({
-          id: session_id,
-          business_id,
-          customer_name: session.customer_name,
-          table_id: session.table_id,
-          start_time: session.start_time,
-          end_time: dbUpdates.end_time,
-          duration: dbUpdates.duration,
-          cost: dbUpdates.cost,
-          discounts: dbUpdates.discount_amount,
-          date: session.date,
-          game_type: session.game_type,
-          num_players: session.num_players,
-          paused_duration_seconds: dbUpdates.paused_duration_seconds,
-          applied_pricing: dbUpdates.applied_pricing,
-          completed_by: dbUpdates.completed_by
-        }, business_id)
-      : Promise.resolve(),
-    
+
     // Add unified session sync
     (async () => {
       const { syncSessionToSheet } = require('../googleSheets');

@@ -34,15 +34,6 @@ export async function POST(request: Request) {
 
     const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id, start_time);
     
-    // Sync to Google Sheets asynchronously (non-blocking)
-    Promise.resolve().then(async () => {
-      try {
-        const { logSessionStartToSheet } = require('@/lib/googleSheets');
-        await logSessionStartToSheet(result, business_id);
-      } catch (sheetError) {
-        console.error('Google Sheets Sync Error:', sheetError);
-      }
-    });
     
     return NextResponse.json(result, { status: 201 });
   } catch (err: unknown) {

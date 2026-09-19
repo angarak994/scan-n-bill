@@ -28,7 +28,7 @@ export function formatTimeReadable(timeStr?: string, includeToday: boolean = fal
   try {
     let clean = timeStr;
     if (clean.includes('T') || clean.includes(', ') || clean.includes(' ')) {
-      const d = new Date(clean.includes('+') || clean.includes('Z') || clean.includes('GMT') ? clean : `${clean} +0530`);
+      const d = new Date(clean.includes('+') || clean.includes('Z') || clean.includes('GMT') ? clean : `${clean}+05:30`);
       if (!isNaN(d.getTime())) {
         const formatter = new Intl.DateTimeFormat('en-IN', {
           timeZone: 'Asia/Kolkata',
@@ -127,7 +127,7 @@ export function calculateCost(
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean },
+  discount?: { percent: number; applyToFood: boolean; time_slot_start?: string; time_slot_end?: string },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string
@@ -179,6 +179,23 @@ export function calculateCost(
         const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
         rate = cr.rate; slabName = cr.slabName;
       }
+      
+      // Happy Hour per-minute discount logic
+      if (discount && discount.percent > 0 && discount.time_slot_start && discount.time_slot_end) {
+        const currentHour = new Date(currentMs + IST_OFFSET).getUTCHours();
+        const currentMin = new Date(currentMs + IST_OFFSET).getUTCMinutes();
+        const currentTotalMins = currentHour * 60 + currentMin;
+        const [startH, startM] = discount.time_slot_start.split(':').map(Number);
+        const [endH, endM] = discount.time_slot_end.split(':').map(Number);
+        const startTotalMins = startH * 60 + startM;
+        const endTotalMins = endH * 60 + endM;
+        
+        if (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins) {
+          rate = rate * (1 - (discount.percent / 100));
+          slabName += ` (${discount.percent}% HH Off)`;
+        }
+      }
+
       appliedSlabs.add(slabName);
       
       const chunkCost = chunkHours * rate;
@@ -226,11 +243,40 @@ export function calculateCost(
   let baseCost = finalCost;
   let discountAmount = 0;
   
-  // Apply Happy Hour Discount on Game Time
-  if (discount && discount.percent > 0) {
+  // Apply Flat Session Discount (only if not a specific Happy Hour time slot, which was already applied per-minute)
+  if (discount && discount.percent > 0 && (!discount.time_slot_start || !discount.time_slot_end)) {
     finalCost = finalCost * (1 - (discount.percent / 100));
     finalCost = Math.round(finalCost);
     discountAmount = baseCost - finalCost;
+  } else if (discount && discount.percent > 0 && discount.time_slot_start && discount.time_slot_end) {
+    // For Happy Hour, we already applied it to unpausedTotalCost per-minute.
+    // The finalCost naturally reflects it. We just need to calculate what it *would* have been.
+    let noPromoTotalCost = 0;
+    let curr = startMs;
+    while (curr < evaluationEndMs) {
+      const nextMs = Math.min(curr + 60000, evaluationEndMs);
+      const chunkHours = (nextMs - curr) / 3600000;
+      let rawRate = 0;
+      if (lockedRate !== undefined && lockedRate !== null) {
+        rawRate = Number(lockedRate);
+      } else {
+        const cr = getCurrentRate(gameType, curr, pricing, numPlayers);
+        rawRate = cr.rate;
+      }
+      noPromoTotalCost += (chunkHours * rawRate);
+      curr = nextMs;
+    }
+    
+    if (elapsedHours > 0) {
+      let noPromoCostScaled = (noPromoTotalCost / elapsedHours) * billedHours;
+      if (roundingMode === 'nearest_5') noPromoCostScaled = Math.round(noPromoCostScaled / 5) * 5;
+      else if (roundingMode === 'up_5') noPromoCostScaled = Math.ceil(noPromoCostScaled / 5) * 5;
+      else if (roundingMode === 'down_5') noPromoCostScaled = Math.floor(noPromoCostScaled / 5) * 5;
+      else if (roundingMode === 'none') noPromoCostScaled = Math.round(noPromoCostScaled);
+      
+      baseCost = noPromoCostScaled;
+      discountAmount = Math.max(0, baseCost - finalCost);
+    }
   }
 
   return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None', breakdown };
@@ -245,7 +291,7 @@ export function calculateBilling(
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean },
+  discount?: { percent: number; applyToFood: boolean; time_slot_start?: string; time_slot_end?: string },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string

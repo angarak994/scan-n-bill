@@ -51,6 +51,8 @@ interface ActivePromotion {
   discount_percent: number;
   end_time: string;
   status: string;
+  time_slot_start?: string | null;
+  time_slot_end?: string | null;
 }
 
 function toReadableIST(date: Date): string {
@@ -273,7 +275,27 @@ function DashboardContent() {
   // Settings State
   const [promoTitle, setPromoTitle] = useState('');
   const [promoDiscount, setPromoDiscount] = useState('40');
-  const [promoDurationHours, setPromoDurationHours] = useState('2');
+  const [promoTimeSlotEnabled, setPromoTimeSlotEnabled] = useState(false);
+  const [promoTimeSlotStart, setPromoTimeSlotStart] = useState('14:00');
+  const [promoTimeSlotEnd, setPromoTimeSlotEnd] = useState('17:00');
+  
+  // Promotion new fields
+  const getLocalTodayString = () => {
+    const d = new Date();
+    const tzOffset = 5.5 * 60 * 60 * 1000;
+    const local = new Date(d.getTime() + tzOffset);
+    return local.toISOString().split('T')[0];
+  };
+  const getLocalTimeString = () => {
+    const d = new Date();
+    const tzOffset = 5.5 * 60 * 60 * 1000;
+    const local = new Date(d.getTime() + tzOffset);
+    return local.toISOString().split('T')[1].substring(0,5);
+  };
+  
+  const [promoStartDate, setPromoStartDate] = useState(getLocalTodayString());
+  const [promoStartTime, setPromoStartTime] = useState(getLocalTimeString());
+  const [promoDurationDays, setPromoDurationDays] = useState('1');
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
   const [isUpdatingGoals, setIsUpdatingGoals] = useState(false);
 
@@ -753,9 +775,42 @@ function DashboardContent() {
     }
   };
 
+  const isLazyModeEnabled = data?.pricingRules?.globalSettings?.lazy_mode_enabled || false;
+
+  const toggleLazyMode = async () => {
+    if (!data) return;
+    const newVal = !isLazyModeEnabled;
+    const updatedPricingRules = {
+      ...data.pricingRules,
+      globalSettings: {
+        ...(data.pricingRules?.globalSettings || {}),
+        lazy_mode_enabled: newVal
+      }
+    };
+    
+    setData(prev => prev ? { ...prev, pricingRules: updatedPricingRules } : prev);
+    
+    try {
+      await fetch('/api/update-business-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          business_id: businessId,
+          pricing_rules: updatedPricingRules
+        })
+      });
+      toast.success(`Lazy Mode ${newVal ? 'ON ⚡' : 'OFF'}`);
+    } catch (e) {
+      toast.error('Network error. Failed to toggle Lazy Mode.');
+    }
+  };
+
   const handleManualStart = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualTable || !manualCustomer || !businessId) return;
+    const finalCustomer = isLazyModeEnabled ? 'Guest' : manualCustomer;
+    const finalCustomerId = isLazyModeEnabled ? null : manualCustomerId;
+
+    if (!manualTable || !finalCustomer || !businessId) return;
     setIsStartingManual(true);
     try {
       const res = await fetch('/api/start-session', {
@@ -765,10 +820,10 @@ function DashboardContent() {
           table_id: manualTable, 
           game_type: manualGame, 
           num_players: Number(manualPlayers), 
-          customer_name: manualCustomer, 
+          customer_name: finalCustomer, 
           business_id: businessId, 
           notes: manualNotes, 
-          member_id: manualCustomerId,
+          member_id: finalCustomerId,
           start_time: manualStartTime ? new Date(manualStartTime).toISOString() : undefined
         })
       });
@@ -933,41 +988,43 @@ function DashboardContent() {
           const gameDisplay = booking.game_type || assignedTable?.type || 'Table Game';
           
           return (
-            <div key={booking.id} className="p-5 rounded-xl border-2 border-warning/80 bg-warning/10 text-text-primary flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-lg animate-soft-pulse">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-full bg-warning text-black flex items-center justify-center font-extrabold text-xl shrink-0 shadow">
-                  🔔
+            <div key={booking.id} className="relative overflow-hidden p-6 rounded-2xl border border-warning/30 bg-gradient-to-r from-bg-surface to-warning/5 text-text-primary flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-xl shadow-warning/5 group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-warning/80 shadow-[0_0_15px_rgba(234,179,8,0.5)]"></div>
+              
+              <div className="flex items-start gap-5">
+                <div className="w-12 h-12 rounded-xl bg-warning/10 border border-warning/20 text-warning flex items-center justify-center text-xl shrink-0 shadow-inner">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-base sm:text-lg font-bold">Scheduled Booking Reminder</h4>
-                    <span className="px-2.5 py-0.5 rounded-md text-xs font-bold font-mono uppercase bg-warning text-black tracking-wider shadow-sm">RESERVED</span>
-                    <span className="px-2 py-0.5 rounded-md text-xs font-bold font-mono capitalize bg-bg-surface border border-border-theme text-primary">{gameDisplay}</span>
+                  <div className="flex items-center gap-3 flex-wrap mb-1.5">
+                    <h4 className="text-lg font-bold tracking-tight">Booking Reminder</h4>
+                    <span className="px-2.5 py-0.5 rounded text-[10px] font-black tracking-widest uppercase bg-warning/20 text-warning border border-warning/20">Action Required</span>
                   </div>
-                  <p className="text-sm text-text-secondary mt-1">
-                    Table <strong className="text-text-primary font-mono">{assignedTable?.name || booking.table_id} ({booking.table_id})</strong> is reserved for <strong className="text-text-primary">{getDisplayName(booking.customer_name, (booking as any).member_id) || 'Guest'}</strong> at <strong className="text-accent font-mono">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
+                  <p className="text-sm text-text-secondary leading-relaxed">
+                    <strong className="text-text-primary">{getDisplayName(booking.customer_name, (booking as any).member_id) || 'Guest'}</strong> has a <span className="capitalize text-text-primary font-medium">{gameDisplay}</span> reservation for <strong className="text-text-primary">Table {assignedTable?.name || booking.table_id}</strong> at <strong className="text-warning font-mono bg-warning/10 px-1.5 py-0.5 rounded">{formatTimeReadable(booking.start_time, true, booking.booking_date)}</strong>.
                   </p>
                   {isOccupied && (
-                    <p className="text-xs font-bold text-danger mt-2 flex items-center gap-1.5 bg-danger/10 px-2.5 py-1 rounded border border-danger/30 w-fit">
-                      Warning: Table {booking.table_id} is currently occupied! A reserved booking is waiting to start.
+                    <p className="text-xs font-bold text-danger mt-3 flex items-center gap-2 bg-danger/10 px-3 py-1.5 rounded-lg border border-danger/20 w-fit shadow-sm">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                      Table is currently occupied
                     </p>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+              <div className="flex items-center gap-3 w-full md:w-auto justify-end shrink-0 pt-4 md:pt-0 border-t border-border-light md:border-t-0">
                 <button
                   onClick={() => setDismissedReminders(prev => [...prev, booking.id])}
-                  className="px-4 py-2.5 rounded-lg border border-border-theme text-text-secondary hover:text-text-primary text-xs sm:text-sm font-bold transition-colors min-h-[44px]"
+                  className="px-5 py-2.5 rounded-xl border border-border-theme hover:bg-bg-primary text-text-secondary hover:text-text-primary text-sm font-bold transition-all min-h-[44px]"
                 >
                   Dismiss
                 </button>
                 <button
                   onClick={() => handleStartBooking(booking.id)}
                   disabled={isOccupied}
-                  className="px-5 py-2.5 rounded-lg bg-accent text-black font-extrabold text-xs sm:text-sm uppercase hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 rounded-xl bg-warning text-warning-950 font-black text-sm uppercase hover:bg-warning/90 transition-all shadow-lg shadow-warning/20 min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed group-hover:scale-105 duration-200"
                   title={isOccupied ? 'End current active session on table before starting' : 'Start Session'}
                 >
-                  {isOccupied ? 'Table Occupied' : 'Start Booking'}
+                  {isOccupied ? 'Locked' : 'Start Session'}
                 </button>
               </div>
             </div>
@@ -1326,19 +1383,26 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: promoTitle, 
-          discount_percent: promoDiscount, 
-          duration_hours: promoDurationHours 
+          discount_percent: Number(promoDiscount), 
+          start_date: promoStartDate,
+          start_time: promoStartTime,
+          duration_days: Number(promoDurationDays),
+          time_slot_start: promoTimeSlotEnabled ? promoTimeSlotStart : null,
+          time_slot_end: promoTimeSlotEnabled ? promoTimeSlotEnd : null
         })
       });
       if (res.ok) {
         setIsUpdatingDiscount(false);
+        const resData = await res.json();
         // Optimistic update for promo
         setData(prev => prev ? {
           ...prev,
-          activePromotions: [{ id: 'temp-promo', name: promoTitle, discount_percent: Number(promoDiscount), end_time: new Date(Date.now() + Number(promoDurationHours)*3600000).toISOString(), status: 'Active' }]
+          activePromotions: [resData.promotion, ...(prev.activePromotions || [])]
         } : prev);
-        toast.success('✓ Promotion launched successfully.');
+        toast.success('✓ Promotion scheduled/launched successfully.');
         setPromoTitle('');
+        setPromoDiscount('40');
+        setPromoTimeSlotEnabled(false);
       } else {
         const err = await res.json();
         toast.error(err.error || "We couldn't update your promotion. Please try again.");
@@ -1348,23 +1412,23 @@ function DashboardContent() {
     }
   };
 
-  const handleClearPromo = async () => {
-    const activePromo = data?.activePromotions?.[0];
-    if (!activePromo) return;
-    
+  const handleUpdatePromoStatus = async (promoId: string, status: string) => {
     setIsUpdatingPromo(true);
     try {
       const res = await fetch('/api/promotions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: activePromo.id, status: 'Expired' })
+        body: JSON.stringify({ id: promoId, status })
       });
       if (res.ok) {
-        setData(prev => prev ? { ...prev, activePromotions: [] } : prev);
-        setPromoTitle('');
+        setData(prev => prev ? { 
+          ...prev, 
+          activePromotions: prev.activePromotions?.map(p => p.id === promoId ? { ...p, status } : p)
+        } : prev);
+        toast.success(`Promotion marked as ${status}`);
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to end promotion.");
+        toast.error(err.error || `Failed to mark promotion as ${status}.`);
       }
     } finally {
       setIsUpdatingPromo(false);
@@ -1657,8 +1721,8 @@ function DashboardContent() {
   }
   const revenueToday = data.dailyRevenue;
   
-  const activePromo: ActivePromotion | null = data.activePromotions?.[0] || null;
-  const isPromoValid = !!(activePromo && new Date(activePromo.end_time).getTime() > now.getTime());
+  const activePromo: ActivePromotion | null = data.activePromotions?.find(p => p.status === 'Active' && new Date(p.start_time).getTime() <= now.getTime() && new Date(p.end_time).getTime() > now.getTime()) || null;
+  const isPromoValid = !!activePromo;
 
   // Active discount mapping
   const currentDiscounts = { ...data.activeDiscounts };
@@ -1820,9 +1884,17 @@ function DashboardContent() {
                   <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">{activePromo.name}</h2>
                   <h3 className="text-3xl md:text-4xl font-bold text-accent">{activePromo.discount_percent}% Off Tables</h3>
                 </div>
-                <div className="flex flex-col items-center">
-                  <p className="text-sm font-bold text-text-secondary uppercase tracking-widest mb-1 text-center">Ends In</p>
-                  <p className="text-3xl text-text-primary"><LivePromoTimer activePromo={activePromo} /></p>
+                <div className="flex flex-col items-end">
+                  <p className="text-sm font-bold text-text-secondary uppercase tracking-widest mb-1 text-right">
+                    {activePromo.time_slot_start && activePromo.time_slot_end ? 'Daily Window' : 'Ends In'}
+                  </p>
+                  <p className="text-3xl text-text-primary font-mono tabular-nums">
+                    {activePromo.time_slot_start && activePromo.time_slot_end ? (
+                      <span className="text-accent">{activePromo.time_slot_start} - {activePromo.time_slot_end}</span>
+                    ) : (
+                      <LivePromoTimer activePromo={activePromo} />
+                    )}
+                  </p>
                 </div>
               </div>
               <div className="relative z-10 mt-8">
@@ -2381,7 +2453,7 @@ function DashboardContent() {
                       <p className="text-[10px] text-text-secondary mt-0.5">{m.email || 'No email'}</p>
                     </td>
                     <td className="p-5">
-                      <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{m.tier}</span>
+                      <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{membershipPlans.find((p:any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}</span>
                     </td>
                     <td className="p-5"><span className="text-sm font-mono font-bold text-accent">{m.loyalty_points || 0}</span></td>
                     <td className="p-5"><span className="text-sm font-mono">₹{m.total_spend || 0}</span></td>
@@ -2768,7 +2840,7 @@ function DashboardContent() {
                   </div>
       </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-visible p-6 sm:p-8">
         <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
           Stations & Tables Configuration
         </h2>
@@ -2888,26 +2960,166 @@ function DashboardContent() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Hours) <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Days) <span className="text-danger">*</span></label>
                   <input 
                     type="number" 
-                    required min="1" max="72"
-                    value={promoDurationHours}
-                    onChange={e => setPromoDurationHours(e.target.value)}
+                    required min="1" max="365"
+                    value={promoDurationDays}
+                    onChange={e => setPromoDurationDays(e.target.value)}
                     className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Date <span className="text-danger">*</span></label>
+                    <input 
+                      type="date" 
+                      required
+                      value={promoStartDate}
+                      onChange={e => setPromoStartDate(e.target.value)}
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time <span className="text-danger">*</span></label>
+                    <input 
+                      type="time" 
+                      required
+                      value={promoStartTime}
+                      onChange={e => setPromoStartTime(e.target.value)}
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    />
+                  </div>
+                </div>
+                
+                {/* Specific Time Slot Toggle */}
+                <div className="bg-bg-surface border border-border-theme p-4 rounded-lg">
+                  <label className="flex items-center gap-3 cursor-pointer mb-2">
+                    <input 
+                      type="checkbox" 
+                      checked={promoTimeSlotEnabled}
+                      onChange={e => setPromoTimeSlotEnabled(e.target.checked)}
+                      className="w-4 h-4 text-accent bg-bg-primary border-border-theme rounded focus:ring-accent"
+                    />
+                    <span className="text-sm font-bold text-text-primary">Limit to specific daily hours (Happy Hour)</span>
+                  </label>
+                  
+                  {promoTimeSlotEnabled && (
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Start Time</label>
+                        <input 
+                          type="time" 
+                          required
+                          value={promoTimeSlotStart}
+                          onChange={e => setPromoTimeSlotStart(e.target.value)}
+                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily End Time</label>
+                        <input 
+                          type="time" 
+                          required
+                          value={promoTimeSlotEnd}
+                          onChange={e => setPromoTimeSlotEnd(e.target.value)}
+                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Live Preview */}
+                <div className="bg-bg-surface border border-border-theme p-4 rounded-lg text-sm flex flex-col gap-1">
+                  {(() => {
+                    if (!promoStartDate || !promoStartTime || !promoDurationDays) return <span className="text-text-secondary">Fill all fields to see preview</span>;
+                    const istOffset = 5.5 * 60 * 60 * 1000;
+                    const [year, month, day] = promoStartDate.split('-').map(Number);
+                    const [hour, min] = promoStartTime.split(':').map(Number);
+                    const localTimeUtc = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
+                    const startDateTime = new Date(localTimeUtc.getTime() - istOffset);
+                    const endDateTime = new Date(startDateTime.getTime() + Number(promoDurationDays) * 24 * 60 * 60 * 1000);
+                    const isPastEnd = endDateTime <= new Date();
+                    const initialStatus = startDateTime > new Date() ? 'Scheduled' : 'Active';
+                    return (
+                      <>
+                        <div className="flex justify-between items-center"><span className="text-text-secondary">Starts:</span> <span className="font-bold">{startDateTime.toLocaleString()}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-text-secondary">Ends:</span> <span className="font-bold">{endDateTime.toLocaleString()}</span></div>
+                        <div className="flex justify-between items-center mt-2 border-t border-border-light pt-2">
+                          <span className="text-text-secondary">Initial Status:</span>
+                          <span className={`font-bold px-2 py-0.5 rounded text-xs ${isPastEnd ? 'bg-danger/20 text-danger' : (initialStatus === 'Active' ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent')}`}>
+                            {isPastEnd ? 'Invalid (Past End Date)' : initialStatus}
+                          </span>
+                        </div>
+                        {promoTimeSlotEnabled && promoTimeSlotStart && promoTimeSlotEnd && (
+                          <div className="flex justify-between items-center mt-1 border-t border-border-light/50 pt-1">
+                            <span className="text-text-secondary">Daily Window:</span>
+                            <span className="font-bold text-accent">{promoTimeSlotStart} - {promoTimeSlotEnd}</span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="flex gap-4 mt-2">
                   <button type="submit" disabled={isUpdatingPromo} className="flex-1 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50">
                     {isUpdatingPromo ? 'Saving...' : 'Launch Promo'}
                   </button>
-                  {isPromoValid && (
-                    <button type="button" onClick={handleClearPromo} disabled={isUpdatingPromo} className="flex-1 bg-danger/10 text-danger border border-danger/30 font-bold py-3 rounded-lg hover:bg-danger/20 transition-colors disabled:opacity-50">
-                      End Early
-                    </button>
-                  )}
                 </div>
               </form>
+              
+              {/* Active / Scheduled Promotions List */}
+              {data?.activePromotions && data.activePromotions.length > 0 && (
+                <div className="mt-8 border-t border-border-theme pt-6">
+                  <h3 className="text-lg font-bold mb-4">Current & Past Promotions</h3>
+                  <div className="flex flex-col gap-3">
+                    {data.activePromotions.map(promo => {
+                      const statusColor = promo.status === 'Active' ? 'bg-success/20 text-success' : 
+                                          promo.status === 'Scheduled' ? 'bg-accent/20 text-accent' : 
+                                          promo.status === 'Paused' ? 'bg-warning/20 text-warning' : 
+                                          'bg-bg-surface text-text-secondary';
+                      return (
+                        <div key={promo.id} className="border border-border-theme bg-bg-surface rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-text-primary">{promo.name}</span>
+                              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold ${statusColor}`}>{promo.status}</span>
+                            </div>
+                            <div className="text-xs text-text-secondary flex gap-2">
+                              <span><strong className="text-text-primary">{promo.discount_percent}%</strong> off</span>
+                              <span>•</span>
+                              <span>{new Date(promo.start_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})} - {new Date(promo.end_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+                            </div>
+                          </div>
+                          {promo.time_slot_start && promo.time_slot_end && (
+                            <div className="px-3 py-1 bg-accent/10 border border-accent/20 rounded-lg ml-auto mr-4 text-xs font-bold text-accent">
+                              Happy Hour: {promo.time_slot_start} - {promo.time_slot_end}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {promo.status === 'Scheduled' && (
+                              <button onClick={() => handleUpdatePromoStatus(promo.id, 'Cancelled')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">Cancel</button>
+                            )}
+                            {promo.status === 'Active' && (
+                              <>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Paused')} disabled={isUpdatingPromo} className="text-xs bg-warning/10 text-warning border border-warning/30 px-3 py-1.5 rounded hover:bg-warning/20 font-bold transition-colors">Pause</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End Early</button>
+                              </>
+                            )}
+                            {promo.status === 'Paused' && (
+                              <>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Active')} disabled={isUpdatingPromo} className="text-xs bg-success/10 text-success border border-success/30 px-3 py-1.5 rounded hover:bg-success/20 font-bold transition-colors">Resume</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
               <h2 className="text-2xl font-bold mb-6">Manual Table Discounts</h2>
@@ -3699,9 +3911,16 @@ function DashboardContent() {
               </div>
               
               {/* Payment Mode Toggle (Only for Members) */}
-              {(data?.dbCustomers || []).some((c: any) => 
-                 (c.name && c.name.trim().toLowerCase() === endSessionData.session.customer_name.trim().toLowerCase()) || 
-                 (c.phone && c.phone.trim() === endSessionData.session.customer_name.trim())
+              {(
+                 endSessionData.session.member_id ||
+                 (memberships || []).some((m: any) => 
+                   (m.name && m.name.trim().toLowerCase() === endSessionData.session.customer_name.trim().toLowerCase()) || 
+                   (m.mobile && m.mobile.trim() === endSessionData.session.customer_name.trim())
+                 ) ||
+                 (data?.dbCustomers || []).some((c: any) => 
+                   (c.name && c.name.trim().toLowerCase() === endSessionData.session.customer_name.trim().toLowerCase()) || 
+                   (c.phone && c.phone.trim() === endSessionData.session.customer_name.trim())
+                 )
               ) && (
                 <div className="flex gap-2 p-1 bg-bg-primary rounded-xl mt-4">
                   <button 
@@ -4101,7 +4320,7 @@ function DashboardContent() {
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'support' && renderSupport()}
           {sidebarTab === 'menu' && <MenuManagerTab businessId={businessId!} initialMenuItems={data?.menu_items || []} />}
-          {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
+          {sidebarTab === 'qkhata' && <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} membershipPlans={membershipPlans || []} />}
           {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
           {sidebarTab === 'messaging' && <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} />}
         </div>
@@ -4114,165 +4333,203 @@ function DashboardContent() {
         <AIAssistantWidget />
       </main>
       
-      {/* Manual Session Modal */}
+      {/* New Session Modal (Admin) */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingManual ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-in fade-in zoom-in-95'}`}>
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-xl my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
             <button 
               onClick={() => {
                 setIsManualModalOpen(false);
                 setSelectedQkhataMember(null);
                 setShowQkhataPopover(false);
               }}
-              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors z-10"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div className="p-8 border-b border-border-theme">
-              <h2 className="text-2xl font-bold">Manual Session</h2>
-              <p className="text-text-secondary mt-1 text-sm">Start a session for walk-ins without QR.</p>
-            </div>
-            <form onSubmit={handleManualStart} className="p-8 flex flex-col gap-4">
-              <div className="relative">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Customer Name <span className="text-danger">*</span></label>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowQkhataPopover(!showQkhataPopover)}
-                    className="flex items-center gap-1.5 px-2 py-1 bg-accent/10 hover:bg-accent/20 text-accent rounded text-[10px] font-extrabold uppercase tracking-widest transition-colors border border-accent/20"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                    QKhata
-                  </button>
+            <div className="p-6 pr-20 sm:p-8 sm:pr-24 border-b border-border-theme">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold">New Session</h2>
+                  <p className="text-text-secondary mt-1 text-sm">Start a session for walk-ins without QR.</p>
                 </div>
-                <input type="text" required value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Walk-In or Member Name" />
+                <div className="flex items-center gap-3 bg-bg-surface px-4 py-2 border border-border-theme rounded-xl shrink-0">
+                   <div className="flex flex-col text-right">
+                     <span className="text-xs font-bold text-text-primary uppercase tracking-wider">Lazy Mode</span>
+                     <span className="text-[10px] text-text-secondary">Instant Start</span>
+                   </div>
+                   <button type="button" onClick={toggleLazyMode} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isLazyModeEnabled ? 'bg-accent' : 'bg-bg-primary border border-border-theme'}`}>
+                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isLazyModeEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                   </button>
+                </div>
+              </div>
+            </div>
+            
+            <form onSubmit={handleManualStart} className="p-6 sm:p-8 flex flex-col gap-6">
+              
+              {/* Customer Name Section */}
+              <div className={`transition-all duration-300 ease-in-out ${isLazyModeEnabled ? 'max-h-0 opacity-0 overflow-hidden m-0' : 'max-h-[500px] opacity-100 overflow-visible'}`}>
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Customer Name <span className="text-danger">*</span></label>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowQkhataPopover(!showQkhataPopover)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-[10px] font-extrabold uppercase tracking-widest transition-colors border border-accent/20"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                      {selectedQkhataMember ? 'Change Member' : 'Select Member'}
+                    </button>
+                  </div>
+                  <input type="text" required={!isLazyModeEnabled} value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors" placeholder="Walk-In or Member Name" />
 
-                {showQkhataPopover && (
-                  <div className="absolute top-[80px] right-0 w-full sm:w-[340px] bg-bg-card border border-border-theme rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.8)] z-50 overflow-hidden flex flex-col max-h-[350px] animate-in slide-in-from-top-2 fade-in duration-200 ring-1 ring-accent/20">
-                    <div className="p-3 border-b border-border-theme bg-bg-primary sticky top-0 z-10">
-                      <div className="relative">
-                        <svg className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <input 
-                          type="text" 
-                          autoFocus
-                          value={qkhataSearch}
-                          onChange={e => setQkhataSearch(e.target.value)}
-                          placeholder="Search registered member..." 
-                          className="w-full pl-9 pr-3 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-sm outline-none focus:border-accent text-text-primary placeholder:text-text-disabled transition-colors"
-                        />
+                  {/* Redesigned QKhata Popover */}
+                  {showQkhataPopover && (
+                    <div className="absolute top-[85px] left-0 right-0 bg-bg-card border border-border-theme rounded-xl shadow-2xl z-[100] flex flex-col max-h-[300px] animate-in fade-in zoom-in-95 duration-200">
+                      <div className="p-3 border-b border-border-theme sticky top-0 z-10 bg-bg-card rounded-t-xl">
+                        <div className="relative">
+                          <svg className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                          <input 
+                            type="text" 
+                            autoFocus
+                            value={qkhataSearch}
+                            onChange={e => setQkhataSearch(e.target.value)}
+                            placeholder="Search registered member..." 
+                            className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm outline-none focus:border-accent text-text-primary placeholder:text-text-disabled transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="overflow-y-auto custom-scrollbar flex-1 p-2 flex flex-col gap-1 bg-bg-primary/50 rounded-b-xl">
+                        {filteredQkhataMembers.length === 0 ? (
+                          <div className="py-8 px-4 flex flex-col items-center text-center">
+                            <svg className="w-8 h-8 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                            <p className="text-xs font-bold text-text-secondary">No members found</p>
+                            <p className="text-[10px] text-text-secondary mt-1">Only registered members can use QKhata.</p>
+                          </div>
+                        ) : (
+                          filteredQkhataMembers.map(member => {
+                            const bal = Number(member.outstanding_balance || 0);
+                            const isOverdue = bal > 5000;
+                            return (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => {
+                                  setManualCustomer(member.name);
+                                  setManualCustomerId(member.id);
+                                  setSelectedQkhataMember(member);
+                                  setShowQkhataPopover(false);
+                                  setQkhataSearch('');
+                                }}
+                                className="w-full text-left p-3 rounded-lg bg-bg-primary hover:bg-bg-surface border border-border-theme/50 hover:border-accent/30 transition-all flex justify-between items-center group"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-text-primary group-hover:text-accent transition-colors">{member.name}</span>
+                                  <span className="text-[11px] text-text-secondary font-mono mt-0.5">{member.phone}</span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className={`text-sm font-bold font-mono ${bal > 0 ? 'text-text-primary' : 'text-text-secondary'}`}>₹{bal.toLocaleString('en-IN')}</span>
+                                  {bal <= 0 ? (
+                                    <span className="text-[9px] uppercase tracking-widest text-success font-extrabold mt-0.5">Available</span>
+                                  ) : isOverdue ? (
+                                    <span className="text-[9px] uppercase tracking-widest text-danger font-extrabold mt-0.5">Overdue</span>
+                                  ) : (
+                                    <span className="text-[9px] uppercase tracking-widest text-warning font-extrabold mt-0.5">Outstanding</span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
-                    <div className="overflow-y-auto custom-scrollbar flex-1 p-2 flex flex-col gap-1 bg-bg-primary/50">
-                      {filteredQkhataMembers.length === 0 ? (
-                        <div className="py-8 px-4 flex flex-col items-center text-center">
-                          <svg className="w-8 h-8 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
-                          <p className="text-xs font-bold text-text-secondary">No members found</p>
-                          <p className="text-[10px] text-text-secondary mt-1">Only registered members can use QKhata.</p>
-                        </div>
-                      ) : (
-                        filteredQkhataMembers.map(member => {
-                          const bal = Number(member.outstanding_balance || 0);
-                          const isOverdue = bal > 5000;
-                          const isOutstanding = bal > 0 && bal <= 5000;
-                          return (
-                            <button
-                              key={member.id}
-                              type="button"
-                              onClick={() => {
-                                setManualCustomer(member.name);
-                                setManualCustomerId(member.id);
-                                setSelectedQkhataMember(member);
-                                setShowQkhataPopover(false);
-                                setQkhataSearch('');
-                              }}
-                              className="w-full text-left p-3 rounded-lg bg-bg-primary hover:bg-bg-surface border border-border-theme/50 hover:border-accent/30 transition-all flex justify-between items-center group"
-                            >
-                              <div className="flex flex-col">
-                                <span className="text-sm font-bold text-text-primary group-hover:text-accent transition-colors">{member.name}</span>
-                                <span className="text-[11px] text-text-secondary font-mono mt-0.5">{member.phone}</span>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                <span className={`text-sm font-bold font-mono ${bal > 0 ? 'text-text-primary' : 'text-text-secondary'}`}>₹{bal.toLocaleString('en-IN')}</span>
-                                {bal <= 0 ? (
-                                  <span className="text-[9px] uppercase tracking-widest text-success font-extrabold mt-0.5">Available</span>
-                                ) : isOverdue ? (
-                                  <span className="text-[9px] uppercase tracking-widest text-danger font-extrabold mt-0.5">Overdue</span>
-                                ) : (
-                                  <span className="text-[9px] uppercase tracking-widest text-warning font-extrabold mt-0.5">Outstanding</span>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
-                <CustomSelect
-                  value={manualTable}
-                  onChange={v => {
-                    setManualTable(v);
-                    const allowed = getAvailableGameTypesForTable(v);
-                    if (allowed.length > 0 && !allowed.includes(manualGame)) {
-                      setManualGame(allowed[0]);
-                    }
-                  }}
-                  placeholder="-- Choose an available table --"
-                  options={data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
-                  className="min-h-[44px]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type (Assigned Sports) <span className="text-danger">*</span></label>
-                <CustomSelect 
-                  value={manualGame} 
-                  onChange={v => setManualGame(v)} 
-                  options={getAvailableGameTypesForTable(manualTable).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
-                  className="capitalize min-h-[44px]" 
-                />
-              </div>
-              {manualGame === 'ps5' && (
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Number of Players <span className="text-danger">*</span></label>
-                  <CustomSelect 
-                    value={manualPlayers} 
-                    onChange={v => setManualPlayers(v)} 
-                    options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
-                    className="min-h-[44px]" 
-                  />
+                  )}
                 </div>
-              )}
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
-                <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
-                <p className="text-[10px] text-text-secondary mt-1">Leave empty to use current time.</p>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
-                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" placeholder="Special requests..." />
               </div>
 
-              {selectedQkhataMember && (
-                <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 shadow-inner">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-black shadow-lg shadow-accent/20">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+              {/* Table and Game Type - 2 Columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                  <CustomSelect
+                    value={manualTable}
+                    onChange={v => {
+                      setManualTable(v);
+                      const allowed = getAvailableGameTypesForTable(v);
+                      if (allowed.length > 0 && !allowed.includes(manualGame)) {
+                        setManualGame(allowed[0]);
+                      }
+                    }}
+                    placeholder="-- Choose table --"
+                    options={data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
+                    className="min-h-[48px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type <span className="text-danger">*</span></label>
+                  <CustomSelect 
+                    value={manualGame} 
+                    onChange={v => setManualGame(v)} 
+                    options={getAvailableGameTypesForTable(manualTable).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
+                    className="capitalize min-h-[48px]" 
+                  />
+                </div>
+              </div>
+
+              {/* Start Time and Optional Players - 2 Columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {manualGame === 'ps5' && (
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Players <span className="text-danger">*</span></label>
+                    <CustomSelect 
+                      value={manualPlayers} 
+                      onChange={v => setManualPlayers(v)} 
+                      options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
+                      className="min-h-[48px]" 
+                    />
+                  </div>
+                )}
+                <div className={manualGame !== 'ps5' ? 'sm:col-span-2' : ''}>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
+                  <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors min-h-[48px]" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
+                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors min-h-[48px]" placeholder="Special requests..." />
+              </div>
+
+              {/* Selected Member Highlight */}
+              {selectedQkhataMember && !isLazyModeEnabled && (
+                <div className="p-4 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-between animate-in fade-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-black shadow-lg shadow-accent/20 shrink-0">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-accent">Playing on QKhata</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-accent mb-0.5">Playing on QKhata</span>
                       <span className="text-sm font-bold text-text-primary">{selectedQkhataMember.name} <span className="text-text-secondary font-mono text-xs font-normal">({selectedQkhataMember.phone})</span></span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setSelectedQkhataMember(null); setManualCustomer(''); setManualCustomerId(null); }} className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-md transition-colors">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  <button type="button" onClick={() => { setSelectedQkhataMember(null); setManualCustomer(''); setManualCustomerId(null); }} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-lg transition-colors">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                   </button>
                 </div>
               )}
-              <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50">
-                {isStartingManual ? 'Starting...' : 'Start Session'}
+              
+              <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-2 bg-accent text-white font-bold py-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+                {isStartingManual ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Start Session
+                  </>
+                )}
               </button>
             </form>
           </div>

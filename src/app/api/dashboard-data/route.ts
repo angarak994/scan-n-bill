@@ -59,6 +59,9 @@ export async function GET(request: Request) {
     localTodayStart.setHours(0, 0, 0, 0);
     const startOfDayUTC = localTodayStart.toISOString();
 
+    // Auto-expire and auto-activate promotions
+    await supabase.rpc('update_expired_promotions');
+
     const [
       sessions,
       { data: interventions },
@@ -79,7 +82,7 @@ export async function GET(request: Request) {
         .from('promotions')
         .select('*')
         .eq('business_id', businessId)
-        .eq('status', 'Active'),
+        .order('created_at', { ascending: false }),
       supabase
         .from('customers')
         .select('id, name, phone, outstanding_balance')
@@ -106,7 +109,15 @@ export async function GET(request: Request) {
       return s.date >= startDate && s.date <= endDate;
     });
 
-    const dailyRevenue = completedSessions.reduce((acc, session) => acc + (session.cost || 0), 0);
+    const dailyRevenue = completedSessions.reduce((acc, session) => {
+      if (session.amount_paid !== undefined && session.amount_paid !== null) {
+        return acc + Number(session.amount_paid);
+      }
+      if (session.payment_status === 'Paid') {
+        return acc + (session.cost || 0);
+      }
+      return acc;
+    }, 0);
     const pricingRules = business.pricing_rules;
 
     const manualClosuresToday = interventions?.length || 0;

@@ -25,7 +25,7 @@ async function getCachedActivePromo(businessId: string) {
   }
   const { data: activePromos } = await supabase
     .from('promotions')
-    .select('id, discount_percent, end_time')
+    .select('id, discount_percent, end_time, time_slot_start, time_slot_end')
     .eq('business_id', businessId)
     .eq('status', 'Active')
     .limit(1);
@@ -130,8 +130,14 @@ export async function startSession(table_id: string, game_type: GameType, custom
   await sessionRepository.create(session, businessId);
   Promise.resolve().then(async () => {
     try {
-      const { syncSessionToSheet } = require('./googleSheets');
+      const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
       await syncSessionToSheet(session.id, businessId);
+      await logActivityToSheet('START_SESSION', {
+        user: 'System',
+        table: session.table_id,
+        session: session.id,
+        details: `Session started for ${session.customer_name}`
+      }, businessId);
     } catch(e) { console.error('Failed to sync session to sheet', e); }
   }).catch(e => console.error(e));
   return session;
@@ -166,7 +172,12 @@ export async function endSession(table_id: string, businessId?: string, source: 
     const activePromo = await getCachedActivePromo(business.id || '');
     const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
     if (!discount && isPromoValid) {
-      discount = { percent: activePromo.discount_percent, applyToFood: false };
+      discount = { 
+        percent: activePromo.discount_percent, 
+        applyToFood: false,
+        time_slot_start: activePromo.time_slot_start || undefined,
+        time_slot_end: activePromo.time_slot_end || undefined
+      };
       (session as any)._appliedPromoId = activePromo.id;
     }
   }
@@ -396,9 +407,15 @@ export async function endSession(table_id: string, businessId?: string, source: 
 
   Promise.resolve().then(async () => {
     try {
-      const { syncSessionToSheet } = require('./googleSheets');
+      const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
       await syncSessionToSheet(session.id, businessId);
-    } catch(e) { console.error('Failed to sync session to sheet', e); }
+      await logActivityToSheet('END_SESSION', {
+        user: finalSource,
+        table: session.table_id,
+        session: session.id,
+        details: `Session ended. Revenue: ₹${Math.round(totalCost)}`
+      }, businessId);
+    } catch (e) { console.error('Failed to sync session to sheet', e); }
   }).catch(e => console.error(e));
 
   return { 

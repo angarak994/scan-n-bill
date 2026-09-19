@@ -369,6 +369,35 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
         return NextResponse.json({ ok: true });
       }
 
+      if (text === '/lazy' || text === '/notlazy') {
+         await sendTelegramMessage(chatId, `DEBUG: Reached /lazy block. Business is: ${business ? business.business_name : 'NULL'}`);
+         if (!business) return NextResponse.json({ ok: true });
+         
+         const isLazy = text === '/lazy';
+         
+         try {
+           const updatedPricingRules = {
+               ...business.pricing_rules,
+               globalSettings: {
+                   ...(business.pricing_rules?.globalSettings || {}),
+                   lazy_mode_enabled: isLazy
+               }
+           };
+           
+           const { error } = await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', business.id);
+           if (error) throw error;
+           
+           if (isLazy) {
+               await sendTelegramMessage(chatId, `⚡ <b>Lazy Mode is ON!</b>\n\nYou can now start sessions instantly without entering customer names.\nJust select a table and the session will start for "Guest". You can also just type a table name (e.g. "T1") to start it immediately.`, mainMenu);
+           } else {
+               await sendTelegramMessage(chatId, `🛑 <b>Lazy Mode is OFF.</b>\n\nThe standard flow is restored. You will be prompted for customer details when starting a session.`, mainMenu);
+           }
+         } catch (e: any) {
+           await sendTelegramMessage(chatId, `❌ Error enabling lazy mode: ${e.message}`, mainMenu);
+         }
+         return NextResponse.json({ ok: true });
+      }
+
       if (!business) {
         await sendTelegramMessage(chatId, `⚠️ Unauthorized.\n\nYour Chat ID is <code>${chatId}</code>. Please link it in your QControl Dashboard Settings.`);
         return NextResponse.json({ ok: true });
@@ -460,13 +489,23 @@ Time: ${timeStr}`, mainMenu);
           }
           
           const lines = replyText.split('\n');
-          const idLine = lines.find((l: string) => l.startsWith('ID:'));
-          if (!idLine) return NextResponse.json({ ok: true });
           
-          const customerId = idLine.replace('ID:', '').trim();
+          let customer = null;
+          const refLine = lines.find((l: string) => l.startsWith('Ref: #'));
           
-          // Get customer details
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          if (refLine) {
+             const shortId = refLine.replace('Ref: #', '').trim();
+             const { data: customers } = await supabase.from('customers').select('*').ilike('id', `${shortId}%`).eq('business_id', business.id);
+             customer = customers?.[0];
+          } else {
+             const idLine = lines.find((l: string) => l.startsWith('ID:'));
+             if (idLine) {
+                 const customerId = idLine.replace('ID:', '').trim();
+                 const { data: cust } = await supabase.from('customers').select('*').eq('id', customerId).single();
+                 customer = cust;
+             }
+          }
+          
           if (!customer) {
              await sendTelegramMessage(chatId, `❌ Member not found.`, mainMenu);
              return NextResponse.json({ ok: true });
@@ -531,7 +570,68 @@ Time: ${timeStr}`, mainMenu);
         }
       }
 
+      const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+      if (isLazyModeEnabled) {
+         const matchingTable = (business.tables || []).find((t: any) => 
+            t.id.toUpperCase() === text.toUpperCase() || 
+            (t.name && t.name.toUpperCase() === text.toUpperCase())
+         );
+         if (matchingTable) {
+            const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
+            const isActive = activeSessions?.some(s => s.table_id === matchingTable.id);
+            if (isActive) {
+               await sendTelegramMessage(chatId, `❌ Table ${matchingTable.id} is already occupied.`, mainMenu);
+               return NextResponse.json({ ok: true });
+            }
+            
+            let gameType = matchingTable.type || 'pool';
+            if (!gameType && business.pricing_rules?.rules) {
+               gameType = Object.keys(business.pricing_rules.rules)[0];
+            }
+            
+            if (gameType === 'ps5') {
+               const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `ps5_players_${matchingTable.id}_${num}` }));
+               await sendTelegramMessage(chatId, `🎮 <b>How many players for ${matchingTable.id}?</b>`, { inline_keyboard: [buttons] });
+               return NextResponse.json({ ok: true });
+            }
+            
+            try {
+                const session = await startSession(matchingTable.id, gameType as any, 'Guest', business.id, 1);
+                const msg = `⚡ <b>Lazy Session Started</b>\n\nTable: ${matchingTable.id}\nCustomer: Guest\nTime: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+                await sendTelegramMessage(chatId, msg, mainMenu);
+            } catch(e: any) {
+                await sendTelegramMessage(chatId, `❌ Failed to start lazy session: ${e.message}`, mainMenu);
+            }
+            return NextResponse.json({ ok: true });
+         }
+      }
+
       if (text === '▶️ Start Session') {
+        const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+        
+        if (isLazyModeEnabled) {
+          const tables = business.tables || [];
+          if (tables.length === 0) {
+            await sendTelegramMessage(chatId, 'No tables configured for this business.', mainMenu);
+            return NextResponse.json({ ok: true });
+          }
+          
+          const { data: activeSessions } = await supabase.from('sessions').select('table_id').eq('business_id', business.id).eq('status', 'ACTIVE');
+          const activeTableIds = (activeSessions || []).map(s => s.table_id);
+          const availableTables = tables.filter((t: any) => !activeTableIds.includes(t.id));
+          
+          if (availableTables.length === 0) {
+            await sendTelegramMessage(chatId, 'All tables are currently active.', mainMenu);
+            return NextResponse.json({ ok: true });
+          }
+          
+          const tableButtons = availableTables.map((t: any) => ({ text: `🟢 ${t.id} — ${t.type || 'Pool'}`, callback_data: `start_table_${t.id}` }));
+          const buttons = chunkArray(tableButtons, 2);
+          buttons.push([{ text: `❌ Cancel`, callback_data: `cancel_action` }]);
+          await sendTelegramMessage(chatId, '⚡ <b>Lazy Mode:</b> Select table for Guest:', { inline_keyboard: buttons });
+          return NextResponse.json({ ok: true });
+        }
+
         const buttons = [
           [{ text: '👤 Guest Session', callback_data: 'start_guest_init' }],
           [{ text: '👤 Member Session', callback_data: 'start_member_init' }]
@@ -954,7 +1054,7 @@ You can still access other businesses associated with your Telegram account.`, {
           
           if (!customer) return NextResponse.json({ ok: true });
           
-          const msg = `💰 <b>Enter payment amount for ${customer.name}</b>\n\nOutstanding: ₹${Math.round(customer.outstanding_balance)}\nID: ${customer.id}\n\n(Reply to this message with the amount received, e.g. "500")`;
+          const msg = `💰 <b>Enter payment amount for ${customer.name}</b>\n\nOutstanding: ₹${Math.round(customer.outstanding_balance)}\nRef: #${customer.id.split('-')[0].toUpperCase()}\n\n(Reply to this message with the amount received, e.g. "500")`;
           await sendTelegramMessage(chatId, msg, { force_reply: true });
           return NextResponse.json({ ok: true });
       }
@@ -1002,7 +1102,7 @@ You can still access other businesses associated with your Telegram account.`, {
                  source: 'Telegram Settle Full'
              });
              
-             const successMsg = `✅ <b>Full Payment Settled!</b>\n\nCollected: ₹${Math.round(amount)}\nFrom: ${customer.name}\nRemaining Balance: ₹0`;
+             const successMsg = `🎉 <b>Payment Successfully Settled!</b>\n\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Member:</b> ${customer.name}\n💰 <b>Amount Paid:</b> ₹${Math.round(amount)}\n💳 <b>Method:</b> Cash\n🧾 <b>Balance:</b> ₹0\n━━━━━━━━━━━━━━━━━━━━\n\n<i>Payment recorded successfully. The member's QKhata has been cleared!</i>`;
              
              if (messageId) {
                 await editTelegramMessageText(chatId, messageId, successMsg, mainMenu);
@@ -1252,7 +1352,8 @@ You can still access other businesses associated with your Telegram account.`, {
               }
             } else {
               const preferences = business.pricing_rules?.globalSettings?.preferences || {};
-              if (preferences.require_customer_name === false) {
+              const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+              if (preferences.require_customer_name === false || isLazyModeEnabled) {
                  
                 try {
                     const session = await startSession(tableId, gameType as any, 'Guest', business.id, 1);
@@ -1300,7 +1401,8 @@ You can still access other businesses associated with your Telegram account.`, {
           }
         } else {
           const preferences = business.pricing_rules?.globalSettings?.preferences || {};
-          if (preferences.require_customer_name === false) {
+          const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+          if (preferences.require_customer_name === false || isLazyModeEnabled) {
              
                 try {
                     const session = await startSession(tableId, gameType as any, 'Guest', business.id, 1);
@@ -1353,7 +1455,8 @@ You can still access other businesses associated with your Telegram account.`, {
         const numPlayers = parts[1];
         
         const preferences = business.pricing_rules?.globalSettings?.preferences || {};
-        if (preferences.require_customer_name === false) {
+        const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+        if (preferences.require_customer_name === false || isLazyModeEnabled) {
           // Immediately start session
           
                 try {

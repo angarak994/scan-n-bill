@@ -35,7 +35,7 @@ export async function appendRow(sheetName: string, values: any[], businessId?: s
       const sheets = await getGoogleSheetsClient();
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${sheetName}!A1`,
+        range: `'${sheetName}'!A1`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
           values: [values]
@@ -64,55 +64,6 @@ export async function logActivityToSheet(action: string, metadata: any, business
     metadata.session || '',
     metadata.details || JSON.stringify(metadata)
   ], businessId);
-}
-
-export async function logSessionStartToSheet(sessionData: any, businessId?: string) {
-  // sessionData: { id, business_id, customer_name, table_id, start_time, status }
-  await appendRow('Active Sessions', [
-    sessionData.id,
-    sessionData.business_id,
-    sessionData.customer_name,
-    sessionData.table_id,
-    sessionData.start_time,
-    sessionData.status || 'ACTIVE'
-  ], businessId);
-  
-  await logActivityToSheet('START_SESSION', {
-    user: 'Club Owner',
-    table: sessionData.table_id,
-    session: sessionData.id,
-    details: `Session started for ${sessionData.customer_name}`
-  }, businessId);
-}
-
-export async function logSessionEndToSheet(sessionData: any, businessId?: string) {
-  const durationStr = sessionData.duration || '0m';
-  
-  // Format timestamps to readable IST for sheets
-  const startReadable = formatTimeReadable(sessionData.start_time);
-  const endReadable = formatTimeReadable(sessionData.end_time || new Date().toISOString());
-
-  // Session ID Date Customer Name Table No Game Type Start Time End Time Duration Applied Pricing Amount Status Completed By
-  await appendRow('Completed Sessions', [
-    sessionData.id || '',
-    sessionData.date || getCurrentISTDateStr(),
-    sessionData.customer_name || '',
-    sessionData.table_id || '',
-    sessionData.game_type || '',
-    startReadable,
-    endReadable,
-    durationStr,
-    sessionData.applied_pricing || 'Fixed Rate',
-    sessionData.cost || 0,
-    'COMPLETED'
-  ], businessId);
-  
-  await logActivityToSheet('END_SESSION', {
-    user: 'System',
-    table: sessionData.table_id,
-    session: sessionData.id,
-    details: `Session ended. Revenue: ₹${sessionData.cost}`
-  }, businessId);
 }
 
 export async function getMembershipByCustomer(customerQuery: string, businessId?: string) {
@@ -178,7 +129,7 @@ export async function upsertRow(sheetName: string, idColumnIndex: number, unique
       // 1. Fetch existing rows to find ID
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${sheetName}!A:Z`,
+        range: `'${sheetName}'!A:Z`,
       });
       const rows = res.data.values || [];
       let rowIndex = -1;
@@ -203,7 +154,7 @@ export async function upsertRow(sheetName: string, idColumnIndex: number, unique
         // Append new row
         await sheets.spreadsheets.values.append({
           spreadsheetId,
-          range: `${sheetName}!A1`,
+          range: `'${sheetName}'!A1`,
           valueInputOption: 'USER_ENTERED',
           requestBody: { values: [values] }
         });

@@ -140,12 +140,12 @@ export const sessionRepository = {
   findAllByDateRange: async (startDate: string, endDate: string, businessId?: string): Promise<Session[]> => {
     if (!businessId) return [];
     
-    // Fetch sessions between startDate and endDate, PLUS any currently active sessions
+    // Fetch sessions between startDate and endDate based on date (start) OR end_time, PLUS any currently active sessions
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
       .eq('business_id', businessId)
-      .or(`and(date.gte.${startDate},date.lte.${endDate}),status.eq.ACTIVE`);
+      .or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startDate}T00:00:00,end_time.lte.${endDate}T23:59:59),status.eq.ACTIVE`);
 
     if (error || !data) return [];
     return data as Session[];
@@ -231,7 +231,7 @@ export const sessionRepository = {
 
       // If headers are somehow missing or non-standard, fallback to default indices
       if (getIdx('date') === -1) {
-        row[0] = shortId;
+        row[0] = `'${shortId}`;
         row[1] = `'${toSheetsDate(session.start_time)}`;
         row[2] = formattedCustomerName;
         row[3] = session.table_id;
@@ -239,7 +239,7 @@ export const sessionRepository = {
         row[5] = `'${toSheetsTime(session.start_time)}`;
         row[10] = session.status;
       } else {
-        setVal('session id', shortId);
+        setVal('session id', `'${shortId}`);
         setVal('date', `'${toSheetsDate(session.start_time)}`);
         setVal('customer name', formattedCustomerName);
         setVal('table no', session.table_id);
@@ -344,7 +344,7 @@ export const sessionRepository = {
           ? `${updatedData.customer_name} (${updatedData.num_players} Players)`
           : updatedData.customer_name;
 
-        setVal('session id', shortId, 0);
+        setVal('session id', `'${shortId}`, 0);
         setVal('date', `'${toSheetsDate(updatedData.start_time)}`, 1);
         setVal('customer name', formattedCustomerName, 2);
         setVal('table no', updatedData.table_id, 3);
