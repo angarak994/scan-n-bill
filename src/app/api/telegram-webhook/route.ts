@@ -111,10 +111,15 @@ function getMainMenuKeyboard(allActiveMembershipsCount: number = 0) {
 }
 
 async function getBusinessContext(chatId: string | number) {
-  const { data: businesses } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
+  const searchId = String(chatId).trim();
+  const { data: businesses, error } = await supabase
+    .from('businesses')
+    .select('id, pricing_rules, tables, business_name')
+    .contains('pricing_rules', { globalSettings: { authorized_telegram_owners: [{ chatId: searchId }] } });
+
+  if (error) console.error("[DB Error] getBusinessContext:", error);
   if (!businesses) return { activeMembership: null, allActiveMemberships: [], revokedContext: null };
   
-  const searchId = String(chatId).trim();
   let revokedContext = null;
   let allActiveMemberships: any[] = [];
   let activeMembership = null;
@@ -138,13 +143,16 @@ async function getBusinessContext(chatId: string | number) {
       }
     }
   }
-
   return { activeMembership, allActiveMemberships, revokedContext };
 }
 
 async function switchBusinessContext(chatId: string | number, targetBusinessId: string) {
   const searchId = String(chatId).trim();
-  const { data: businesses } = await supabase.from('businesses').select('*');
+  const { data: businesses } = await supabase
+    .from('businesses')
+    .select('id, pricing_rules')
+    .contains('pricing_rules', { globalSettings: { authorized_telegram_owners: [{ chatId: searchId }] } });
+  
   if (!businesses) return;
   
   for (const b of businesses) {
@@ -787,7 +795,6 @@ Time: ${timeStr}`, mainMenu);
       }
     }
 
-const processedCallbacks = new Set<string>();
 
     // 2. Handle Callback Queries (Button Clicks)
     if (update.callback_query) {
@@ -796,11 +803,9 @@ const processedCallbacks = new Set<string>();
       const messageId = update.callback_query.message.message_id;
       const callbackQueryId = update.callback_query.id;
 
-      if (processedCallbacks.has(callbackQueryId)) {
-        return NextResponse.json({ ok: true });
-      }
-      processedCallbacks.add(callbackQueryId);
-      setTimeout(() => processedCallbacks.delete(callbackQueryId), 5000);
+      
+      
+      
 
       // Immediately acknowledge the callback to remove the loading state in Telegram
       answerCallbackQuery(callbackQueryId).catch(console.error);
@@ -2047,17 +2052,42 @@ Table: ${tableId}
   }
 }
 
+async function verifyIdempotency(updateId: number, chatId: string): Promise<boolean> {
+  const { error } = await supabase.from('telegram_updates').insert({
+    update_id: updateId,
+    chat_id: chatId
+  });
+  if (error && error.code === '23505') { // Unique constraint violation
+    console.log(`[Idempotency] Duplicate update ignored: ${updateId}`);
+    return false;
+  }
+  return true;
+}
+
 export async function POST(request: Request) {
   try {
     const update = await request.json();
-    
-    // Await the webhook processing to ensure Vercel doesn't kill the function prematurely
-    try {
-      await processWebhook(update);
-    } catch (err) {
-      console.error('Webhook Processing Error:', err);
+    const updateId = update.update_id;
+    const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+
+    if (updateId && chatId) {
+        // Safe timeout wrap to prevent Vercel 504 Infinite Retries
+        try {
+            await Promise.race([
+                (async () => {
+                   const isNew = await verifyIdempotency(updateId, String(chatId));
+                   if (isNew) {
+                       await processWebhook(update);
+                   }
+                })(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Vercel Timeout Prevention')), 8500))
+            ]);
+        } catch (err: any) {
+            console.error(`[Webhook Error] update_id: ${updateId}, msg: ${err.message}`);
+        }
     }
     
+    // Always return 200 OK so Telegram doesn't retry
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram Webhook Parse Error:', error);
