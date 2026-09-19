@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
@@ -2051,15 +2051,12 @@ export async function POST(request: Request) {
   try {
     const update = await request.json();
     
-    // Use Next.js after() to process the webhook in the background 
-    // without blocking the HTTP response, keeping Telegram lightning fast.
-    after(async () => {
-      try {
-        await processWebhook(update);
-      } catch (err) {
-        console.error('Background Webhook Error:', err);
-      }
-    });
+    // Await the webhook processing to ensure Vercel doesn't kill the function prematurely
+    try {
+      await processWebhook(update);
+    } catch (err) {
+      console.error('Webhook Processing Error:', err);
+    }
     
     return NextResponse.json({ ok: true });
   } catch (error) {
