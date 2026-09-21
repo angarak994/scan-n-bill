@@ -24,7 +24,11 @@ export async function GET(request: Request) {
 
     // Secure backend validation via JWT
     if (!sessionCookie || !sessionCookie.businessId) {
-       return NextResponse.json({ error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
+       
+    const entitlement = await getBusinessEntitlement(businessId);
+    
+    return NextResponse.json({
+ error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
     }
 
     // Optional: enforce that requested businessId matches JWT (if provided)
@@ -146,7 +150,8 @@ export async function GET(request: Request) {
       google_sheet_id: business.google_sheet_id,
       payment_qr_config: business.payment_qr_config,
       whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false },
-      menu_items: business.menu_items || []
+      menu_items: business.menu_items || [],
+      entitlement: entitlement
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);
