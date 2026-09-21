@@ -24,11 +24,7 @@ export async function GET(request: Request) {
 
     // Secure backend validation via JWT
     if (!sessionCookie || !sessionCookie.businessId) {
-       
-    const entitlement = await getBusinessEntitlement(businessId);
-    
-    return NextResponse.json({
- error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
     }
 
     // Optional: enforce that requested businessId matches JWT (if provided)
@@ -127,6 +123,8 @@ export async function GET(request: Request) {
 
     const manualClosuresToday = interventions?.length || 0;
     const revenueSavedToday = interventions?.reduce((acc, inv) => acc + Number(inv.amount_recovered || 0), 0) || 0;
+
+    const entitlement = await getBusinessEntitlement(businessId as string);
 
     return NextResponse.json({
       activeSessions,

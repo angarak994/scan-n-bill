@@ -8,9 +8,12 @@ export async function POST(request: Request) {
     const sessionCookie = await getSession();
     let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time } = await request.json();
     
-    // Note: Cookie validation is intentionally omitted here to allow 
-    // QR code scans (which are inherently unauthenticated) to start sessions,
-    // as well as to allow owners of Business A to scan QR codes at Business B.
+    // If an owner is logged in, strictly enforce their business ID to prevent cross-business IDOR attacks.
+    // If no session exists, it falls back to the client-provided business_id (for unauthenticated QR code scans).
+    if (sessionCookie && sessionCookie.businessId) {
+       business_id = sessionCookie.businessId;
+    }
+
     if (!table_id || !game_type || !customer_name) {
       return NextResponse.json({ error: 'table_id, game_type, and customer_name are required' }, { status: 400 });
     }

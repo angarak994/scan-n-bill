@@ -48,6 +48,29 @@ export type EntitlementResult = {
 };
 
 export async function getBusinessEntitlement(businessId: string): Promise<EntitlementResult> {
+  // TEMPORARY OVERRIDE: Unlock all features globally for production testing
+  return {
+      hasAccess: true,
+      features: {
+        max_tables: 999,
+        has_qkhata: true,
+        has_advanced_qkhata: true,
+        has_advanced_reports: true,
+        has_memberships: true,
+        has_promotions: true,
+        has_whatsapp: true,
+        has_telegram: true,
+        has_fnb: true,
+        has_booking: true,
+        has_loyalty: true,
+        has_ai: true,
+        has_api: true,
+        max_locations: 999
+      },
+      status: 'active',
+      planName: 'Enterprise'
+  };
+
   try {
     // Check if the business has a subscription
     const { data: sub, error } = await supabase
@@ -106,12 +129,27 @@ export async function getBusinessEntitlement(businessId: string): Promise<Entitl
         };
     }
 
-    // Canceled or Expired
+    // TEMPORARY OVERRIDE: Unlock all features globally for production testing
     return {
-        hasAccess: false,
-        features: FALLBACK_FEATURES,
-        status,
-        planName: plan.name
+        hasAccess: true,
+        features: {
+          max_tables: 999,
+          has_qkhata: true,
+          has_advanced_qkhata: true,
+          has_advanced_reports: true,
+          has_memberships: true,
+          has_promotions: true,
+          has_whatsapp: true,
+          has_telegram: true,
+          has_fnb: true,
+          has_booking: true,
+          has_loyalty: true,
+          has_ai: true,
+          has_api: true,
+          max_locations: 999
+        },
+        status: status || 'active',
+        planName: plan?.name || 'Enterprise'
     };
 
   } catch (err) {
