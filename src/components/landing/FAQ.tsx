@@ -7,11 +7,11 @@ export default function FAQ() {
   const faqs = [
     {
       question: 'What is Qcontrol?',
-      answer: 'Qcontrol is an all-in-one platform built specifically for gaming and billiards venues. It handles table timers, bookings, QKhata (digital ledgers), food ordering, and analytics in one unified dashboard.'
+      answer: 'Qcontrol is an all-in-one platform built specifically for gaming and gaming and entertainment venues. It handles table timers, bookings, QKhata (digital ledgers), food ordering, and analytics in one unified dashboard.'
     },
     {
       question: 'Who is this for?',
-      answer: 'It is designed for owners of billiards clubs, snooker halls, pool rooms, gaming lounges (PS5, PC), and multi-activity entertainment venues.'
+      answer: 'It is designed for owners of billiards clubs, snooker halls, VR arcades, pool rooms, gaming lounges (PS5, PC), and multi-activity entertainment venues.'
     },
     {
       question: 'How do the QR Smart Timers work?',

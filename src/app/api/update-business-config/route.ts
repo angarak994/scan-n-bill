@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { getSession } from '@/lib/auth';
+import { getBusinessEntitlement } from '@/lib/entitlements';
+
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -40,7 +42,19 @@ export async function POST(request: Request) {
 
     const updatePayload: any = {};
     if (pricing_rules !== undefined) updatePayload.pricing_rules = pricing_rules;
-    if (tables !== undefined) updatePayload.tables = tables;
+    
+    const entitlement = await getBusinessEntitlement(business_id);
+    if (!entitlement.hasAccess) {
+        return NextResponse.json({ error: 'Your subscription is inactive. Please upgrade to manage configuration.' }, { status: 403 });
+    }
+
+    if (tables !== undefined) {
+        if (tables.length > entitlement.features.max_tables) {
+            return NextResponse.json({ error: `Your ${entitlement.planName} plan only supports up to ${entitlement.features.max_tables} tables. Upgrade to add more.` }, { status: 403 });
+        }
+        updatePayload.tables = tables;
+    }
+
     if (body.qpulse_config !== undefined) updatePayload.qpulse_config = body.qpulse_config;
     if (body.menu_items !== undefined) updatePayload.menu_items = body.menu_items;
 

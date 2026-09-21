@@ -15,6 +15,7 @@ function toReadableDate(date: Date): string {
   return formatter.format(date);
 }
 
+import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function GET(request: Request) {
   try {
     const sessionCookie = await getSession();

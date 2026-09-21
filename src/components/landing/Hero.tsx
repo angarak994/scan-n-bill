@@ -36,26 +36,7 @@ export default function Hero() {
         </div>
       </ScrollReveal>
 
-      {/* Mockup Preview */}
-      <ScrollReveal animation="scale" delay={500} className="w-full max-w-5xl">
-        <div className="mt-16 sm:mt-24 w-full rounded-2xl border border-border-theme bg-bg-card p-2 shadow-2xl relative group transition-all duration-500 hover:shadow-[0_30px_60px_-15px_rgba(16,185,129,0.2)] hover:-translate-y-2">
-        <div className="absolute -top-4 -right-2 sm:-right-4 bg-warning text-bg-base font-bold text-[10px] sm:text-xs px-3 py-1 sm:px-4 sm:py-2 rounded-full transform rotate-12 shadow-lg z-10 transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110">
-          Live Sync Included
-        </div>
-        <div className="w-full h-12 bg-bg-surface rounded-t-xl border-b border-border-theme flex items-center px-4 gap-2">
-          <div className="w-3 h-3 rounded-full bg-danger"></div>
-          <div className="w-3 h-3 rounded-full bg-warning"></div>
-          <div className="w-3 h-3 rounded-full bg-accent"></div>
-        </div>
-        <div className="bg-bg-base rounded-b-xl overflow-hidden relative group">
-          {/* We'll use a placeholder for the actual screenshot to maintain responsive aspect ratio */}
-          <div className="aspect-[16/9] w-full bg-bg-surface flex items-center justify-center flex-col gap-4 border-t border-border-theme/50">
-             <svg className="w-16 h-16 text-accent/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path></svg>
-             <span className="text-text-secondary font-mono text-sm">{"{{PLACEHOLDER_HIGH_RES_DASHBOARD_SCREENSHOT}}"}</span>
-          </div>
-        </div>
-        </div>
-      </ScrollReveal>
+
     </section>
   );
 }

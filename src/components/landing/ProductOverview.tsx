@@ -72,7 +72,7 @@ export default function ProductOverview() {
             Everything you need, built in.
           </h2>
           <p className="text-text-secondary text-lg sm:text-xl max-w-2xl">
-            A modular ecosystem designed specifically for the complexities of modern gaming lounges and billiards clubs.
+            A modular ecosystem designed specifically for the complexities of modern gaming lounges and entertainment venues.
           </p>
         </div>
       </ScrollReveal>

@@ -1,7 +1,7 @@
 export type PricingTier = {
   name: string;
   monthlyPrice: string;
-  yearlyPrice: string;
+  yearlyPrice?: string;
   description: string;
   features: string[];
   isRecommended?: boolean;
@@ -11,46 +11,74 @@ export type PricingTier = {
 export const pricingTiers: PricingTier[] = [
   {
     name: 'Starter',
-    monthlyPrice: '{{PRICE_STARTER_MONTHLY}}',
-    yearlyPrice: '{{PRICE_STARTER_YEARLY}}',
-    description: 'Perfect for small clubs starting their automation journey.',
+    monthlyPrice: '₹999',
+    description: 'For small clubs getting started.',
     features: [
       'Up to 5 tables/consoles',
-      'QR Smart Timers',
-      'Basic QKhata tracking',
-      'Standard Dashboard',
-      'Email support'
+      'QR sessions & timers',
+      'Manual booking',
+      'Basic Dashboard',
+      'Basic Reports',
+      'Members',
+      'Basic QKhata',
+      'Telegram owner controls',
+      'Google Sheets sync',
+      'Standard support'
     ],
-    ctaText: 'Start for free',
+    ctaText: 'Start Free Trial',
   },
   {
-    name: 'Professional',
-    monthlyPrice: '{{PRICE_PRO_MONTHLY}}',
-    yearlyPrice: '{{PRICE_PRO_YEARLY}}',
-    description: 'For growing businesses that need full operational control.',
+    name: 'Growth',
+    monthlyPrice: '₹1,999',
+    description: 'Our most popular plan for growing venues.',
     features: [
-      'Unlimited tables/consoles',
-      'AI Business Assistant',
-      'WhatsApp & Telegram integrations',
-      'Advanced Reporting & Analytics',
-      'Food & Beverage QR menus',
-      'Priority 24/7 support'
+      'Up to 15 tables/consoles',
+      'Everything in Starter',
+      'Advanced QKhata',
+      'Advanced Reports & Analytics',
+      'Membership plans',
+      'Promotions',
+      'WhatsApp customer automation',
+      'Telegram automation',
+      'Food & Beverage',
+      'Customer booking',
+      'Loyalty/engagement features',
+      'Priority support'
     ],
     isRecommended: true,
-    ctaText: 'Get Professional',
+    ctaText: 'Start Growing',
+  },
+  {
+    name: 'Pro',
+    monthlyPrice: '₹3,999',
+    description: 'For established or high-volume businesses.',
+    features: [
+      'Unlimited tables/consoles',
+      'Everything in Growth',
+      'AI Business Assistant',
+      'Centralized customer acquisition',
+      'Advanced customer CRM',
+      'Smart booking/waitlist',
+      'Advanced analytics',
+      'Multi-location support',
+      'API/integrations',
+      'Staff & advanced permissions',
+      'Priority support'
+    ],
+    ctaText: 'Start Free Trial',
   },
   {
     name: 'Enterprise',
-    monthlyPrice: '{{PRICE_ENT_MONTHLY}}',
-    yearlyPrice: '{{PRICE_ENT_YEARLY}}',
-    description: 'Custom solutions for multi-location entertainment venues.',
+    monthlyPrice: 'Custom',
+    description: 'For chains, franchises and large entertainment businesses.',
     features: [
-      'Multi-tenant franchise support',
-      'Custom API integrations',
-      'Dedicated account manager',
-      'On-premise hardware support',
-      'White-labeled customer portal'
+      'Multi-location management',
+      'Custom integrations/API',
+      'Dedicated onboarding',
+      'Custom workflows',
+      'White-label options',
+      'Dedicated account support'
     ],
-    ctaText: 'Contact Sales',
+    ctaText: 'Talk to Sales',
   }
 ];

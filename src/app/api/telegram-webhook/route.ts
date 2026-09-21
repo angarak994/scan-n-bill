@@ -2064,6 +2064,7 @@ async function verifyIdempotency(updateId: number, chatId: string): Promise<bool
   return true;
 }
 
+import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
     const update = await request.json();

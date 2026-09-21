@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
+import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const businessId = searchParams.get('businessId');
     const customerId = searchParams.get('customerId');
 
+
     if (!businessId || !customerId) {
         return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
     }
+
+    const entitlement = await getBusinessEntitlement(businessId);
+    if (!entitlement.hasAccess || !entitlement.features.has_qkhata) {
+        return NextResponse.json({ error: 'Upgrade required to access QKhata ledger.' }, { status: 403 });
+    }
+
 
     try {
         // Fetch payments for this customer
