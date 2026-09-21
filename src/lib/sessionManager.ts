@@ -81,7 +81,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
 
     // Force game type from configuration mapping
     if (businessId && business) {
-      const tableConfig = business.tables?.find(t => t.id === table_id);
+      const tableConfig = business.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
       if (!tableConfig) {
         throw new ApiError(403, 'Invalid table or business mapping.');
       }
@@ -437,7 +437,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
 }
 
 export async function getTableStatus(table_id: string, businessId?: string) {
-  let businessName = 'Qcontrol Business';
+  let businessName = '';
   const activeSession = await sessionRepository.findActiveByTable(table_id, businessId);
   if (activeSession) {
     // Auto-cutoff logic
@@ -470,7 +470,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       qpayConfig = business?.qpay_config;
       paymentQrConfig = business?.payment_qr_config;
       
-      const tableConfig = business?.tables?.find(t => t.id === table_id);
+      const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
       if (tableConfig) {
         if ((tableConfig as any).game_type) {
           configuredGameType = (tableConfig as any).game_type;
@@ -531,7 +531,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     qpayConfig = business?.qpay_config;
     paymentQrConfig = business?.payment_qr_config;
     
-    const tableConfig = business?.tables?.find(t => t.id === table_id);
+    const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
     if (tableConfig) {
       if ((tableConfig as any).game_type) {
         configuredGameType = (tableConfig as any).game_type;

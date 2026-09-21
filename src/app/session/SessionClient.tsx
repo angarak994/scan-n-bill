@@ -89,7 +89,7 @@ function LiveTimer({ session }: { session: any }) {
       </div>
       
       <div>
-        <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
+        {session.businessName && <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName}</p>}
         <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
         <div className="flex flex-col gap-1 mb-4">
           <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
@@ -478,7 +478,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             </div>
             <div className="w-full flex flex-col items-center">
               <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">Welcome to</p>
-              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Qcontrol'}</h1>
+              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Welcome'}</h1>
               <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 font-medium">
                 <span>Table {session.table_id}</span>
                 <span>•</span>
@@ -546,7 +546,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               </svg>
             </div>
             <div>
-              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName || 'Qcontrol'}</p>
+              {session.businessName && <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName}</p>}
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Session is Active</h1>
               <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Table: {session.table_id}</p>
             </div>
