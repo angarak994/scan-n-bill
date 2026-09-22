@@ -95,10 +95,10 @@ export async function getBusinessEntitlement(businessId: string): Promise<Entitl
       };
     }
 
-    const plan = sub.subscription_plans as any;
+    const plan = sub!.subscription_plans as any;
     const features = plan.features as PlanFeatures;
-    const status = sub.status;
-    const isExpired = new Date(sub.current_period_end).getTime() < Date.now();
+    const status = sub!.status;
+    const isExpired = new Date(sub!.current_period_end).getTime() < Date.now();
 
     // If active or trialing, they have full access to their plan features
     if (status === 'active' || status === 'trialing') {

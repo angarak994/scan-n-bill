@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 
-export default function PaymentsTab({ businessId }: { businessId: string }) {
+export default function PaymentsTab() {
     const [payments, setPayments] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     
@@ -11,15 +11,19 @@ export default function PaymentsTab({ businessId }: { businessId: string }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Paid' | 'Pending'>('all');
 
+    const [aggregates, setAggregates] = useState<any>(null);
+
     useEffect(() => {
         async function fetchData() {
-            if (!businessId) return;
             try {
-                const res = await fetch(`/api/portal/dashboard?businessId=${businessId}`);
+                const res = await fetch(`/api/financial-overview`);
                 if (res.ok) {
                     const json = await res.json();
                     if (json.payments) {
                         setPayments(json.payments);
+                    }
+                    if (json.aggregates) {
+                        setAggregates(json.aggregates);
                     }
                 }
             } catch (err) {
@@ -30,7 +34,7 @@ export default function PaymentsTab({ businessId }: { businessId: string }) {
         }
 
         fetchData();
-    }, [businessId]);
+    }, []);
 
     // Data Processing
     const processedData = useMemo(() => {
@@ -38,26 +42,17 @@ export default function PaymentsTab({ businessId }: { businessId: string }) {
 
         const now = new Date();
         const todayStr = now.toISOString().split('T')[0];
-        
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
-        
         const sevenDaysAgo = new Date(now);
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        
         const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        let totalCollection = 0;
-        let pendingAmount = 0;
-        let cashCollection = 0;
-        let upiCollection = 0;
 
         const filtered = payments.filter((p: any) => {
             const dateObj = new Date(p.created_at);
             const dateStr = p.created_at.split('T')[0];
 
-            // 1. Time Filter
             let timeMatch = false;
             switch (timeFilter) {
                 case 'today': timeMatch = dateStr === todayStr; break;
@@ -67,36 +62,22 @@ export default function PaymentsTab({ businessId }: { businessId: string }) {
                 case 'all': timeMatch = true; break;
             }
 
-            // 2. Status Filter
             let statusMatch = statusFilter === 'all' || p.status === statusFilter;
-
-            // 3. Search Query
             const customerName = (p.customers?.name || 'Unknown').toLowerCase();
             let searchMatch = customerName.includes(searchQuery.toLowerCase());
-
-            // Compute metrics ONLY for the time filtered subset (ignoring search/status for top cards to give real total)
-            if (timeMatch) {
-                if (p.status === 'Paid') {
-                    const amt = Number(p.amount);
-                    totalCollection += amt;
-                    
-                    const method = (p.payment_method || '').toUpperCase();
-                    if (method.includes('UPI')) upiCollection += amt;
-                    else if (method.includes('CASH')) cashCollection += amt;
-                    else cashCollection += amt; // default unknown to cash or other
-                }
-            }
-            
-            // Note: Pending payments are globally tracked as total outstanding, but we can compute newly added pending in this period
-            if (timeMatch && p.status === 'Pending') {
-                pendingAmount += Number(p.amount);
-            }
 
             return timeMatch && statusMatch && searchMatch;
         });
 
-        return { filtered, totalCollection, pendingAmount, cashCollection, upiCollection };
-    }, [payments, timeFilter, searchQuery, statusFilter]);
+        const activeAgg = aggregates?.[timeFilter] || { totalCollection: 0, pendingAmount: 0, cashCollection: 0, upiCollection: 0 };
+        return { 
+            filtered, 
+            totalCollection: activeAgg.totalCollection, 
+            pendingAmount: activeAgg.pendingAmount, 
+            cashCollection: activeAgg.cashCollection, 
+            upiCollection: activeAgg.upiCollection 
+        };
+    }, [payments, aggregates, timeFilter, searchQuery, statusFilter]);
 
     if (isLoading) return <div className="p-8 flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">

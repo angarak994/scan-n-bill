@@ -131,13 +131,16 @@ export async function startSession(table_id: string, game_type: GameType, custom
   Promise.resolve().then(async () => {
     try {
       const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
-      await syncSessionToSheet(session.id, businessId);
-      await logActivityToSheet('START_SESSION', {
-        user: 'System',
-        table: session.table_id,
-        session: session.id,
-        details: `Session started for ${session.customer_name}`
-      }, businessId);
+      // Fire and forget to prevent blocking the UI and webhooks
+      Promise.all([
+        syncSessionToSheet(session.id, businessId),
+        logActivityToSheet('START_SESSION', {
+          user: 'System',
+          table: session.table_id,
+          session: session.id,
+          details: `Session started for ${session.customer_name}`
+        }, businessId)
+      ]).catch(e => console.error('Failed to sync session to sheet', e));
     } catch(e) { console.error('Failed to sync session to sheet', e); }
   }).catch(e => console.error(e));
   return session;
@@ -394,11 +397,11 @@ export async function endSession(table_id: string, businessId?: string, source: 
     if (linkedBooking) {
       await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', linkedBooking.id);
       const { logActivityToSheet } = require('./googleSheets');
-      await logActivityToSheet('BOOKING_COMPLETED', {
+      logActivityToSheet('BOOKING_COMPLETED', {
         user: finalSource,
         table: linkedBooking.table_id,
         details: `Booking ${linkedBooking.id} completed via Session ${session.id}`
-      }, businessId);
+      }, businessId).catch((e: Error) => console.error(e));
     }
   } catch (e) {
     console.error('Failed to sync booking completion', e);
@@ -408,13 +411,15 @@ export async function endSession(table_id: string, businessId?: string, source: 
   Promise.resolve().then(async () => {
     try {
       const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
-      await syncSessionToSheet(session.id, businessId);
-      await logActivityToSheet('END_SESSION', {
-        user: finalSource,
-        table: session.table_id,
-        session: session.id,
-        details: `Session ended. Revenue: ₹${Math.round(totalCost)}`
-      }, businessId);
+      Promise.all([
+        syncSessionToSheet(session.id, businessId),
+        logActivityToSheet('END_SESSION', {
+          user: finalSource,
+          table: session.table_id,
+          session: session.id,
+          details: `Session ended. Revenue: ₹${Math.round(totalCost)}`
+        }, businessId)
+      ]).catch(e => console.error('Failed to sync session to sheet', e));
     } catch (e) { console.error('Failed to sync session to sheet', e); }
   }).catch(e => console.error(e));
 

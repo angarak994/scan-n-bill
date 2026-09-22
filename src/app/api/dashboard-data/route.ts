@@ -112,10 +112,11 @@ export async function GET(request: Request) {
 
     const dailyRevenue = completedSessions.reduce((acc, session) => {
       let paid = 0;
-      if (session.payment_status === 'Paid') {
-          paid = (session.amount_paid && session.amount_paid > 0) ? Number(session.amount_paid) : (session.cost || 0);
+      const s = session as any;
+      if (s.payment_status === 'Paid') {
+          paid = (s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : (s.cost || 0);
       } else {
-          paid = (session.amount_paid && session.amount_paid > 0) ? Number(session.amount_paid) : 0;
+          paid = (s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : 0;
       }
       return acc + paid;
     }, 0);

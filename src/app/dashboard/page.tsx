@@ -2,7 +2,7 @@
 
 import { formatPhoneInput } from '@/lib/utils/formatPhoneInput';
 import { useEffect, useState, Suspense, useMemo, useRef, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { MenuManagerTab } from './MenuManagerTab';
 import { createClient } from '@supabase/supabase-js';
@@ -85,8 +85,7 @@ const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentCol
 
 
 function DashboardContent() {
-  const searchParams = useSearchParams();
-  const [businessId, setBusinessId] = useState<string | null>(searchParams.get('b'));
+  const [businessId, setBusinessId] = useState<string | null>(null);
 
   const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
@@ -401,8 +400,8 @@ function DashboardContent() {
          else setIsReportsLoading(true);
       }
 
-      let url = businessId ? `/api/dashboard-data?b=${businessId}` : '/api/dashboard-data';
-      url += (url.includes('?') ? '&' : '?') + `startDate=${targetStartDate}&endDate=${targetEndDate}`;
+      let url = '/api/dashboard-data';
+      url += `?startDate=${targetStartDate}&endDate=${targetEndDate}`;
 
       // Deduplicate identical in-flight requests
       if (activeFetch.current && activeFetch.current.url === url) {
@@ -1722,9 +1721,7 @@ function DashboardContent() {
       highestTurnoverTableText = `Highest turnover: Table ${maxTable} (${maxCount} sessions)`;
     }
   }
-  const revenueToday = data.dailyRevenue;
-  
-  const activePromo: ActivePromotion | null = data.activePromotions?.find(p => p.status === 'Active' && new Date(p.start_time).getTime() <= now.getTime() && new Date(p.end_time).getTime() > now.getTime()) || null;
+  const activePromo: ActivePromotion | null = data.activePromotions?.find((p: any) => p.status === 'Active' && new Date(p.start_time).getTime() <= now.getTime() && new Date(p.end_time).getTime() > now.getTime()) || null;
   const isPromoValid = !!activePromo;
 
   // Active discount mapping
@@ -3086,13 +3083,13 @@ function DashboardContent() {
                         <div key={promo.id} className="border border-border-theme bg-bg-surface rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-text-primary">{promo.name}</span>
+                              <span className="font-bold text-text-primary">{(promo as any).name}</span>
                               <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold ${statusColor}`}>{promo.status}</span>
                             </div>
                             <div className="text-xs text-text-secondary flex gap-2">
                               <span><strong className="text-text-primary">{promo.discount_percent}%</strong> off</span>
                               <span>•</span>
-                              <span>{new Date(promo.start_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})} - {new Date(promo.end_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+                              <span>{new Date((promo as any).start_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})} - {new Date((promo as any).end_time).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
                             </div>
                           </div>
                           {promo.time_slot_start && promo.time_slot_end && (
@@ -4334,7 +4331,7 @@ function DashboardContent() {
             <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} membershipPlans={membershipPlans || []} /> :
             <FeatureLock featureName="QKhata Ledger" requiredPlan="Growth" description="Manage customer balances, track payments, and automate ledger entries." />
           )}
-          {sidebarTab === 'payments' && <PaymentsTab businessId={businessId!} />}
+          {sidebarTab === 'payments' && <PaymentsTab />}
                     {sidebarTab === 'messaging' && (
             data?.entitlement?.features?.has_whatsapp ?
             <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} /> :

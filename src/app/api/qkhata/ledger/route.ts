@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
-
+import { getSession } from '@/lib/auth';
 import { getBusinessEntitlement } from '@/lib/entitlements';
+
 export async function GET(req: Request) {
+    const sessionCookie = await getSession();
+    if (!sessionCookie || !sessionCookie.businessId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const businessId = sessionCookie.businessId;
+
     const { searchParams } = new URL(req.url);
-    const businessId = searchParams.get('businessId');
     const customerId = searchParams.get('customerId');
 
-
-    if (!businessId || !customerId) {
-        return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
+    if (!customerId) {
+        return NextResponse.json({ error: 'Missing customerId' }, { status: 400 });
     }
 
     const entitlement = await getBusinessEntitlement(businessId);

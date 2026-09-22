@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { getSession } from '@/lib/auth';
 
 export async function POST(req: Request) {
     try {
-        const body = await req.json();
-        const { businessId, customerId, amount, settlementMethod, selectedCustomerName, selectedCustomerPhone, isCustomerRecord } = body;
+        const sessionCookie = await getSession();
+        if (!sessionCookie || !sessionCookie.businessId) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
 
-        if (!businessId || !amount || !settlementMethod) {
+        const body = await req.json();
+        const { customerId, amount, settlementMethod, selectedCustomerName, selectedCustomerPhone, isCustomerRecord } = body;
+        const businessId = sessionCookie.businessId;
+
+        if (!amount || !settlementMethod) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
         }
 

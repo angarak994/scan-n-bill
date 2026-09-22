@@ -101,7 +101,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             return;
         }
         try {
-            const res = await fetch(`/api/qkhata/ledger?businessId=${businessId}&customerId=${customer.id}`);
+            const res = await fetch(`/api/qkhata/ledger?customerId=${customer.id}`);
             const data = await res.json();
             if (data.ledger) {
                 setLedgerHistory(data.ledger);
@@ -138,7 +138,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    businessId,
+
                     customerId: selectedCustomer.id,
                     amount,
                     settlementMethod,

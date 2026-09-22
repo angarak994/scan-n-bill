@@ -586,11 +586,11 @@ export default function SessionClient({ initialState, business_id, table_id, gam
           </>
         )}
         
-        {session.menuItems && session.menuItems.length > 0 && (
+        {(session as any).menuItems && (session as any).menuItems.length > 0 && (
           <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
             <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Food & Drinks Menu</h2>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-              {session.menuItems.map((item: any) => (
+              {(session as any).menuItems.map((item: any) => (
                 <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                   <div>
                     <p className="font-bold text-gray-800 dark:text-gray-200">{item.name}</p>

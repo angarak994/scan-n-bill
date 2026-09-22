@@ -409,7 +409,7 @@ async function createBooking(args: any, businessId: string, senderPhone: string)
       duration_minutes: args.duration_minutes
     }, businessId);
     
-    await logActivityToSheet('WHATSAPP_BOOKING', {
+    logActivityToSheet('WHATSAPP_BOOKING', {
       user: 'AI Agent',
       table: args.table_id,
       details: `Booked for ${args.customer_name} (${senderPhone}) on ${args.date} at ${args.start_time}`
