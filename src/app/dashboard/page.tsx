@@ -10,6 +10,7 @@ import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow,
 import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
 import QKhataTab from './QKhataTab';
+import BookingsTab from './BookingsTab';
 import PaymentsTab from './PaymentsTab';
 import MessagingTab from './MessagingTab';
 
@@ -87,7 +88,7 @@ const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentCol
 function DashboardContent() {
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], kpis: { totalRevenue: number, totalSessions: number, avgMinutes: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -433,9 +434,26 @@ function DashboardContent() {
           }
         }
         
-        // Update reports explicitly
+        // 🚀 SCALABILITY UPGRADE: Fetch paginated completed sessions history explicitly
         if (targetStartDate === reportDateRange.start && targetEndDate === reportDateRange.end) {
-          setReportsData(json);
+          try {
+             const sessionsRes = await fetch(`/api/sessions/completed?startDate=${targetStartDate}&endDate=${targetEndDate}&limit=100`, { cache: 'no-store' });
+             if (sessionsRes.ok) {
+                 const sessionsJson = await sessionsRes.json();
+                 setReportsData({
+                     ...json,
+                     completedSessions: sessionsJson.sessions || [],
+                     dailyRevenue: json.kpis?.totalRevenue || 0,
+                     totalSessions: json.kpis?.totalSessions || 0,
+                     avgMinutes: json.kpis?.avgMinutes || 0
+                 });
+             } else {
+                 setReportsData(json);
+             }
+          } catch(err) {
+             console.error("Failed to fetch paginated sessions", err);
+             setReportsData(json);
+          }
         }
       }
     } catch (e) {
@@ -586,9 +604,10 @@ function DashboardContent() {
                 } else if (payload.eventType === 'UPDATE') {
                    if (fullSession.status === 'COMPLETED') {
                        newData.activeSessions = newData.activeSessions.filter((x: any) => x.id !== fullSession.id);
-                       if (!newData.completedSessions.some((x: any) => x.id === fullSession.id)) {
-                           newData.completedSessions = [fullSession, ...newData.completedSessions];
-                           newData.dailyRevenue += (fullSession.cost || 0);
+                       // Update the KPIs locally in realtime!
+                       if (newData.kpis) {
+                           newData.kpis.totalSessions += 1;
+                           newData.kpis.totalRevenue += (fullSession.cost || 0);
                        }
                    } else if (fullSession.status === 'ACTIVE') {
                        const idx = newData.activeSessions.findIndex((x: any) => x.id === fullSession.id);
@@ -1608,11 +1627,11 @@ function DashboardContent() {
     }
   };
 
-  // Memoized unique customers
+  // Memoized unique customers (now relies on active sessions for quick view, deep analytics moved to backend)
   const customers = useMemo(() => {
     if (!data) return [];
     const map = new Map();
-    [...data.completedSessions, ...data.activeSessions].forEach(s => {
+    [...data.activeSessions].forEach(s => {
       if (!map.has(s.customer_name)) {
         map.set(s.customer_name, { name: s.customer_name, visits: 0, totalSpent: 0, lastVisit: s.date, favoriteGame: s.game_type });
       }
@@ -1683,44 +1702,29 @@ function DashboardContent() {
   const activeCount = data.activeSessions.length;
   const totalTables = data.tables?.length ?? 0;
   const occupancyPercent = totalTables > 0 ? Math.round((activeCount / totalTables) * 100) : 0;
-  const totalSessions = activeCount + data.completedSessions.length;
+  const totalSessions = activeCount + (data.kpis?.totalSessions || 0);
+  const avgMinutes = data.kpis?.avgMinutes || 0;
+  const avgDuration = avgMinutes >= 60 ? `${(avgMinutes / 60).toFixed(1)}h` : `${avgMinutes}m`;
   
-  // Dynamic Average Duration Calculation
-  let avgDuration = "0m";
-  if (data.completedSessions.length > 0) {
-    let totalMinutes = 0;
-    data.completedSessions.forEach(s => {
-      // Parse '1h 30m' or '45m' formats dynamically
-      if (!s.duration) return;
-      const hMatch = s.duration.match(/(\d+)h/);
-      const mMatch = s.duration.match(/(\d+)m/);
-      if (hMatch) totalMinutes += parseInt(hMatch[1]) * 60;
-      if (mMatch) totalMinutes += parseInt(mMatch[1]);
-    });
-    const avgMinutes = Math.round(totalMinutes / data.completedSessions.length);
-    avgDuration = avgMinutes >= 60 ? `${(avgMinutes / 60).toFixed(1)}h` : `${avgMinutes}m`;
-  }
-  
-  // Dynamic Highest Turnover Table
-  let highestTurnoverTableText = 'None yet';
-  if (data.completedSessions.length > 0) {
-    const counts = data.completedSessions.reduce((acc: Record<string, number>, s: any) => {
-      acc[s.table_id] = (acc[s.table_id] || 0) + 1;
-      return acc;
-    }, {});
-    
-    let maxTable = '';
-    let maxCount = 0;
-    for (const [table, count] of Object.entries(counts)) {
-      if (count > maxCount) {
-        maxCount = count;
-        maxTable = table;
-      }
-    }
-    if (maxTable) {
-      highestTurnoverTableText = `Highest turnover: Table ${maxTable} (${maxCount} sessions)`;
-    }
-  }
+  // Game usage chart now needs to be handled via a backend RPC for complete data, 
+  // for now we render active sessions to prevent breaking UI
+  const gameUsageData = {
+    labels: ['Snooker', 'Pool', 'PS5'],
+    datasets: [{
+      data: [
+        data.activeSessions.filter(s => s.game_type === 'snooker' || s.game_type === 'mini-snooker').length,
+        data.activeSessions.filter(s => s.game_type === 'pool').length,
+        data.activeSessions.filter(s => s.game_type === 'ps5').length,
+      ],
+      backgroundColor: ['#00E676', '#FF3D00', '#2979FF'],
+      borderWidth: 0,
+      hoverOffset: 4
+    }]
+  };
+
+  // Highest Turnover Table is now fetched from the reports data if available, 
+  // or we leave it as "TBD (Metrics Upgrade)"
+  let highestTurnoverTableText = 'TBD (Scalability Upgrade)';
   const activePromo: ActivePromotion | null = data.activePromotions?.find((p: any) => p.status === 'Active' && new Date(p.start_time).getTime() <= now.getTime() && new Date(p.end_time).getTime() > now.getTime()) || null;
   const isPromoValid = !!activePromo;
 
@@ -1759,21 +1763,21 @@ function DashboardContent() {
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
           </div>
           <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
-            <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
+            <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.kpis?.totalRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
             <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1">+12.4%</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-light flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-text-secondary font-medium">Goal: <PrivacyText value={data.goals?.daily_revenue || 0} isPrivacyMode={isPrivacyMode} /></span>
-              <span className="text-xs font-bold text-accent">{data.goals?.daily_revenue ? Math.min(Math.round((data.dailyRevenue / data.goals.daily_revenue) * 100), 100) : 100}% Achieved</span>
+              <span className="text-xs font-bold text-accent">{data.goals?.daily_revenue ? Math.min(Math.round(((data.kpis?.totalRevenue || 0) / data.goals.daily_revenue) * 100), 100) : 100}% Achieved</span>
             </div>
             <div className="w-full h-1.5 bg-border-light rounded-full overflow-hidden">
-              <div className="h-full bg-accent transition-all duration-1000 ease-out" style={{ width: `${data.goals?.daily_revenue ? Math.min((data.dailyRevenue / data.goals.daily_revenue) * 100, 100) : 100}%` }}></div>
+              <div className="h-full bg-accent transition-all duration-1000 ease-out" style={{ width: `${data.goals?.daily_revenue ? Math.min(((data.kpis?.totalRevenue || 0) / data.goals.daily_revenue) * 100, 100) : 100}%` }}></div>
             </div>
             {!data.goals?.daily_revenue ? (
               <p className="text-[10px] text-text-secondary text-right mt-1">No daily target set</p>
-            ) : data.dailyRevenue < data.goals.daily_revenue ? (
-              <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - data.dailyRevenue} isPrivacyMode={isPrivacyMode} /> remaining to reach today's target</p>
+            ) : (data.kpis?.totalRevenue || 0) < data.goals.daily_revenue ? (
+              <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - (data.kpis?.totalRevenue || 0)} isPrivacyMode={isPrivacyMode} /> remaining to reach today's target</p>
             ) : (
               <p className="text-[10px] text-success text-right mt-1 font-bold">Daily target achieved!</p>
             )}
@@ -1812,8 +1816,8 @@ function DashboardContent() {
             <span className="text-xs sm:text-sm font-semibold text-text-secondary mb-0.5 sm:mb-1">Avg. {avgDuration}</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme flex justify-between">
-            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(data.dailyRevenue / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /> / session</span>
-            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><span className="text-text-primary font-bold">{data.completedSessions.length}</span> finished</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><PrivacyText value={data.kpis?.totalSessions > 0 ? Math.round(data.kpis.totalRevenue / data.kpis.totalSessions) : 0} isPrivacyMode={isPrivacyMode} /> / session</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><span className="text-text-primary font-bold">{data.kpis?.totalSessions || 0}</span> finished</span>
           </div>
         </div>
       </div>
@@ -2011,129 +2015,7 @@ function DashboardContent() {
     return false;
   };
 
-  const renderBookings = () => {
-    const allBookings = data?.bookings || [];
-    // Sort by date descending
-    allBookings.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    return (
-      <div className="flex flex-col gap-8 mt-4">
-        <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
-          <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-            <div>
-              <h2 className="text-2xl font-bold">Master Bookings Log</h2>
-              <p className="text-text-secondary mt-1 text-sm">Full history of all table reservations across all statuses.</p>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap">
-              <button
-                onClick={() => {
-                  const now = new Date();
-                  let m = now.getMinutes();
-                  let h = now.getHours();
-                  if (m > 30) { m = 0; h = (h + 1) % 24; }
-                  else if (m > 0) { m = 30; }
-                  setBookingDate(getLocalDateStr());
-                  setBookingStartTime(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
-                  setBookingTable('');
-                  setBookingCustomer('');
-                  setBookingDuration('60');
-                  setBookingPlayers('1');
-                  setBookingError('');
-                  setIsBookingModalOpen(true);
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white font-bold rounded-lg shadow-md hover:bg-accent/90 transition-all duration-200 text-sm border border-accent/20"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-                New Manual Booking
-              </button>
-              <div className="flex items-center gap-2 px-4 py-2 bg-[#25D366]/20 text-[#25D366] rounded-full border border-[#25D366]/30">
-                <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
-                <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
-                  <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                  Today's Bookings
-                </h3>
-                <p className="text-xs text-text-secondary mt-1 italic">Automatically synchronized via WhatsApp AI</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead className="sticky top-0 z-10 bg-bg-primary shadow-sm">
-                <tr className="text-[11px] font-extrabold text-text-secondary uppercase tracking-widest border-b border-border-theme">
-                  <th className="p-4 md:p-5">Client</th>
-                  <th className="p-4 md:p-5">Table</th>
-                  <th className="p-4 md:p-5">Time Slot</th>
-                  <th className="p-4 md:p-5">Status</th>
-                  <th className="p-4 md:p-5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.bookings || []).length === 0 ? (
-                  <tr><td colSpan={5} className="p-12 text-center text-text-secondary text-base">Ready to grow your business? Schedule your first booking today.</td></tr>
-                ) : (
-                  (data.bookings || []).map((booking: any) => {
-                    const isOccupied = data.activeSessions?.some((s: any) => s.table_id === booking.table_id && s.status === 'ACTIVE');
-                    return (
-                    <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
-                      <td className="p-4 md:p-5">
-                        <p className="text-base font-bold text-text-primary">{getDisplayName(booking.customer_name, (booking as any).member_id)}</p>
-                        {booking.source === 'whatsapp' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#25D366] bg-[#25D366]/10 px-2 py-0.5 rounded-full border border-[#25D366]/20">WhatsApp AI</span>}
-                        {booking.source === 'telegram' && <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#0088cc] bg-[#0088cc]/10 px-2 py-0.5 rounded-full border border-[#0088cc]/20">Telegram AI</span>}
-                      </td>
-                      <td className="p-4 md:p-5">
-                        <span className="px-3 py-1.5 border border-border-theme bg-bg-surface rounded-lg text-sm font-mono font-bold text-accent uppercase tracking-widest shadow-sm group-hover:border-accent/50 transition-colors">
-                          {booking.table_id}
-                        </span>
-                      </td>
-                      <td className="p-4 md:p-5">
-                        <p className="text-sm font-bold font-mono text-text-primary tabular-nums whitespace-nowrap">{formatTimeReadable(booking.start_time, true, booking.booking_date)} – {formatTimeReadable(booking.end_time)}</p>
-                        <p className="text-xs text-text-secondary mt-1">{booking.duration_minutes} mins</p>
-                      </td>
-                      <td className="p-4 md:p-5">
-                        {booking.status === 'confirmed' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Upcoming</span>}
-                        {booking.status === 'active' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-secondary/50 text-secondary bg-secondary/10 uppercase shadow-sm">Active Session</span>}
-                        {booking.status === 'completed' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-border-theme text-text-secondary bg-bg-surface uppercase shadow-sm">Completed</span>}
-                        {booking.status === 'cancelled' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-danger/50 text-danger bg-danger/10 uppercase shadow-sm">Cancelled</span>}
-                        {booking.status === 'no_show' && <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-orange-500/50 text-orange-600 bg-orange-500/10 uppercase shadow-sm">No Show</span>}
-                      </td>
-                      <td className="p-4 md:p-5 text-right">
-                        {booking.status === 'confirmed' && (
-                          <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <Tooltip text="Mark as No Show">
-                              <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-4 py-2 text-sm font-bold text-orange-600 border border-orange-500/30 rounded-lg hover:bg-orange-500 hover:text-white transition-colors shadow-sm">No Show</button>
-                            </Tooltip>
-                            <Tooltip text="Cancel Booking">
-                              <button onClick={() => handleUpdateBookingStatus(booking.id, 'cancelled')} className="px-4 py-2 text-sm font-bold text-danger border border-danger/30 rounded-lg hover:bg-danger hover:text-white transition-colors shadow-sm">Cancel</button>
-                            </Tooltip>
-                            <Tooltip text={isOccupied ? 'End current active session on table before starting' : 'Start Session'}>
-                              <button 
-                                onClick={() => !isOccupied && handleStartBooking(booking.id)} 
-                                disabled={isOccupied}
-                                className="px-4 py-2 text-sm font-bold text-black bg-accent rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20 border border-transparent disabled:opacity-50 disabled:bg-bg-surface disabled:text-text-secondary disabled:border-border-theme disabled:shadow-none"
-                              >
-                                Start Session
-                              </button>
-                            </Tooltip>
-                          </div>
-                        )}
-                        {booking.status === 'active' && (
-                          <span className="text-xs font-bold text-secondary flex items-center justify-end gap-2">
-                            <div className="w-2 h-2 rounded-full bg-secondary animate-pulse"></div> Live
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const renderReports = () => {
     // Generate preset dates using getLocalDateStr to ensure correct local dates
@@ -2261,7 +2143,7 @@ function DashboardContent() {
               onChange={e => setReportDateRange(prev => ({...prev, start: e.target.value, end: e.target.value}))} 
               className="px-3 py-1.5 bg-bg-surface border border-border-theme rounded-lg text-sm font-medium text-text-primary outline-none focus:border-accent transition-colors"
             />
-            <span className="text-sm font-bold text-text-secondary bg-bg-surface px-3 py-1.5 rounded-lg border border-border-theme">{data.completedSessions.length} Sessions</span>
+            <span className="text-sm font-bold text-text-secondary bg-bg-surface px-3 py-1.5 rounded-lg border border-border-theme">{data.kpis?.totalSessions || 0} Sessions</span>
           </div>
         </div>
         <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
@@ -4319,7 +4201,7 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && renderBookings()}
+          {sidebarTab === 'bookings' && <BookingsTab businessId={businessId!} activeSessions={data?.activeSessions || []} handleStartBooking={handleStartBooking} handleUpdateBookingStatus={handleUpdateBookingStatus} openCreateBookingModal={() => setIsCreatingBooking(true)} />}
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
@@ -4381,6 +4263,19 @@ function DashboardContent() {
             
             <form onSubmit={handleManualStart} className="p-6 sm:p-8 flex flex-col gap-6">
               
+              {/* PS5 Players Section (Always Visible if PS5) */}
+              {manualGame === 'ps5' && (
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Players <span className="text-danger">*</span></label>
+                  <CustomSelect 
+                    value={manualPlayers} 
+                    onChange={v => setManualPlayers(v)} 
+                    options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
+                    className="min-h-[48px]" 
+                  />
+                </div>
+              )}
+
               {/* Customer Name Section */}
               <div className={`transition-all duration-300 ease-in-out ${isLazyModeEnabled ? 'max-h-0 opacity-0 overflow-hidden m-0' : 'max-h-[500px] opacity-100 overflow-visible'}`}>
                 <div className="relative">
@@ -4491,19 +4386,8 @@ function DashboardContent() {
               </div>
 
               {/* Start Time and Optional Players - 2 Columns */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {manualGame === 'ps5' && (
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Players <span className="text-danger">*</span></label>
-                    <CustomSelect 
-                      value={manualPlayers} 
-                      onChange={v => setManualPlayers(v)} 
-                      options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
-                      className="min-h-[48px]" 
-                    />
-                  </div>
-                )}
-                <div className={manualGame !== 'ps5' ? 'sm:col-span-2' : ''}>
+              <div className="grid grid-cols-1 sm:grid-cols-1 gap-5">
+                <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
                   <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors min-h-[48px]" />
                 </div>
@@ -4714,7 +4598,7 @@ function DashboardContent() {
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
               {data.tables?.map(t => {
-                const slug = ((data as any).business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const slug = ((data as any).businessName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                 const url = `${window.location.origin}/qr/${slug}/${t.id}`;
                 return (
                   <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">

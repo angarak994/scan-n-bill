@@ -70,7 +70,7 @@ export async function GET(request: Request) {
         .eq('sessions.business_id', businessId)
         .eq('intervention_type', 'force_close')
         .gte('created_at', startOfDayUTC),
-      supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate),
+      supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate).limit(100),
       supabase
         .from('promotions')
         .select('*')
@@ -79,11 +79,14 @@ export async function GET(request: Request) {
       supabase
         .from('customers')
         .select('id, name, phone, outstanding_balance')
-        .eq('business_id', businessId),
+        .eq('business_id', businessId)
+        .order('outstanding_balance', { ascending: false })
+        .limit(100),
       supabase
         .from('memberships')
         .select('id, name, mobile, points')
         .eq('business_id', businessId)
+        .limit(100)
     ]);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
@@ -97,21 +100,43 @@ export async function GET(request: Request) {
       }
     }
     activeSessions = Array.from(activeTableMap.values());
-    let completedSessions = sessions.filter(s => {
-      if (s.status !== 'COMPLETED') return false;
-      return s.date >= startDate && s.date <= endDate;
+    // 🚀 SCALABILITY UPGRADE: Fetch KPIs via Database RPC (Server-Side Aggregation)
+    let kpis = { totalRevenue: 0, totalSessions: 0, avgMinutes: 0 };
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_dashboard_kpis', { 
+        p_business_id: businessId, 
+        p_start_date: startDate, 
+        p_end_date: endDate 
     });
 
-    const dailyRevenue = completedSessions.reduce((acc, session) => {
-      let paid = 0;
-      const s = session as any;
-      if (s.payment_status === 'Paid') {
-          paid = (s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : (s.cost || 0);
-      } else {
-          paid = (s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : 0;
-      }
-      return acc + paid;
-    }, 0);
+    if (!rpcError && rpcData && rpcData.length > 0) {
+        kpis.totalRevenue = Number(rpcData[0].total_revenue) || 0;
+        kpis.totalSessions = Number(rpcData[0].total_sessions) || 0;
+        kpis.avgMinutes = Number(rpcData[0].avg_duration_minutes) || 0;
+    } else {
+        // Fallback to fetching all for KPI calculation (deprecated/slow path)
+        // If the user hasn't run the migration yet, we do it in-memory but DO NOT send it to the frontend!
+        const { data: allCompleted } = await supabase.from('sessions')
+             .select('*')
+             .eq('business_id', businessId)
+             .eq('status', 'COMPLETED')
+             .gte('date', startDate)
+             .lte('date', endDate);
+        
+        const completedSessions = allCompleted || [];
+        kpis.totalSessions = completedSessions.length;
+        kpis.totalRevenue = completedSessions.reduce((acc, s) => {
+             const paid = s.payment_status === 'Paid' ? ((s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : (s.cost || 0)) : ((s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : 0);
+             return acc + paid;
+        }, 0);
+        let totalMins = 0;
+        completedSessions.forEach(s => {
+             const st = new Date(`${s.date}T${s.start_time}`);
+             const et = new Date(`${s.date}T${s.end_time}`);
+             totalMins += (et.getTime() - st.getTime()) / 60000;
+        });
+        kpis.avgMinutes = kpis.totalSessions > 0 ? Math.round(totalMins / kpis.totalSessions) : 0;
+    }
+
     const pricingRules = business.pricing_rules;
 
     const manualClosuresToday = interventions?.length || 0;
@@ -121,8 +146,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       activeSessions,
-      completedSessions,
-      dailyRevenue,
+      kpis,
       todayStr,
       pricingRules,
       tables: business.tables || [],

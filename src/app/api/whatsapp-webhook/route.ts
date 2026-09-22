@@ -60,7 +60,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const message = messages[0];
+    // Safe timeout wrap to prevent Vercel 504 Infinite Retries
+    try {
+      await Promise.race([
+        (async () => {
+          const message = messages[0];
     const phone = message.from;
     const messageId = message.id;
     const metadata = value?.metadata;
@@ -359,6 +363,12 @@ export async function POST(request: Request) {
          
          await whatsappRepository.clearState(phone);
        }
+    }
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Vercel Timeout Prevention')), 8500))
+      ]);
+    } catch (err: any) {
+      console.error(`[Webhook Error] WhatsApp message: ${err.message}`);
     }
 
     return NextResponse.json({ ok: true });

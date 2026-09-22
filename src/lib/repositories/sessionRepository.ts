@@ -265,9 +265,9 @@ export const sessionRepository = {
     }).catch(e => console.error('Background sheets sync error', e));
   },
 
-  update: async (id: string, updates: Partial<Session>, businessId?: string): Promise<void> => {
+  update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean): Promise<void> => {
     // 1. Update Supabase
-    const { data: updatedData, error } = await supabase
+    let query = supabase
       .from('sessions')
       .update({
         end_time: updates.end_time,
@@ -282,11 +282,18 @@ export const sessionRepository = {
         payment_status: updates.payment_status,
         completed_by: updates.completed_by,
       })
-      .eq('id', id)
-      .select('*')
-      .single();
+      .eq('id', id);
+
+    if (requireActive) {
+      query = query.eq('status', 'ACTIVE');
+    }
+
+    const { data: updatedData, error } = await query.select('*').single();
 
     if (error || !updatedData) {
+      if (requireActive) {
+         throw new Error("Session is already closed or modified.");
+      }
       throw new Error("Failed to update session in Database: " + error?.message);
     }
 

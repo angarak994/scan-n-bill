@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 
@@ -12,51 +12,78 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
     const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
     const [isLedgerLoading, setIsLedgerLoading] = useState(false);
     
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const observerTarget = useRef<HTMLDivElement>(null);
+    
     const [settlementAmount, setSettlementAmount] = useState('');
     const [settlementMethod, setSettlementMethod] = useState('Cash');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const fetchData = async () => {
+    const fetchCustomers = async (pageNum: number, search: string = '', isAppend: boolean = false) => {
         try {
-            const customersData = dbCustomers;
-            const membersData = memberships;
+            if (pageNum === 1) setIsLoading(true);
+            else setIsLoadingMore(true);
 
-            if (memberships) {
-                const membersList = memberships.map(m => {
-                    // Match with a true dbCustomer to get ledger balances if they've played
-                    const matchedCustomer = dbCustomers?.find(c => 
-                        (c.phone && c.phone === m.mobile) || 
-                        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase())
-                    );
-                    
+            // Prioritize fetching customers with balances
+            const res = await fetch(`/api/customers?page=${pageNum}&limit=50&search=${encodeURIComponent(search)}`);
+            const data = await res.json();
+            
+            if (data.customers) {
+                // Map over memberships to inject tier data
+                const enrichedCustomers = data.customers.map((c: any) => {
+                    const member = memberships?.find((m: any) => (m.mobile === c.phone) || (m.name.toLowerCase() === c.name.toLowerCase()));
                     return {
-                        id: matchedCustomer ? matchedCustomer.id : m.id, // Prefer db customer ID for ledger queries
-                        name: m.name,
-                        phone: m.mobile,
-                        outstanding_balance: matchedCustomer ? (matchedCustomer.outstanding_balance || 0) : 0,
-                        total_billed: matchedCustomer ? (matchedCustomer.total_billed || 0) : 0,
-                        total_paid: matchedCustomer ? (matchedCustomer.total_paid || 0) : 0,
-                        is_customer_record: !!matchedCustomer,
-                        tier: m.tier,
-                        loyalty_points: m.loyalty_points
+                        ...c,
+                        is_customer_record: true,
+                        tier: member ? member.tier : null,
+                        loyalty_points: member ? member.loyalty_points : 0
                     };
                 });
-                
-                const sorted = membersList.sort((a, b) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
-                setCustomers(sorted);
-                
-                // If a customer is currently selected, refresh their specific data locally
-                if (selectedCustomer) {
-                    const freshCust = sorted.find(c => c.name === selectedCustomer.name);
-                    if (freshCust) setSelectedCustomer(freshCust);
+
+                if (isAppend) {
+                    setCustomers(prev => [...prev, ...enrichedCustomers]);
+                } else {
+                    setCustomers(enrichedCustomers);
                 }
+                
+                setHasMore(data.customers.length === 50);
             }
         } catch (err) {
-            console.error("Failed to load QKhata data", err);
+            console.error("Failed to fetch customers", err);
         } finally {
             setIsLoading(false);
+            setIsLoadingMore(false);
         }
     };
+
+    // Replace old fetchData with paginated version
+    useEffect(() => {
+        setPage(1);
+        fetchCustomers(1, searchTerm, false);
+    }, [businessId, searchTerm]);
+
+    // Intersection Observer for Infinite Scroll
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading) {
+                    setPage(prev => {
+                        const nextPage = prev + 1;
+                        fetchCustomers(nextPage, searchTerm, true);
+                        return nextPage;
+                    });
+                }
+            },
+            { threshold: 1.0 }
+        );
+
+        if (observerTarget.current) observer.observe(observerTarget.current);
+        return () => { if (observerTarget.current) observer.unobserve(observerTarget.current); };
+    }, [hasMore, isLoadingMore, isLoading, searchTerm]);
+    // Realtime listeners still active for updates
 
     useEffect(() => {
         if (!businessId) return;
@@ -72,9 +99,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
         };
     }, [businessId, selectedCustomer]);
 
-    useEffect(() => {
-        fetchData();
-    }, [dbCustomers, memberships]);
+    // UseEffect for fetchData is removed, we use the paginated fetch on mount instead
 
     // Keep selectedCustomer in sync with realtime updates from customers
     useEffect(() => {
@@ -226,8 +251,8 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                         <div className="relative">
                             <input 
                                 type="text" 
-                                placeholder="Search name or phone..." 
-                                className="w-full px-4 py-2 pl-9 bg-bg-card border border-border-theme rounded-md focus:border-accent outline-none text-sm text-text-primary placeholder-text-secondary transition-colors"
+                                placeholder="Search customers by name or phone..." 
+                                className="w-full bg-bg-primary/50 text-text-primary text-sm font-medium border border-border-theme focus:border-accent rounded-xl px-10 py-3 transition-colors outline-none placeholder:text-text-secondary/70"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
@@ -235,17 +260,22 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {filteredCustomers.length === 0 ? (
-                            <div className="p-8 flex flex-col items-center justify-center text-center h-full">
-                                <div className="w-16 h-16 rounded-full bg-bg-surface border border-border-theme flex items-center justify-center mb-4">
-                                    <svg className="w-8 h-8 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                        {isLoading && customers.length === 0 ? (
+                            <div className="flex justify-center p-8">
+                                <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        ) : customers.length === 0 ? (
+                            <div className="text-center p-8">
+                                <div className="w-16 h-16 mx-auto mb-4 bg-bg-primary rounded-full flex items-center justify-center">
+                                    <svg className="w-8 h-8 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                                 </div>
-                                <p className="text-text-secondary text-sm font-medium">No registered members found.</p>
+                                <h3 className="text-text-primary font-bold">No customers found</h3>
+                                <p className="text-sm text-text-secondary mt-1">Adjust search or add members</p>
                             </div>
                         ) : (
-                            <ul className="divide-y divide-border-theme/30 p-2">
-                                {filteredCustomers.map(c => (
+                            <>
+                                {customers.map(c => (
                                     <li 
                                         key={c.id} 
                                         onClick={() => handleSelectCustomer(c)}
@@ -284,7 +314,12 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         </div>
                                     </li>
                                 ))}
-                            </ul>
+
+                                {/* Intersection Observer Target for Infinite Scroll */}
+                                <div ref={observerTarget} className="h-4 w-full flex items-center justify-center mt-4">
+                                    {isLoadingMore && <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>}
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>

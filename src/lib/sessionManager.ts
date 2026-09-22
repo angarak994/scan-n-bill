@@ -305,7 +305,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
     completed_by: finalSource,
     paused_at: null,
     paused_duration_seconds: totalPausedSecs,
-  } as any, businessId);
+  } as any, businessId, true);
 
   // QKhata / Payment logic integration (Non-blocking)
   if (businessId) {
