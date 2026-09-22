@@ -103,7 +103,7 @@ export function NotificationBell({ businessId }: { businessId: string }) {
     if (!businessId) return;
     const fetchNotifs = async () => {
       try {
-        const res = await fetch(`/api/notifications?b=${businessId}`);
+        const res = await fetch(`/api/notifications`);
         if (res.ok) {
           const data = await res.json();
           setNotifications(data.notifications || []);

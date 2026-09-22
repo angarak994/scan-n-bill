@@ -20,20 +20,12 @@ export async function GET(request: Request) {
   try {
     const sessionCookie = await getSession();
     const { searchParams } = new URL(request.url);
-    let businessId = searchParams.get('b');
-
-    // Secure backend validation via JWT
-    if (!sessionCookie || !sessionCookie.businessId) {
-      return NextResponse.json({ error: 'Unauthorized: Invalid or missing session cookie' }, { status: 401 });
-    }
-
-    // Optional: enforce that requested businessId matches JWT (if provided)
-    if (businessId && businessId !== sessionCookie.businessId) {
-      return NextResponse.json({ error: 'Unauthorized: Access denied for this business' }, { status: 403 });
-    }
     
-    // Fallback to JWT businessId
-    businessId = sessionCookie.businessId;
+    // Secure backend validation via JWT
+    const businessId = sessionCookie?.businessId;
+    if (!businessId) {
+      return NextResponse.json({ error: 'Unauthorized: No valid session token' }, { status: 401 });
+    }
 
     const business = await businessManager.getBusiness(businessId as string);
     if (!business) {

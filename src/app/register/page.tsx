@@ -54,7 +54,7 @@ export default function Register() {
 
       // Registration successful! We'll auto-login them now
       sessionStorage.setItem('dashboard_pin', data.pin);
-      router.push(`/dashboard?b=${data.businessId}`);
+      router.push(`/dashboard`);
     } catch (err: any) {
       setError(err.message || 'Failed to register business');
       setLoading(false);

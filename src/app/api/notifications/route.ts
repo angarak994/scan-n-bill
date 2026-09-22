@@ -11,12 +11,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('b');
-
-    if (sessionCookie.businessId !== businessId) {
-      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
-    }
+    const businessId = sessionCookie.businessId;
 
     if (!businessId) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });

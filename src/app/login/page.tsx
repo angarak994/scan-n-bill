@@ -53,7 +53,7 @@ export default function Login() {
 
       // Success, route to dashboard using hard navigation for immediate feedback
       setSuccess(true);
-      window.location.href = `/dashboard?b=${data.businessId}`;
+      window.location.href = `/dashboard`;
     } catch (err: any) {
       setError(err.message || 'Login failed');
       setLoading(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { calculateCost, getCurrentRate } from '../../lib/billing';
+import { calculateCost, getCurrentRate } from '@/lib/billing';
 import { supabase } from '@/lib/supabaseClient';
 
 function formatElapsed(totalSeconds: number) {

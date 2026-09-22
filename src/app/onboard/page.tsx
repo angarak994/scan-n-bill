@@ -197,7 +197,7 @@ export default function OnboardPage() {
               Print All QR Codes
             </button>
             <a
-              href={`/dashboard?b=${createdBusinessId}`}
+              href={`/dashboard`}
               className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-lg transition-colors mt-2 print:hidden"
             >
               Go to Dashboard →

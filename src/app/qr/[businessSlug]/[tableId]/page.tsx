@@ -1,14 +1,26 @@
-import { getTableStatus } from '../../lib/sessionManager';
+import { getTableStatus } from '../../../../lib/sessionManager';
 import SessionClient from './SessionClient';
+import { businessManager } from '../../../../lib/businessManager';
 
-export default async function SessionPage({ searchParams }: { searchParams: Promise<{ table?: string; type?: string; b?: string; _scan?: string }> }) {
-  const params = await searchParams;
-  const table_id = params.table;
-  const game_type = params.type;
-  const business_id = params.b;
-  const scanNonce = params._scan;
+export default async function SessionPage({ 
+  params,
+  searchParams 
+}: { 
+  params: Promise<{ businessSlug: string, tableId: string }>;
+  searchParams: Promise<{ type?: string; _scan?: string }>; 
+}) {
+  const p = await params;
+  const sp = await searchParams;
+  
+  const table_id = p.tableId;
+  const game_type = sp.type;
+  const scanNonce = sp._scan;
 
-  if (!table_id) {
+  // Resolve business by slug
+  const business = await businessManager.getBusinessBySlug(p.businessSlug);
+  const business_id = business?.id;
+
+  if (!business_id) {
     return (
       <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4">
         <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-red-200 dark:border-red-800/30 text-center w-full max-w-md">
@@ -16,7 +28,7 @@ export default async function SessionPage({ searchParams }: { searchParams: Prom
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           </div>
           <h1 className="text-2xl font-bold mb-2 text-gray-800 dark:text-gray-100">Oops!</h1>
-          <p className="text-gray-600 dark:text-gray-400">Table ID is missing from URL</p>
+          <p className="text-gray-600 dark:text-gray-400">Business not found or invalid URL</p>
         </div>
       </main>
     );

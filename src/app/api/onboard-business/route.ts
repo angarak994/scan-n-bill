@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     }));
 
     // Dashboard QR
-    const dashboardUrl = `${origin}/dashboard?b=${businessId}`;
+    const dashboardUrl = `${origin}/dashboard`;
     const dashboardQr = await QRCode.toDataURL(dashboardUrl);
     qrs.push({ name: 'Owner Dashboard', dataUrl: dashboardQr });
 

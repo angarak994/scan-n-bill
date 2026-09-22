@@ -1917,7 +1917,7 @@ function DashboardContent() {
     try {
       toast.loading('Generating report...', { id: 'csv-download' });
       const bId = businessId;
-      const res = await fetch(`/api/dashboard-data?b=${bId}&startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`);
+      const res = await fetch(`/api/dashboard-data?startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`);
       const reportData = await res.json();
       
       if (!reportData.completedSessions || reportData.completedSessions.length === 0) {
@@ -4714,7 +4714,8 @@ function DashboardContent() {
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
               {data.tables?.map(t => {
-                const url = `${window.location.origin}/session?table=${t.id}&type=${t.type}&b=${businessId}`;
+                const slug = ((data as any).business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const url = `${window.location.origin}/qr/${slug}/${t.id}`;
                 return (
                   <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">
                     <h3 className="text-xl font-bold font-mono mb-1">{t.name}</h3>

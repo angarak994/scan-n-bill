@@ -7,16 +7,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const sessionCookie = await getSession();
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('businessId');
-
     if (!sessionCookie || !sessionCookie.businessId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!businessId || businessId !== sessionCookie.businessId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const businessId = sessionCookie.businessId;
 
     const { data, error } = await supabase
       .from('payments')
