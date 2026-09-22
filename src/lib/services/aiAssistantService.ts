@@ -1,107 +1,109 @@
 import { supabase } from '@/lib/supabaseClient';
+import OpenAI from 'openai';
+
+let openaiInstance: OpenAI | null = null;
+const useGroq = !!process.env.GROQ_API_KEY;
+const getOpenAI = () => {
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || 'dummy_key',
+      baseURL: useGroq ? 'https://api.groq.com/openai/v1' : undefined
+    });
+  }
+  return openaiInstance;
+};
 
 export async function processAIQuery(query: string, businessId: string): Promise<string> {
   try {
-    const q = query.toLowerCase();
+    if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
+      return "My AI brain is currently offline because the API key is missing. Please configure your API key in the settings.";
+    }
 
-    // Intent 1: Busiest time / Peak hours
-    if (q.includes('busiest') || q.includes('peak') || q.includes('utilization')) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const { data: sessions } = await supabase
-        .from('sessions')
-        .select('date')
-        .eq('business_id', businessId)
-        .eq('status', 'COMPLETED')
-        .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
+    // 1. Gather Context Data for the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-      if (!sessions || sessions.length === 0) {
-        return "I don't have enough data from the last 30 days to determine your busiest times yet.";
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('date, cost, customer_phone, start_time, duration_minutes')
+      .eq('business_id', businessId)
+      .eq('status', 'COMPLETED')
+      .gte('date', dateStr);
+
+    let totalRevenue = 0;
+    const customerTotals: Record<string, number> = {};
+    const dayCounts: Record<string, number> = {};
+    const hourCounts: Record<string, number> = {};
+
+    (sessions || []).forEach(s => {
+      const cost = s.cost || 0;
+      totalRevenue += cost;
+      
+      if (s.customer_phone) {
+        customerTotals[s.customer_phone] = (customerTotals[s.customer_phone] || 0) + cost;
+      }
+      
+      if (s.date) {
+        const day = new Date(s.date).toLocaleDateString('en-US', { weekday: 'long' });
+        dayCounts[day] = (dayCounts[day] || 0) + 1;
       }
 
-      const dayCounts: Record<number, number> = {};
-      sessions.forEach(s => {
-        if (s.date) {
-          const day = new Date(s.date).getDay();
-          dayCounts[day] = (dayCounts[day] || 0) + 1;
-        }
-      });
-      const bestDayNum = parseInt(Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '0');
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      
-      return `Based on data from the last 30 days, **${days[bestDayNum]}** is your busiest day. I recommend ensuring you have adequate staffing on this day to handle peak utilization.`;
-    }
-
-    // Intent 2: Top customers / Loyalty
-    if (q.includes('top customer') || q.includes('who are my') || q.includes('loyalty')) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const { data: sessions } = await supabase
-        .from('sessions')
-        .select('customer_phone, cost')
-        .eq('business_id', businessId)
-        .eq('status', 'COMPLETED')
-        .not('customer_phone', 'is', null)
-        .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
-
-      if (!sessions || sessions.length === 0) {
-        return "You don't have any recorded customers in the last 30 days.";
+      if (s.start_time) {
+        const hour = s.start_time.split(':')[0] + ':00';
+        hourCounts[hour] = (hourCounts[hour] || 0) + 1;
       }
+    });
 
-      const customerTotals: Record<string, number> = {};
-      sessions.forEach(s => {
-        if (s.customer_phone) {
-          customerTotals[s.customer_phone] = (customerTotals[s.customer_phone] || 0) + (s.cost || 0);
-        }
-      });
-      
-      const sorted = Object.entries(customerTotals).sort((a, b) => b[1] - a[1]).slice(0, 3);
-      if (sorted.length === 0) return "Not enough customer data to identify top spenders.";
+    const topCustomers = Object.entries(customerTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([phone, total]) => ({ phone, total: `₹${total}` }));
 
-      let msg = "Your top customers over the last 30 days are:\n\n";
-      sorted.forEach((c, i) => {
-        msg += `${i + 1}. **${c[0]}** (₹${c[1].toLocaleString('en-IN')})\n`;
-      });
-      msg += "\n✨ Recommendation: Consider offering them a 10% discount on their next visit to build loyalty.";
-      return msg;
-    }
+    const context = `
+      Business Data (Last 30 Days):
+      - Total Revenue: ₹${totalRevenue}
+      - Total Completed Sessions: ${(sessions || []).length}
+      - Top 5 Customers by Spend: ${JSON.stringify(topCustomers)}
+      - Sessions by Day of Week: ${JSON.stringify(dayCounts)}
+      - Sessions by Hour of Day: ${JSON.stringify(hourCounts)}
+    `;
 
-    // Intent 3: Revenue / Performance
-    if (q.includes('revenue') || q.includes('perform') || q.includes('sales')) {
-      const today = new Date();
-      const last7DaysDate = new Date(); last7DaysDate.setDate(today.getDate() - 7);
-      const previous7DaysDate = new Date(); previous7DaysDate.setDate(today.getDate() - 14);
+    // 2. Call LLM
+    const openai = getOpenAI();
+    const systemPrompt = `You are a professional AI Business Analyst for a club/gaming business. 
+You analyze the provided business data context and answer the owner's questions concisely and intelligently.
+Be extremely helpful, friendly, and act as an expert advisor.
+If the owner asks about something outside the provided data, politely inform them you only have access to the last 30 days of session, revenue, and customer data right now.
 
-      const { data: recentSessions } = await supabase
-        .from('sessions')
-        .select('cost')
-        .eq('business_id', businessId)
-        .eq('status', 'COMPLETED')
-        .gte('date', last7DaysDate.toISOString().split('T')[0]);
-      
-      const { data: pastSessions } = await supabase
-        .from('sessions')
-        .select('cost')
-        .eq('business_id', businessId)
-        .eq('status', 'COMPLETED')
-        .gte('date', previous7DaysDate.toISOString().split('T')[0])
-        .lt('date', last7DaysDate.toISOString().split('T')[0]);
-        
-      const recentRev = (recentSessions || []).reduce((sum, s) => sum + (s.cost || 0), 0);
-      const pastRev = (pastSessions || []).reduce((sum, s) => sum + (s.cost || 0), 0);
-      
-      if (recentRev === 0 && pastRev === 0) return "No revenue recorded in the last 14 days.";
-      
-      const diff = pastRev === 0 ? 100 : Math.round(((recentRev - pastRev) / pastRev) * 100);
-      const trendStr = diff >= 0 ? `**${diff}% higher**` : `**${Math.abs(diff)}% lower**`;
+Formatting Rules:
+- Use markdown (e.g. bold text for numbers, bullet points for lists).
+- Keep responses short, actionable, and easy to read.
+- Do NOT expose raw JSON data to the user. Present insights naturally.
+- Highlight specific recommendations when possible (e.g., "Consider offering a discount to top customer X").
 
-      return `Over the last 7 days, your revenue was **₹${recentRev.toLocaleString('en-IN')}**. This is ${trendStr} compared to the previous 7 days.\n\n✨ Focus on driving more repeat bookings through WhatsApp to keep this momentum going.`;
-    }
+Context Data:
+${context}
+`;
 
-    // Default Fallback
-    return "I am currently analyzing your data for insights on revenue, busiest times, and top customers. Ask me something like: 'What is our busiest time?' or 'Who are my top customers?'";
+    const response = await openai.chat.completions.create({
+      model: useGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: query }
+      ],
+      temperature: 0.7,
+      max_tokens: 400
+    });
+
+    let content = response.choices[0].message.content || "I couldn't analyze the data at this moment.";
+    
+    // Clean up any potential markdown weirdness if needed
+    return content.trim();
+
   } catch (error) {
     console.error('Error in AI Assistant:', error);
-    return "I'm having trouble analyzing your data right now. Please try again later.";
+    return "I'm having trouble connecting to my analysis core right now. Please try again later.";
   }
 }
+
