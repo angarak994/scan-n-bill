@@ -176,15 +176,16 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
         e.stopPropagation();
         if (!customer.phone || Number(customer.outstanding_balance) <= 0) return;
         
-        const toastId = toast.loading('Sending WhatsApp reminder...');
+        const toastId = toast.loading('Sending reminder...');
         try {
             const { data: business } = await supabase.from('businesses').select('business_name').eq('id', businessId).single();
-            const res = await fetch('/api/whatsapp-reminder', {
+            const res = await fetch('/api/qkhata/send-reminder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    phone: customer.phone,
-                    amount: customer.outstanding_balance,
+                    customerId: customer.id,
+                    customerPhone: customer.phone,
+                    outstandingAmount: customer.outstanding_balance,
                     customerName: customer.name,
                     businessName: business?.business_name || 'Our Business'
                 })

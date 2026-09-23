@@ -32,8 +32,27 @@ export async function GET(request: Request) {
         throw qkError;
     }
 
-    // Normalize payments array so the UI receives it consistently
-    const normalizedPayments = (qkhataEntries || []).map((q: any) => ({
+    // Fetch all completed sessions for this business (table bookings that generated revenue)
+    const { data: sessionEntries, error: sessionError } = await supabase
+        .from('sessions')
+        .select(`
+            id,
+            cost,
+            payment_status,
+            payment_method,
+            customer_name,
+            end_time,
+            date
+        `)
+        .eq('business_id', businessId)
+        .eq('status', 'COMPLETED');
+
+    if (sessionError) {
+        throw sessionError;
+    }
+
+    // Normalize QKhata payments
+    const normalizedPayments: any[] = (qkhataEntries || []).map((q: any) => ({
         id: q.id,
         amount: q.amount,
         type: q.type, // 'credit' or 'payment'
@@ -42,6 +61,29 @@ export async function GET(request: Request) {
         created_at: q.created_at,
         customers: q.customers
     }));
+
+    // Normalize Session payments and merge them
+    (sessionEntries || []).forEach((s: any) => {
+        // Construct a created_at timestamp from date and end_time (approximate payment time)
+        const dateStr = s.date || new Date().toISOString().split('T')[0];
+        const timeStr = s.end_time ? (s.end_time.includes(' ') ? s.end_time.split(' ')[0] : s.end_time) : '00:00:00';
+        let dateTimeStr = `${dateStr}T${timeStr}`;
+        if (dateTimeStr.length === 16) dateTimeStr += ':00'; // Add seconds if missing
+        if (!dateTimeStr.includes('Z')) dateTimeStr += '+05:30'; // IST assumed
+
+        normalizedPayments.push({
+            id: s.id,
+            amount: s.cost || 0,
+            type: 'session_payment',
+            status: s.payment_status || 'Paid', // Assuming completed sessions are paid unless marked otherwise
+            payment_method: s.payment_method || 'CASH',
+            created_at: dateTimeStr,
+            customers: { name: s.customer_name || 'Walk-in Customer' }
+        });
+    });
+
+    // Sort combined array by created_at descending
+    normalizedPayments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     // Perform Server-Side Aggregations
     const now = new Date();
@@ -64,7 +106,7 @@ export async function GET(request: Request) {
 
     for (const p of normalizedPayments) {
         const dateObj = new Date(p.created_at);
-        const dateStr = p.created_at.split('T')[0];
+        const dateStr = dateObj.toISOString().split('T')[0];
         
         const isToday = dateStr === todayStr;
         const isYesterday = dateStr === yesterdayStr;
@@ -74,7 +116,7 @@ export async function GET(request: Request) {
 
         const amt = Number(p.amount);
         const isPaid = p.status === 'Paid';
-        const isPending = p.status === 'Pending';
+        const isPending = p.status === 'Pending' || p.type === 'credit';
         const method = (p.payment_method || '').toUpperCase();
 
         const periods = [];

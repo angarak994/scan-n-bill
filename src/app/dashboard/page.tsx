@@ -14,6 +14,7 @@ import PaymentsTab from './PaymentsTab';
 import MessagingTab from './MessagingTab';
 
 import SubscriptionTab from './SubscriptionTab';
+import BookingsTab from './BookingsTab';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
@@ -4342,7 +4343,7 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && renderBookings()}
+          {sidebarTab === 'bookings' && <BookingsTab />}
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
@@ -4737,8 +4738,8 @@ function DashboardContent() {
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
               {data.tables?.map(t => {
-                const slug = ((data as any).business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                const url = `${window.location.origin}/qr/${slug}/${t.id}`;
+                const slug = ((data as any).businessName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const url = `${window.location.origin}/qr/${slug}/${encodeURIComponent(t.id)}`;
                 return (
                   <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">
                     <h3 className="text-xl font-bold font-mono mb-1">{t.name}</h3>
