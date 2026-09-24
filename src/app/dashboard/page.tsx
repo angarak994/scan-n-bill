@@ -88,7 +88,7 @@ const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentCol
 function DashboardContent() {
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -1933,6 +1933,62 @@ function DashboardContent() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Live Food Orders Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
+         <div className="lg:col-span-12 bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col relative">
+           <div className="p-5 flex justify-between items-center border-b border-border-theme bg-bg-primary/50">
+             <div className="flex items-center gap-3">
+               <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+               <h3 className="text-lg font-bold">Live Food <span className="text-accent text-sm font-normal">Orders</span></h3>
+             </div>
+             <div className="flex items-center gap-2">
+               <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
+               <span className="text-[10px] text-accent font-bold uppercase tracking-widest">Live Sync</span>
+             </div>
+           </div>
+           
+           <div className="p-4 flex-1 flex flex-col gap-3 max-h-[400px] overflow-y-auto">
+             {(() => {
+               const orders = data?.foodOrders || [];
+               if (orders.length === 0) {
+                 return (
+                   <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-70">
+                     <p className="text-text-secondary text-sm">No active food orders. Orders placed via QR menu will appear here.</p>
+                   </div>
+                 );
+               }
+               return orders.map((order: any) => {
+                  const itemsStr = order.message.split('|')[0] || '[]';
+                  let items = [];
+                  try { items = JSON.parse(itemsStr); } catch(e){}
+                  const total = order.message.split('|')[1] || '0';
+                  
+                  return (
+                    <div key={order.id} className="p-4 rounded-lg border border-border-theme bg-bg-surface flex justify-between items-center hover:border-accent/50 transition-colors">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-bold">{order.title}</p>
+                          {order.type === 'order_pending' && <span className="text-[10px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-2 py-0.5 rounded border border-warning/20">Pending</span>}
+                          {order.type === 'order_accepted' && <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">Accepted</span>}
+                        </div>
+                        <div className="text-xs text-text-secondary mt-2 flex flex-col gap-1">
+                          {items.map((item: any, idx: number) => (
+                            <div key={idx}>• {item.name} <span className="text-text-primary font-bold">x {item.quantity || 1}</span></div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-accent">₹{total}</div>
+                        <div className="text-[10px] text-text-secondary mt-1">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' })}</div>
+                      </div>
+                    </div>
+                  );
+               });
+             })()}
+           </div>
+         </div>
       </div>
     </>
   );

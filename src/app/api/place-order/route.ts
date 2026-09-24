@@ -60,7 +60,25 @@ export async function POST(request: Request) {
     
     await sessionRepository.update(session_id, { food_cost: newFoodCost }, business_id);
 
-    // Append to Google Sheets
+    // Create Notification to track order status
+    const itemsJson = JSON.stringify(cart);
+    const orderRef = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    let orderId = '';
+    try {
+      const { data: notif } = await supabase.from('notifications').insert({
+        business_id,
+        title: `Order: ${session.table_id} (${orderRef})`,
+        message: `${itemsJson}|${orderTotal}|${session_id}`,
+        type: 'order_pending'
+      }).select('id').single();
+      
+      if (notif) orderId = notif.id;
+    } catch(e) {
+      console.error('Failed to create order notification:', e);
+    }
+
+    // Append to Google Sheets (existing)
     try {
       const sheets = getSheetsClient();
       let spreadsheetId = business.google_sheet_id;
@@ -124,8 +142,39 @@ export async function POST(request: Request) {
       });
     } catch (sheetError) {
       console.error("Google Sheets Food Order Error:", sheetError);
-      // We don't fail the request if just sheets fails, because we already updated Supabase.
-      // In a real app we'd queue this or show a warning.
+    }
+
+    // Telegram Dispatch
+    if (orderId && process.env.TELEGRAM_BOT_TOKEN) {
+      try {
+        const gs = business.pricing_rules?.globalSettings;
+        if (gs && Array.isArray(gs.authorized_telegram_owners)) {
+           const msg = `🔔 <b>New Order Placed</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Order ID:</b> #${orderRef}\n\n<b>Items:</b>\n${itemsOrdered.map(i => `• ${i}`).join('\n')}\n\n<b>Total:</b> ₹${orderTotal}`;
+           const buttons = [
+             [
+               { text: '✅ Accept Order', callback_data: `order_accept_${orderId}` },
+               { text: '🍽️ Mark Served', callback_data: `order_serve_${orderId}` }
+             ]
+           ];
+           
+           for (const owner of gs.authorized_telegram_owners) {
+             if (owner.status !== 'revoked') {
+                await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                     chat_id: owner.chatId,
+                     text: msg,
+                     parse_mode: 'HTML',
+                     reply_markup: { inline_keyboard: buttons }
+                   })
+                });
+             }
+           }
+        }
+      } catch (telegramError) {
+        console.error("Telegram Order Notification Error:", telegramError);
+      }
     }
 
     return NextResponse.json({ success: true, new_food_cost: newFoodCost }, { status: 200 });

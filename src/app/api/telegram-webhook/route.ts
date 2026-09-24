@@ -828,6 +828,30 @@ Time: ${timeStr}`, mainMenu);
 
       const ctx = await getBusinessContext(chatId);
       const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
+      
+      if (callbackData.startsWith('order_accept_')) {
+        const notifId = callbackData.replace('order_accept_', '');
+        await supabase.from('notifications').update({ type: 'order_accepted' }).eq('id', notifId);
+        
+        if (messageId && update.callback_query.message.text) {
+           const newMsg = `✅ <b>Order Accepted</b>\n\n` + update.callback_query.message.text.replace('🔔 New Order Placed', '').trim();
+           const buttons = [[{ text: '🍽️ Mark Served', callback_data: `order_serve_${notifId}` }]];
+           await editTelegramMessageText(chatId, messageId, newMsg, { inline_keyboard: buttons });
+        }
+        return NextResponse.json({ ok: true });
+      }
+      
+      if (callbackData.startsWith('order_serve_')) {
+        const notifId = callbackData.replace('order_serve_', '');
+        await supabase.from('notifications').update({ type: 'order_served', is_read: true }).eq('id', notifId);
+        
+        if (messageId && update.callback_query.message.text) {
+           let newMsg = `✅ <b>Order Served</b>\n\n` + update.callback_query.message.text.replace('✅ Order Accepted', '').replace('🔔 New Order Placed', '').trim();
+           await editTelegramMessageText(chatId, messageId, newMsg, { inline_keyboard: [] });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
       if (callbackData.startsWith('delbiz_')) {
           const targetBizId = callbackData.replace('delbiz_', '');
           const b = ctx.allActiveMemberships.find((m: any) => m.isPrimary && m.business.id === targetBizId)?.business;

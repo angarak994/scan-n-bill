@@ -61,7 +61,8 @@ export async function GET(request: Request) {
       { data: bookings },
       { data: activePromotions },
       { data: dbCustomers },
-      { data: memberships }
+      { data: memberships },
+      { data: foodOrders }
     ] = await Promise.all([
       sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
       supabase
@@ -83,7 +84,13 @@ export async function GET(request: Request) {
       supabase
         .from('memberships')
         .select('id, name, mobile, points')
+        .eq('business_id', businessId),
+      supabase
+        .from('notifications')
+        .select('*')
         .eq('business_id', businessId)
+        .in('type', ['order_pending', 'order_accepted'])
+        .order('created_at', { ascending: false })
     ]);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
@@ -145,7 +152,8 @@ export async function GET(request: Request) {
       payment_qr_config: business.payment_qr_config,
       whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false },
       menu_items: business.menu_items || [],
-      entitlement: entitlement
+      entitlement: entitlement,
+      foodOrders: foodOrders || []
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);
