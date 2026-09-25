@@ -106,7 +106,19 @@ export async function GET(request: Request) {
     activeSessions = Array.from(activeTableMap.values());
     let completedSessions = sessions.filter(s => {
       if (s.status !== 'COMPLETED') return false;
-      return s.date >= startDate && s.date <= endDate;
+      
+      const sessionDate = s.date;
+      
+      // If end_time exists, check if the session ended within the target date range.
+      // This ensures revenue from sessions starting before midnight but ending today counts for today.
+      if (s.end_time) {
+        // end_time is ISO string (e.g., 2026-09-26T02:00:00.000Z)
+        // Convert to local date string matching startDate/endDate format (YYYY-MM-DD)
+        const localEndDateStr = new Date(s.end_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        return localEndDateStr >= startDate && localEndDateStr <= endDate;
+      }
+      
+      return sessionDate >= startDate && sessionDate <= endDate;
     });
 
     const dailyRevenue = completedSessions.reduce((acc, session) => {

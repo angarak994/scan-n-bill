@@ -190,7 +190,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
           if (prev.status === 'active' || prev.status === 'prompt_end') {
             return { ...prev, status: 'completed' } as any;
           }
-          return { status: 'idle', table_id, game_type: game_type || 'unknown', pricingRules: data.pricingRules, menuItems: data.menuItems };
+          return { status: 'idle', table_id, game_type: data.game_type || game_type || 'unknown', pricingRules: data.pricingRules, menuItems: data.menuItems };
         });
       } else if (data.status === 'active') {
         setSession((prev) => {

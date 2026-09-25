@@ -57,10 +57,10 @@ export default function BookingsTab() {
       const res = await fetch('/api/dashboard-data');
       if (res.ok) {
         const json = await res.json();
-        if (json.business?.tables) {
-          setTables(json.business.tables);
-          if (json.business.tables.length > 0) {
-            setFormData(prev => ({ ...prev, table_id: json.business.tables[0].id }));
+        if (json.tables) {
+          setTables(json.tables);
+          if (json.tables.length > 0) {
+            setFormData(prev => ({ ...prev, table_id: json.tables[0].id }));
           }
         }
       }

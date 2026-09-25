@@ -502,9 +502,9 @@ Time: ${timeStr}`, mainMenu);
           const refLine = lines.find((l: string) => l.startsWith('Ref: #'));
           
           if (refLine) {
-             const shortId = refLine.replace('Ref: #', '').trim();
-             const { data: customers } = await supabase.from('customers').select('*').ilike('id', `${shortId}%`).eq('business_id', business.id);
-             customer = customers?.[0];
+             const shortId = refLine.replace('Ref: #', '').trim().toLowerCase();
+             const { data: customers } = await supabase.from('customers').select('*').eq('business_id', business.id);
+             customer = customers?.find((c: any) => c.id.toLowerCase().startsWith(shortId));
           } else {
              const idLine = lines.find((l: string) => l.startsWith('ID:'));
              if (idLine) {

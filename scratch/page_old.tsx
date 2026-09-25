@@ -14,7 +14,6 @@ import PaymentsTab from './PaymentsTab';
 import MessagingTab from './MessagingTab';
 
 import SubscriptionTab from './SubscriptionTab';
-import BookingsTab from './BookingsTab';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
@@ -88,12 +87,9 @@ const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentCol
 function DashboardContent() {
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
-  const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
-  const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
   const [loading, setLoading] = useState(false);
-  const syncTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const [enteredPin, setEnteredPin] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -481,27 +477,6 @@ function DashboardContent() {
     }
   }, [reportDateRange.start, reportDateRange.end, isAuthorized, fetchDashboardData]);
 
-  // Fast Path for Revenue Reports Tab KPI Fetching
-  useEffect(() => {
-      if (!isAuthorized) return;
-      if (!revenueDateRange.start || !revenueDateRange.end) return;
-      
-      const fetchRevenueKpis = async () => {
-          setRevenueKpis(null);
-          try {
-              const res = await fetch(`/api/reports-kpis?startDate=${revenueDateRange.start}&endDate=${revenueDateRange.end}`);
-              const json = await res.json();
-              if (json.kpis) {
-                  setRevenueKpis(json.kpis);
-              }
-          } catch (e) {
-              console.error("Failed to fetch fast KPIs", e);
-          }
-      };
-      
-      fetchRevenueKpis();
-  }, [revenueDateRange.start, revenueDateRange.end, isAuthorized]);
-
   useEffect(() => {
     if (data && !telegramLoadedRef.current) {
       telegramLoadedRef.current = true;
@@ -582,34 +557,122 @@ function DashboardContent() {
     checkOverdue();
   }, [isAuthorized]);
 
-  const fetchRef = useRef(fetchDashboardData);
-  useEffect(() => {
-    fetchRef.current = fetchDashboardData;
-  }, [fetchDashboardData]);
-
   useEffect(() => {
     if (isAuthorized) {
-      // Setup Supabase Realtime for universal state synchronization
+      // Setup Supabase Realtime for targeted state updates (No polling)
       let subscription: any = null;
       if (supabase && businessId) {
-        
-        const handleSync = () => {
-          if (syncTimeout.current) clearTimeout(syncTimeout.current);
-          syncTimeout.current = setTimeout(() => {
-             const today = getLocalDateStr();
-             fetchRef.current(today, today, true);
-          }, 800);
-        };
-
         subscription = supabase.channel('dashboard_changes')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'businesses', filter: `id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'promotions', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'session_interventions' }, handleSync) // interventions don't have business_id natively, handled via fetch
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, async (payload) => {
+             if (payload.eventType === 'DELETE') {
+                 setData(prev => {
+                    if (!prev) return prev;
+                    return { ...prev, activeSessions: prev.activeSessions.filter((x: any) => x.id !== payload.old.id) };
+                 });
+                 return;
+             }
+             
+             const fullSession = payload.new as any;
+             if (!fullSession || !fullSession.id) return;
+             
+             setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+                
+                if (payload.eventType === 'INSERT' && fullSession.status === 'ACTIVE') {
+                   if (!newData.activeSessions.some((x: any) => x.id === fullSession.id)) {
+                       newData.activeSessions = [...newData.activeSessions, fullSession];
+                   }
+                } else if (payload.eventType === 'UPDATE') {
+                   if (fullSession.status === 'COMPLETED') {
+                       newData.activeSessions = newData.activeSessions.filter((x: any) => x.id !== fullSession.id);
+                       if (!newData.completedSessions.some((x: any) => x.id === fullSession.id)) {
+                           newData.completedSessions = [fullSession, ...newData.completedSessions];
+                           newData.dailyRevenue += (fullSession.cost || 0);
+                       }
+                   } else if (fullSession.status === 'ACTIVE') {
+                       const idx = newData.activeSessions.findIndex((x: any) => x.id === fullSession.id);
+                       if (idx > -1) {
+                           newData.activeSessions[idx] = fullSession;
+                           newData.activeSessions = [...newData.activeSessions];
+                       } else {
+                           newData.activeSessions = [...newData.activeSessions, fullSession];
+                       }
+                   }
+                }
+                return newData;
+             });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, async (payload) => {
+             if (payload.eventType === 'DELETE') {
+                 setData(prev => {
+                    if (!prev) return prev;
+                    return { ...prev, bookings: (prev.bookings || []).filter((x: any) => x.id !== payload.old.id) };
+                 });
+                 return;
+             }
+
+             const fullBooking = payload.new as any;
+             if (!fullBooking || !fullBooking.id) return;
+
+             setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+                if (!newData.bookings) newData.bookings = [];
+                
+                if (payload.eventType === 'INSERT') {
+                   if (!newData.bookings.some((x: any) => x.id === fullBooking.id)) {
+                       newData.bookings = [...newData.bookings, fullBooking];
+                   }
+                } else if (payload.eventType === 'UPDATE') {
+                   const idx = newData.bookings.findIndex((x: any) => x.id === fullBooking.id);
+                   if (idx > -1) {
+                       newData.bookings[idx] = fullBooking;
+                       newData.bookings = [...newData.bookings];
+                   } else {
+                       newData.bookings = [...newData.bookings, fullBooking];
+                   }
+                }
+                return newData;
+             });
+          })
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'businesses', filter: `id=eq.${businessId}` }, (payload) => {
+             const updatedBusiness = payload.new as any;
+             setData(prev => {
+                if (!prev) return prev;
+                return { 
+                  ...prev, 
+                  goals: updatedBusiness.goals || prev.goals,
+                  whatsapp_config: updatedBusiness.whatsapp_config || prev.whatsapp_config,
+                  sms_config: updatedBusiness.sms_config || prev.sms_config,
+                  businessName: updatedBusiness.business_name || prev.businessName
+                };
+             });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, (payload) => {
+             setData(prev => {
+                if (!prev) return prev;
+                const newData = { ...prev };
+                if (!newData.dbCustomers) newData.dbCustomers = [];
+                
+                if (payload.eventType === 'DELETE') {
+                   newData.dbCustomers = newData.dbCustomers.filter((x: any) => x.id !== payload.old.id);
+                } else if (payload.eventType === 'INSERT') {
+                   if (!newData.dbCustomers.some((x: any) => x.id === payload.new.id)) {
+                       newData.dbCustomers = [...newData.dbCustomers, payload.new];
+                   }
+                } else if (payload.eventType === 'UPDATE') {
+                   const idx = newData.dbCustomers.findIndex((x: any) => x.id === payload.new.id);
+                   if (idx > -1) {
+                       newData.dbCustomers[idx] = payload.new;
+                       newData.dbCustomers = [...newData.dbCustomers];
+                   } else {
+                       newData.dbCustomers = [...newData.dbCustomers, payload.new];
+                   }
+                }
+                return newData;
+             });
+          })
           .subscribe();
       }
       
@@ -1847,67 +1910,6 @@ function DashboardContent() {
           )}
         </div>
       </div>
-
-      {/* Live Food Orders Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
-         <div className="lg:col-span-12 bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col relative">
-           <div className="p-5 flex justify-between items-center border-b border-border-theme bg-bg-primary/50">
-             <div className="flex items-center gap-3">
-               <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-               <h3 className="text-lg font-bold">Live Food <span className="text-accent text-sm font-normal">Orders</span></h3>
-             </div>
-             <div className="flex items-center gap-2">
-               <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
-               <span className="text-[10px] text-accent font-bold uppercase tracking-widest">Live Sync</span>
-             </div>
-           </div>
-           
-           <div className="p-4 flex-1 flex flex-col gap-3 max-h-[400px] overflow-y-auto">
-             {(() => {
-               const orders = data?.foodOrders || [];
-               if (orders.length === 0) {
-                 return (
-                   <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-70">
-                     <p className="text-text-secondary text-sm">No active food orders. Orders placed via QR menu will appear here.</p>
-                   </div>
-                 );
-               }
-               return orders.map((order: any) => {
-                  const itemsStr = order.message.split('|')[0] || '[]';
-                  let items = [];
-                  try { items = JSON.parse(itemsStr); } catch(e){}
-                  const total = order.message.split('|')[1] || '0';
-                  
-                  return (
-                    <div key={order.id} className="p-4 rounded-lg border border-border-theme bg-bg-surface flex justify-between items-center hover:border-accent/50 transition-colors">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-bold">{order.title}</p>
-                          {order.type === 'order_pending' && <span className="text-[10px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-2 py-0.5 rounded border border-warning/20">Pending</span>}
-                          {order.type === 'order_accepted' && <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">Accepted</span>}
-                        </div>
-                        <div className="text-xs text-text-secondary mt-2 flex flex-col gap-1">
-                          {Array.isArray(items) 
-                            ? items.map((item: any, idx: number) => (
-                                <div key={idx}>• {item.name} <span className="text-text-primary font-bold">x {item.quantity || 1}</span></div>
-                              ))
-                            : Object.entries(items).map(([itemName, qty], idx) => (
-                                <div key={idx}>• {itemName} <span className="text-text-primary font-bold">x {qty as number}</span></div>
-                              ))
-                          }
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-accent">₹{total}</div>
-                        <div className="text-[10px] text-text-secondary mt-1">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' })}</div>
-                      </div>
-                    </div>
-                  );
-               });
-             })()}
-           </div>
-         </div>
-      </div>
     </>
   );
 
@@ -1915,7 +1917,7 @@ function DashboardContent() {
     try {
       toast.loading('Generating report...', { id: 'csv-download' });
       const bId = businessId;
-      const res = await fetch(`/api/dashboard-data?startDate=${revenueDateRange.start}&endDate=${revenueDateRange.end}`);
+      const res = await fetch(`/api/dashboard-data?startDate=${reportDateRange.start}&endDate=${reportDateRange.end}`);
       const reportData = await res.json();
       
       if (!reportData.completedSessions || reportData.completedSessions.length === 0) {
@@ -1943,7 +1945,7 @@ function DashboardContent() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `revenue_report_${revenueDateRange.start}_to_${revenueDateRange.end}.csv`);
+      link.setAttribute('download', `revenue_report_${reportDateRange.start}_to_${reportDateRange.end}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -2152,14 +2154,14 @@ function DashboardContent() {
               <p className="text-text-secondary mt-1 text-sm">Download your billing data synchronized from Google Sheets.</p>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
-              <button onClick={() => setRevenueDateRange({ start: today, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${revenueDateRange.start === today && revenueDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Today</button>
-              <button onClick={() => setRevenueDateRange({ start: yesterday, end: yesterday })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${revenueDateRange.start === yesterday && revenueDateRange.end === yesterday ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Yesterday</button>
-              <button onClick={() => setRevenueDateRange({ start: last7, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${revenueDateRange.start === last7 && revenueDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Last 7 Days</button>
-              <button onClick={() => setRevenueDateRange({ start: thisMonth, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${revenueDateRange.start === thisMonth && revenueDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>This Month</button>
+              <button onClick={() => setReportDateRange({ start: today, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === today && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Today</button>
+              <button onClick={() => setReportDateRange({ start: yesterday, end: yesterday })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === yesterday && reportDateRange.end === yesterday ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Yesterday</button>
+              <button onClick={() => setReportDateRange({ start: last7, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === last7 && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>Last 7 Days</button>
+              <button onClick={() => setReportDateRange({ start: thisMonth, end: today })} className={`px-3 py-1.5 rounded-md text-xs font-bold tracking-widest uppercase border ${reportDateRange.start === thisMonth && reportDateRange.end === today ? 'border-accent/50 text-accent bg-accent/10' : 'border-border-theme text-text-secondary bg-bg-surface hover:text-text-primary'}`}>This Month</button>
               <div className="flex items-center gap-2 ml-4 bg-bg-surface border border-border-theme rounded-lg px-2">
-                <input type="date" value={revenueDateRange.start} onChange={e => setRevenueDateRange(prev => ({...prev, start: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
+                <input type="date" value={reportDateRange.start} onChange={e => setReportDateRange(prev => ({...prev, start: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
                 <span className="text-text-secondary">to</span>
-                <input type="date" value={revenueDateRange.end} onChange={e => setRevenueDateRange(prev => ({...prev, end: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
+                <input type="date" value={reportDateRange.end} onChange={e => setReportDateRange(prev => ({...prev, end: e.target.value}))} className="px-2 py-1.5 bg-transparent text-sm font-medium outline-none text-text-primary" />
               </div>
               <button onClick={handleDownloadCSV} className="ml-4 flex items-center gap-2 px-4 py-2 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 transition-colors shadow-md shadow-accent/20">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -2171,17 +2173,17 @@ function DashboardContent() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Total Revenue</p>
-              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={revenueKpis?.totalRevenue || 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
+              <p className="text-3xl font-bold text-accent font-mono"><PrivacyText value={reportsData?.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
             
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Completed Sessions</p>
-              <p className="text-3xl font-bold text-text-primary font-mono">{revenueKpis?.totalSessions || 0}</p>
+              <p className="text-3xl font-bold text-text-primary font-mono">{reportsData?.completedSessions?.length || 0}</p>
             </div>
             
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
               <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Avg Session Value</p>
-              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={revenueKpis?.totalSessions ? Math.round((revenueKpis.totalRevenue || 0) / revenueKpis.totalSessions) : 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
+              <p className="text-3xl font-bold text-text-primary font-mono"><PrivacyText value={reportsData?.completedSessions?.length ? Math.round((reportsData.dailyRevenue || 0) / reportsData.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} formatINR={formatINR} /></p>
             </div>
           </div>
         </div>
@@ -4317,7 +4319,7 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && <BookingsTab />}
+          {sidebarTab === 'bookings' && renderBookings()}
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
@@ -4712,8 +4714,8 @@ function DashboardContent() {
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
               {data.tables?.map(t => {
-                const slug = ((data as any).businessName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                const url = `${window.location.origin}/qr/${slug}/${encodeURIComponent(t.id)}`;
+                const slug = ((data as any).business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const url = `${window.location.origin}/qr/${slug}/${t.id}`;
                 return (
                   <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">
                     <h3 className="text-xl font-bold font-mono mb-1">{t.name}</h3>

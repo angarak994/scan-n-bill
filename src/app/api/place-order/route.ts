@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { businessManager } from '@/lib/businessManager';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
+import { supabase } from '@/lib/supabaseClient';
 
 const getSheetsClient = () => {
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
