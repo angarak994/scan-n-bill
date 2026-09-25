@@ -16,11 +16,8 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { business_id, table_id, customer_name, customer_phone, booking_date, start_time, duration_minutes, game_type } = body;
-
-    if (sessionCookie.businessId !== business_id) {
-      return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
-    }
+    const business_id = sessionCookie.businessId;
+    const { table_id, customer_name, customer_phone, booking_date, start_time, duration_minutes, game_type } = body;
 
     if (!business_id || !table_id || !booking_date || !start_time || !duration_minutes) {
       return NextResponse.json({ error: 'Missing required booking parameters' }, { status: 400 });

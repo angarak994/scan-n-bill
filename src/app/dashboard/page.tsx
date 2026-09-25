@@ -413,7 +413,7 @@ function DashboardContent() {
          return;
       }
 
-      const fetchPromise = fetch(url, { cache: 'no-store' });
+      const fetchPromise = fetch(url + `&_t=${Date.now()}`, { cache: 'no-store' });
       activeFetch.current = { url, promise: fetchPromise };
       const res = await fetchPromise;
 

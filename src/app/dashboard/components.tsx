@@ -182,7 +182,7 @@ export function NotificationBell({ businessId }: { businessId: string }) {
       </button>
       
       {isOpen && (
-        <div ref={dropdownRef} className="absolute right-0 mt-2 w-80 bg-bg-surface border border-border-theme rounded-xl shadow-2xl overflow-hidden glass-panel z-[100] transform transition-all origin-top-right animate-in fade-in zoom-in-95 duration-200">
+        <div ref={dropdownRef} className="absolute right-0 mt-2 w-80 bg-bg-surface border border-border-theme rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[200] transform transition-all origin-top-right animate-in fade-in zoom-in-95 duration-200">
           <div className="p-4 border-b border-border-light flex justify-between items-center bg-bg-primary/50">
             <h3 className="font-bold text-sm">Notifications</h3>
             {notifications.length > 0 && (
@@ -196,10 +196,30 @@ export function NotificationBell({ businessId }: { businessId: string }) {
               notifications.map(n => (
                 <div key={n.id} className={`p-4 border-b border-border-light/50 text-sm ${n.is_read ? 'opacity-70' : 'bg-primary/5'}`}>
                   <div className="flex justify-between items-start mb-1">
-                    <p className={`font-bold ${n.type === 'success' ? 'text-success' : n.type === 'warning' ? 'text-warning' : n.type === 'error' ? 'text-error' : 'text-info'}`}>{n.title}</p>
+                    <p className={`font-bold ${n.type === 'success' ? 'text-success' : n.type === 'warning' ? 'text-warning' : n.type === 'error' ? 'text-error' : n.type?.startsWith('order_') ? 'text-accent' : 'text-info'}`}>{n.title}</p>
                     <span className="text-[10px] text-text-disabled">{new Date(n.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
-                  <p className="text-text-secondary text-xs">{n.message}</p>
+                  {(() => {
+                    if (n.type?.startsWith('order_')) {
+                      const parts = n.message.split('|');
+                      let items: any = {};
+                      try { items = JSON.parse(parts[0]); } catch(e) {}
+                      const total = parts[1] || '0';
+                      return (
+                        <div className="text-xs text-text-secondary mt-2 p-2 bg-bg-primary/50 rounded-lg border border-border-theme">
+                           <div className="flex flex-col gap-1">
+                             {Array.isArray(items) ? items.map((itm: any, idx: number) => (
+                               <span key={idx}>• {itm.name} <span className="text-text-primary font-bold">x {itm.quantity || 1}</span></span>
+                             )) : Object.entries(items).map(([name, qty], idx) => (
+                               <span key={idx}>• {name} <span className="text-text-primary font-bold">x {qty as number}</span></span>
+                             ))}
+                           </div>
+                           <div className="mt-2 pt-2 border-t border-border-light font-bold text-accent">Total: ₹{total}</div>
+                        </div>
+                      );
+                    }
+                    return <p className="text-text-secondary text-xs">{n.message}</p>;
+                  })()}
                 </div>
               ))
             )}

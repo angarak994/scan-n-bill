@@ -40,7 +40,7 @@ export default function BookingsTab() {
     setIsLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const res = await fetch(`/api/bookings?startDate=${today}`);
+      const res = await fetch(`/api/bookings?startDate=${today}&_t=${Date.now()}`, { cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
         setBookings(json.bookings || []);
