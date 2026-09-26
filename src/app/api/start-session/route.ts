@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth';
 export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
-    let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time } = await request.json();
+    let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time, notes } = await request.json();
     
     // If an owner is logged in, strictly enforce their business ID to prevent cross-business IDOR attacks.
     // If no session exists, it falls back to the client-provided business_id (for unauthenticated QR code scans).
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       customer_name = membership.name;
     }
 
-    const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id, start_time);
+    const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id, start_time, notes);
     
     
     return NextResponse.json(result, { status: 201 });

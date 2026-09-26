@@ -1,4 +1,5 @@
 import ScrollReveal from '@/components/ui/ScrollReveal';
+import InteractiveCard from '@/components/landing/InteractiveCard';
 
 export default function ProductOverview() {
   const modules = [
@@ -80,15 +81,17 @@ export default function ProductOverview() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {modules.map((module, index) => (
           <ScrollReveal key={index} animation="fade-up" delay={(index % 4) * 100}>
-            <div className="bg-bg-surface p-6 rounded-xl border border-border-light hover:border-border-theme transition-all group h-full">
-              <div className="w-10 h-10 rounded-lg bg-bg-card border border-border-light flex items-center justify-center text-text-primary mb-4 group-hover:scale-110 group-hover:text-accent transition-all">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {module.icon}
-                </svg>
+            <InteractiveCard className="h-full rounded-xl">
+              <div className="bg-bg-surface p-6 rounded-xl border border-border-light hover:border-accent/30 transition-all group h-full">
+                <div className="w-10 h-10 rounded-lg bg-bg-card border border-border-light flex items-center justify-center text-text-primary mb-4 group-hover:scale-110 group-hover:text-accent transition-all shadow-sm">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {module.icon}
+                  </svg>
+                </div>
+                <h4 className="font-bold text-text-primary mb-2 group-hover:text-accent transition-colors">{module.title}</h4>
+                <p className="text-text-secondary text-sm leading-relaxed">{module.description}</p>
               </div>
-              <h4 className="font-bold text-text-primary mb-2">{module.title}</h4>
-              <p className="text-text-secondary text-sm leading-relaxed">{module.description}</p>
-            </div>
+            </InteractiveCard>
           </ScrollReveal>
         ))}
       </div>

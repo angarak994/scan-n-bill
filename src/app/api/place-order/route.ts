@@ -134,15 +134,19 @@ export async function POST(request: Request) {
         'Pending'
       ];
       
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `'${sheetTitle}'!A:F`,
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [row] },
+      Promise.resolve().then(async () => {
+        try {
+          await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range: `'${sheetTitle}'!A:F`,
+            valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS',
+            requestBody: { values: [row] },
+          });
+        } catch (e) { console.error("Google Sheets Food Order Error", e); }
       });
     } catch (sheetError) {
-      console.error("Google Sheets Food Order Error:", sheetError);
+      console.error("Google Sheets Init Error:", sheetError);
     }
 
     // Telegram Dispatch

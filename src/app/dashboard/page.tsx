@@ -224,26 +224,21 @@ function DashboardContent() {
   const qkhataMembers = useMemo(() => {
     if (!memberships) return [];
     
-    const balanceMap = new Map();
-    if (data?.dbCustomers) {
-      data.dbCustomers.forEach((c: any) => {
-        if (c.phone) {
-          const norm = c.phone;
-          balanceMap.set(norm, c.outstanding_balance || 0);
-        }
-      });
-    }
-
     return memberships.map((m: any) => {
-      const norm = m.mobile ? m.mobile : '';
+      // Match with a true dbCustomer to get ledger balances
+      const matchedCustomer = data?.dbCustomers?.find((c: any) => 
+        (c.phone && m.mobile && c.phone === m.mobile) || 
+        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase())
+      );
+      
       return {
-        id: m.id,
+        id: matchedCustomer ? matchedCustomer.id : m.id,
         name: m.name,
         phone: m.mobile,
-        outstanding_balance: balanceMap.get(norm) || 0
+        outstanding_balance: matchedCustomer ? (matchedCustomer.outstanding_balance || 0) : 0
       };
     });
-  }, [memberships, data]);
+  }, [memberships, data?.dbCustomers]);
 
   const filteredQkhataMembers = useMemo(() => {
     return qkhataMembers.filter(m => 

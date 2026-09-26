@@ -127,6 +127,8 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
     );
 
     const totalOutstanding = customers.reduce((sum: number, c: any) => sum + Number(c.outstanding_balance), 0);
+    const activeDebtorsCount = customers.filter((c: any) => Number(c.outstanding_balance) > 0).length;
+    const overdueAccountsCount = customers.filter((c: any) => Number(c.outstanding_balance) >= 5000).length;
 
     const handleSettle = async () => {
         if (!selectedCustomer || !settlementAmount || isNaN(Number(settlementAmount))) return;
@@ -212,6 +214,28 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     </div>
                     <div className="flex items-end gap-2 sm:gap-3 mb-2">
                         <span className="text-2xl sm:text-4xl font-bold text-red-500/90 tracking-tight font-mono tabular-nums">₹{totalOutstanding.toFixed(2)}</span>
+                    </div>
+                </div>
+
+                <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+                    <div className="flex justify-between items-start mb-2 sm:mb-4">
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Debtors</h3>
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    </div>
+                    <div className="flex items-end gap-2 sm:gap-3 mb-2">
+                        <span className="text-2xl sm:text-4xl font-bold text-warning/90 tracking-tight font-mono tabular-nums">{activeDebtorsCount}</span>
+                        <span className="text-xs text-text-secondary mb-1">Members</span>
+                    </div>
+                </div>
+
+                <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+                    <div className="flex justify-between items-start mb-2 sm:mb-4">
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Overdue Accounts</h3>
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <div className="flex items-end gap-2 sm:gap-3 mb-2">
+                        <span className="text-2xl sm:text-4xl font-bold text-danger/90 tracking-tight font-mono tabular-nums">{overdueAccountsCount}</span>
+                        <span className="text-xs text-text-secondary mb-1">High Risk (>₹5000)</span>
                     </div>
                 </div>
             </div>

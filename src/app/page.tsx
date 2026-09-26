@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Hero from '@/components/landing/Hero';
+import MouseGlow from '@/components/landing/MouseGlow';
 import WhyQcontrol from '@/components/landing/WhyQcontrol';
 import ProductOverview from '@/components/landing/ProductOverview';
 import HowItWorks from '@/components/landing/HowItWorks';
@@ -21,7 +22,8 @@ export const metadata = {
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-bg-base text-text-primary overflow-x-hidden selection:bg-accent/30 selection:text-text-primary">
+    <main className="min-h-screen bg-bg-base text-text-primary overflow-x-hidden selection:bg-accent/30 selection:text-text-primary relative">
+      <MouseGlow />
       {/* Navbar */}
       <nav className="w-full flex flex-wrap justify-between items-center px-4 sm:px-8 py-4 sm:py-6 max-w-7xl mx-auto gap-4 sticky top-0 z-50 bg-bg-base/80 backdrop-blur-md border-b border-border-light/50">
         <div className="flex items-center gap-2">

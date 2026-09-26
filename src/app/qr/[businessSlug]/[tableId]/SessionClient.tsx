@@ -237,6 +237,14 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       }, () => {
         fetchTableState();
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'businesses',
+        filter: `id=eq.${business_id}`
+      }, () => {
+        fetchTableState();
+      })
       .subscribe();
 
     return () => {

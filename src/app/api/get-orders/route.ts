@@ -14,9 +14,9 @@ export async function GET(request: Request) {
     // Query notifications to reconstruct order history
     const { data: notifs, error } = await supabase
       .from('notifications')
-      .select('message, created_at')
+      .select('message, created_at, type')
       .eq('business_id', business_id)
-      .eq('type', 'order_pending')
+      .in('type', ['order_pending', 'order_accepted', 'order_served', 'order_rejected'])
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -36,6 +36,7 @@ export async function GET(request: Request) {
           orders.push({
             cart,
             total,
+            status: notif.type.replace('order_', ''),
             timestamp: notif.created_at
           });
         } catch (e) {

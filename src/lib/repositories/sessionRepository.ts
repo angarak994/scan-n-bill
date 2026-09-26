@@ -246,6 +246,7 @@ export const sessionRepository = {
         setVal('game type', session.game_type);
         setVal('start time', `'${toSheetsTime(session.start_time)}`);
         setVal('status', session.status);
+        setVal('notes', session.notes || '');
       }
       
       await sheets.spreadsheets.values.append({

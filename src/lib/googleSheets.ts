@@ -206,7 +206,8 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       session.completed_by || 'System',
       qkhataStatus,
       qkhataAmount,
-      qkhata?.id || ''
+      qkhata?.id || '',
+      session.notes || ''
     ];
 
     await upsertRow('Sessions', 0, session.id, values, businessId || session.business_id);
