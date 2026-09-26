@@ -152,7 +152,7 @@ export async function POST(request: Request) {
     // Telegram Dispatch
     if (orderId && process.env.TELEGRAM_BOT_TOKEN) {
       try {
-        const gs = business.pricing_rules?.globalSettings;
+        const gs = business.pricing_rules?.globalSettings as any;
         if (gs && Array.isArray(gs.authorized_telegram_owners)) {
            const msg = `🔔 <b>New Order Placed</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Order ID:</b> #${orderRef}\n\n<b>Items:</b>\n${itemsOrdered.map(i => `• ${i}`).join('\n')}\n\n<b>Total:</b> ₹${orderTotal}`;
            const buttons = [

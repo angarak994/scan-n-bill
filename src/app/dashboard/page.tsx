@@ -2189,7 +2189,7 @@ function DashboardContent() {
   };
 
   const renderTables = () => {
-    if (preferences.enhanced_tables) {
+    if ((preferences as any).enhanced_tables) {
       return (
         <div className="flex flex-col mt-2">
           <EnhancedTableView
@@ -3428,7 +3428,7 @@ function DashboardContent() {
             <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Table Experience</h3>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.enhanced_tables} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={(preferences as any).enhanced_tables} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <div>
                    <span className="text-sm font-bold text-text-primary">Enhanced Table View</span>
                    <p className="text-xs text-text-secondary">Use the new interactive 3D table interface.</p>

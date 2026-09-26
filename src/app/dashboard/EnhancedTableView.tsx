@@ -538,7 +538,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                            return (
                              <div key={name} className="flex justify-between items-center text-sm">
                                <span className="text-text-primary font-medium">
-                                 <span className="text-accent font-bold mr-2">{qty}x</span>{name}
+                                 <span className="text-accent font-bold mr-2">{String(qty)}x</span>{name}
                                </span>
                                <span className="font-mono text-text-secondary">{formatINR(price * (qty as number))}</span>
                              </div>
