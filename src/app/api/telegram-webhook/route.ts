@@ -1672,7 +1672,13 @@ You can still access other businesses associated with your Telegram account.`, {
                 } else {
                   msg += `<b>Rate:</b> ${rateText}\n💰 <b>Final Bill:</b> ${billText}\n\n`;
                 }
-                
+                const upiId = business.pricing_rules?.globalSettings?.preferences?.business_upi_id;
+                if (upiId && finalCost > 0) {
+                  const upiUri = `upi://pay?pa=${upiId}&pn=Business&am=${finalCost}&cu=INR`;
+                  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
+                  msg += `📱 <a href="${qrUrl}">Show QR Code</a>\n🔗 <code>${upiUri}</code>\n\n`;
+                }
+
                 msg += `Table is now <b>Available</b>.`;
                 
                 if (messageId) {

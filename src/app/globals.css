@@ -117,26 +117,79 @@ body {
   border: 1px solid var(--border);
 }
 
-/* UI Micro-interactions */
+/* UI Micro-interactions & Premium Motion */
 .card-glow {
   box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
 }
 
 .hover-lift {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .hover-lift:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
 }
 
 .dark .hover-lift:hover {
-  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
 }
 
 .hover-lift:active {
-  transform: scale(0.97) translateY(0);
+  transform: scale(0.98) translateY(0);
+}
+
+/* Premium Buttons */
+.btn-premium {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+.btn-premium:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+.btn-premium:active {
+  transform: scale(0.96);
+}
+
+.btn-premium:disabled {
+  opacity: 0.6;
+  pointer-events: none;
+  transform: none;
+}
+
+/* Premium Inputs */
+.input-premium {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.input-premium:focus-within {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent);
+  border-color: var(--accent);
+}
+
+/* Smooth State Transitions */
+.smooth-transition {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
+}
+
+/* Smooth Entrances */
+@keyframes slide-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-entrance {
+  animation: slide-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
 }
 
 /* Custom Scrollbar for a cleaner look */
@@ -163,6 +216,16 @@ body {
 }
 .animate-soft-pulse {
   animation: soft-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer utilities {

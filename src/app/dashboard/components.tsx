@@ -11,12 +11,12 @@ setInterval(() => {
   listeners.forEach(l => l());
 }, 1000);
 
-const subscribeToTimer = (listener: () => void) => {
+export const subscribeToTimer = (listener: () => void) => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
 
-const getGlobalNow = () => globalNow;
+export const getGlobalNow = () => globalNow;
 // -----------------------------------------------------------------------
 
 export function Tooltip({ text, children }: { text: string, children: React.ReactNode }) {
@@ -324,7 +324,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
   }
 
   return (
-    <tr className={`border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group`}>
+    <tr className={`border-b border-border-theme/50 hover:bg-bg-surface smooth-transition group animate-entrance`}>
       <td className="p-4 md:p-5">
         <span className="px-3 py-1.5 border border-border-theme bg-bg-surface rounded-lg text-sm font-mono font-bold text-accent uppercase tracking-widest shadow-sm group-hover:border-accent/50 transition-colors">
           {session.table_id}
@@ -359,14 +359,14 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
       <td className="p-4 md:p-5 text-right">
          <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
           {session.paused_at ? (
-            <button onClick={() => { if (preferences?.simple_mode || confirm('Resume session?')) handleIntervention('resume', session.id); }} className={`px-4 py-2 ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-warning text-black shadow-lg' : 'text-sm font-bold text-warning border border-warning/30'} rounded-lg hover:bg-warning hover:text-black transition-colors shadow-sm`}>Resume</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Resume session?')) handleIntervention('resume', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-warning text-black shadow-lg' : 'text-sm font-bold text-warning border border-warning/30'} rounded-lg hover:bg-warning hover:text-black shadow-sm`}>Resume</button>
           ) : (
-            <button onClick={() => { if (preferences?.simple_mode || confirm('Pause session?')) handleIntervention('pause', session.id); }} className={`px-4 py-2 ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-bg-surface text-text-primary shadow-lg' : 'text-sm font-bold text-text-primary border border-border-theme'} rounded-lg hover:bg-bg-surface transition-colors shadow-sm`}>Pause</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Pause session?')) handleIntervention('pause', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-bg-surface text-text-primary shadow-lg' : 'text-sm font-bold text-text-primary border border-border-theme'} rounded-lg hover:bg-bg-surface shadow-sm`}>Pause</button>
           )}
           <button onClick={() => {
             const tid = prompt('Enter table number to transfer to:');
             if (tid) handleIntervention('transfer', session.id, undefined, tid);
-          }} className="px-4 py-2 text-sm font-bold text-secondary border border-secondary/30 rounded-lg hover:bg-secondary hover:text-black transition-colors shadow-sm">Transfer</button>
+          }} className="px-4 py-2 text-sm font-bold btn-premium text-secondary border border-secondary/30 rounded-lg hover:bg-secondary hover:text-black shadow-sm">Transfer</button>
           <button onClick={() => {
             if (onRequestEndSession) {
               onRequestEndSession(session, liveCost, liveDuration);
@@ -375,7 +375,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
                 handleIntervention('force_end', session.id, liveCost);
               }
             }
-          }} className={`${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full shadow-lg' : 'px-4 py-2 text-sm'} font-bold text-white bg-danger rounded-lg hover:bg-red-600 transition-colors shadow-md shadow-danger/20 border border-transparent`}>End</button>
+          }} className={`${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full shadow-lg' : 'px-4 py-2 text-sm'} font-bold btn-premium text-white bg-danger rounded-lg hover:bg-red-600 shadow-md shadow-danger/20 border border-transparent`}>End</button>
          </div>
       </td>
     </tr>

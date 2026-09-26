@@ -130,5 +130,5 @@ export async function handleSessionIntervention(params: {
     })()
   ]).catch(e => console.error('Google Sheets Intervention Sync Error:', e));
 
-  return { success: true, dbUpdates };
+  return { success: true, dbUpdates, sessionResult: action === 'force_end' ? (dbUpdates as any) : undefined };
 }

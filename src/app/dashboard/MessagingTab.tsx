@@ -62,7 +62,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                         id: m.id,
                         name: m.name,
                         phone: cleanPhone,
-                        type: 'Member - ' + m.tier
+                        type: 'Member'
                     });
                 }
             });
@@ -162,7 +162,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                             placeholder="Search by name or phone..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="flex-1 bg-bg-primary border border-border-theme rounded-xl px-4 py-2 text-sm focus:border-accent outline-none transition-colors"
+                            className="flex-1 bg-bg-primary border border-border-theme rounded-xl px-4 py-2 text-sm outline-none input-premium"
                         />
                         <button 
                             onClick={selectAll}
@@ -257,7 +257,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                                 value={messageTemplate}
                                 onChange={(e) => setMessageTemplate(e.target.value)}
                                 placeholder="Type your message here... Use {{name}} to insert the customer's name, or {{outstanding}} for their due balance."
-                                className="flex-1 min-h-[150px] bg-bg-primary border border-border-theme rounded-xl p-4 text-sm focus:border-accent outline-none resize-none transition-colors mb-4 font-medium"
+                                className="flex-1 min-h-[150px] bg-bg-primary border border-border-theme rounded-xl p-4 text-sm outline-none resize-none input-premium mb-4 font-medium"
                             />
 
                             <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-6 shrink-0">
@@ -276,7 +276,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                                 <button
                                     onClick={handleSendBulk}
                                     disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim() || !isWhatsAppConnected}
-                                    className="px-8 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-xl hover:bg-accent/90 transition-all shadow-lg shadow-accent/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    className="px-8 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-xl hover:bg-accent/90 shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
                                     {isSending ? (
                                         <>

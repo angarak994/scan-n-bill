@@ -145,7 +145,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
         </div>
         <button 
           onClick={handleOpenAdd}
-          className="bg-accent text-bg-primary px-6 py-3 rounded-xl font-bold hover:opacity-90 transition-opacity shadow-lg flex items-center gap-2"
+          className="bg-accent text-bg-primary px-6 py-3 rounded-xl font-bold shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium flex items-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
           Add Item
@@ -232,7 +232,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
       {isAdding && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setIsAdding(false)}>
-          <div className="bg-bg-card border border-border-theme rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+          <div className="bg-bg-card border border-border-theme rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-entrance flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-border-theme flex justify-between items-center bg-bg-surface">
               <h3 className="text-xl font-bold text-text-primary">{editingItem ? 'Edit Item' : 'Add Menu Item'}</h3>
               <button onClick={() => setIsAdding(false)} className="text-text-secondary hover:text-text-primary bg-bg-primary p-2 rounded-full transition-colors border border-border-theme">
@@ -244,18 +244,18 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
               <div className="grid grid-cols-2 gap-5">
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Item Name <span className="text-danger">*</span></label>
-                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm focus:border-accent outline-none text-text-primary font-medium" placeholder="e.g. French Fries" />
+                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-medium input-premium" placeholder="e.g. French Fries" />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Price (₹) <span className="text-danger">*</span></label>
-                  <input type="number" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm focus:border-accent outline-none text-text-primary font-bold font-mono" placeholder="150" />
+                  <input type="number" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-bold font-mono input-premium" placeholder="150" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Category <span className="text-danger">*</span></label>
                 <div className="relative">
-                  <input type="text" required list="categories" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm focus:border-accent outline-none text-text-primary font-medium" placeholder="e.g. Beverages" />
+                  <input type="text" required list="categories" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-medium input-premium" placeholder="e.g. Beverages" />
                   <datalist id="categories">
                     {categories.map(c => <option key={c} value={c} />)}
                   </datalist>
@@ -264,12 +264,12 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Description</label>
-                <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm focus:border-accent outline-none resize-none text-text-primary leading-relaxed" placeholder="Short appetizing description..."></textarea>
+                <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none resize-none text-text-primary leading-relaxed input-premium" placeholder="Short appetizing description..."></textarea>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Image URL</label>
-                <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm focus:border-accent outline-none text-text-primary font-mono" placeholder="https://example.com/image.jpg" />
+                <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-mono input-premium" placeholder="https://example.com/image.jpg" />
                 {formData.image && (
                   <div className="mt-3 w-full h-32 bg-bg-primary rounded-xl border border-border-theme overflow-hidden">
                     <img src={formData.image} alt="Preview" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
@@ -287,7 +287,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
               <button type="button" onClick={() => setIsAdding(false)} className="flex-1 py-3.5 bg-bg-primary border border-border-theme text-text-primary font-bold rounded-xl hover:bg-bg-primary/80 transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-3.5 bg-accent text-bg-primary font-bold rounded-xl hover:opacity-90 transition-opacity shadow-lg disabled:opacity-50 flex justify-center items-center gap-2">
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-3.5 bg-accent text-bg-primary font-bold rounded-xl shadow-[0_4px_15px_rgba(var(--accent),0.4)] disabled:opacity-50 disabled:shadow-none flex justify-center items-center gap-2 btn-premium">
                 {saving ? 'Saving...' : (editingItem ? 'Update Item' : 'Save Item')}
               </button>
             </div>

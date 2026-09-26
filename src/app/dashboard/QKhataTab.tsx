@@ -190,11 +190,14 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     businessName: business?.business_name || 'Our Business'
                 })
             });
-            if (!res.ok) throw new Error('Failed to send');
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => null);
+                throw new Error(errorData?.error || 'Failed to send reminder');
+            }
             toast.success('Reminder sent!', { id: toastId });
-        } catch (error) {
+        } catch (error: any) {
             console.error('Reminder error:', error);
-            toast.error('Failed to send reminder', { id: toastId });
+            toast.error(error.message || 'Failed to send reminder', { id: toastId });
         }
     };
 
@@ -228,7 +231,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                             <input 
                                 type="text" 
                                 placeholder="Search name or phone..." 
-                                className="w-full px-4 py-2 pl-9 bg-bg-card border border-border-theme rounded-md focus:border-accent outline-none text-sm text-text-primary placeholder-text-secondary transition-colors"
+                                className="w-full px-4 py-2 pl-9 bg-bg-card border border-border-theme rounded-md outline-none text-sm text-text-primary placeholder-text-secondary input-premium"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
@@ -277,7 +280,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                                 {c.loyalty_points !== undefined && <span className="text-[9px] font-bold tracking-widest uppercase border border-accent/20 px-1.5 py-0.5 rounded text-accent bg-accent/5">{c.loyalty_points} PTS</span>}
                                             </div>
                                             {Number(c.outstanding_balance) > 0 && c.phone && (
-                                                <button onClick={(e) => handleSendReminder(e, c)} className="text-[10px] text-[#25D366] hover:bg-[#25D366] hover:text-white border border-[#25D366]/30 px-2 py-0.5 rounded transition-all font-medium flex items-center gap-1">
+                                                <button onClick={(e) => handleSendReminder(e, c)} className="text-[10px] btn-premium text-[#25D366] hover:bg-[#25D366] hover:text-white border border-[#25D366]/30 px-2 py-0.5 rounded font-medium flex items-center gap-1 shadow-sm">
                                                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824zm-3.423-14.416c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm.029 18.88c-1.161 0-2.305-.292-3.318-.844l-3.677.964.984-3.595c-.607-1.052-.927-2.246-.926-3.468.001-3.825 3.113-6.937 6.937-6.937 3.825 0 6.938 3.112 6.938 6.937 0 3.825-3.113 6.938-6.938 6.938z"/></svg>
                                                     Remind
                                                 </button>
@@ -319,16 +322,26 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 rounded-full blur-3xl group-hover:bg-accent/10 transition-colors duration-700"></div>
                                     
                                     <div className="flex-1 min-w-[200px] relative z-10">
-                                        <label className="block text-[10px] font-bold text-accent uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                            Record Payment
-                                        </label>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-[10px] font-bold text-accent uppercase tracking-widest flex items-center gap-1.5">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                                Record Payment
+                                            </label>
+                                            {Number(selectedCustomer.outstanding_balance) > 0 && (
+                                                <button 
+                                                    onClick={() => setSettlementAmount(Number(selectedCustomer.outstanding_balance).toFixed(0))}
+                                                    className="text-[10px] text-text-secondary hover:text-accent font-bold uppercase tracking-wider transition-colors"
+                                                >
+                                                    Settle Full
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="relative">
                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-primary/50 font-bold text-lg">₹</span>
                                             <input 
                                                 type="number" 
                                                 placeholder="0.00"
-                                                className="w-full pl-9 pr-4 py-2.5 bg-bg-card/50 backdrop-blur-md border border-border-theme rounded-xl focus:border-accent/50 focus:ring-1 focus:ring-accent/50 focus:bg-bg-card outline-none text-base font-mono font-bold transition-all placeholder-text-secondary/30"
+                                                className="w-full pl-9 pr-4 py-2.5 bg-bg-card/50 backdrop-blur-md border border-border-theme rounded-xl outline-none text-base font-mono font-bold placeholder-text-secondary/30 input-premium"
                                                 value={settlementAmount}
                                                 onChange={(e) => setSettlementAmount(e.target.value)}
                                             />
@@ -337,7 +350,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                     <div className="relative z-10">
                                         <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Method</label>
                                         <select 
-                                            className="w-32 px-4 py-2.5 bg-bg-card/50 backdrop-blur-md border border-border-theme rounded-xl focus:border-accent/50 focus:ring-1 focus:ring-accent/50 outline-none text-sm font-semibold transition-all appearance-none cursor-pointer"
+                                            className="w-32 px-4 py-2.5 bg-bg-card/50 backdrop-blur-md border border-border-theme rounded-xl outline-none text-sm font-semibold appearance-none cursor-pointer input-premium"
                                             value={settlementMethod}
                                             onChange={(e) => setSettlementMethod(e.target.value)}
                                         >
@@ -347,7 +360,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                     <button 
                                         onClick={handleSettle}
                                         disabled={!settlementAmount || isSubmitting}
-                                        className="relative z-10 bg-accent text-white px-8 py-2.5 rounded-xl font-bold text-sm hover:shadow-[0_0_15px_rgba(var(--accent),0.4)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none transition-all"
+                                        className="relative z-10 bg-accent text-white px-8 py-2.5 rounded-xl font-bold text-sm btn-premium disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)]"
                                     >
                                         {isSubmitting ? 'Processing...' : 'Settle Balance'}
                                     </button>
@@ -357,11 +370,10 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                             {/* Transaction History Table */}
                             <div className="flex-1 overflow-auto custom-scrollbar relative">
                                 {isLedgerLoading ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-bg-card/50 backdrop-blur-sm z-20">
-                                        <div className="text-sm font-semibold text-text-secondary flex items-center gap-2">
-                                            <svg className="animate-spin h-4 w-4 text-text-secondary" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                            Loading history...
-                                        </div>
+                                    <div className="absolute inset-0 p-8 space-y-4 bg-bg-card/50 backdrop-blur-sm z-20">
+                                        {[1,2,3,4,5].map(i => (
+                                            <div key={i} className="w-full h-16 bg-border-light/50 rounded-lg animate-pulse" />
+                                        ))}
                                     </div>
                                 ) : ledgerHistory.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-text-secondary p-8">

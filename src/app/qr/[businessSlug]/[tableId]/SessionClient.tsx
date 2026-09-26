@@ -463,7 +463,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden border border-gray-100 dark:border-gray-700 p-8 flex flex-col items-center text-center gap-6">
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-[0_15px_40px_rgba(0,0,0,0.1)] overflow-hidden border border-gray-100 dark:border-gray-700 p-8 flex flex-col items-center text-center gap-6 animate-entrance smooth-transition">
         
         {session.status === 'idle' && (
           <>
@@ -531,7 +531,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <button
               onClick={handleStart}
               disabled={isStarting}
-              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 btn-premium ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isStarting ? 'Starting...' : 'Start Session'}
             </button>
@@ -561,7 +561,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <button
               onClick={handleEnd}
               disabled={isEnding}
-              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-semibold text-lg shadow-lg shadow-red-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${isEnding ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-semibold text-lg shadow-lg shadow-red-500/30 btn-premium ${isEnding ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isEnding ? 'Finalizing Bill...' : 'End Session & Generate Bill'}
             </button>
@@ -591,7 +591,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Food & Drinks Menu</h2>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
               {(session as any).menuItems.map((item: any) => (
-                <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 smooth-transition hover:border-gray-300 dark:hover:border-gray-500 hover:shadow-sm">
                   <div>
                     <p className="font-bold text-gray-800 dark:text-gray-200">{item.name}</p>
                     <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
@@ -621,7 +621,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
               <button
                 onClick={handlePlaceOrder}
                 disabled={isOrdering}
-                className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all"
+                className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all btn-premium"
               >
                 {isOrdering ? 'Placing Order...' : `Place Order (₹${Object.entries(cart).reduce((acc, [name, qty]) => {
                   const price = session.menuItems.find((i: any) => i.name === name)?.price || 0;

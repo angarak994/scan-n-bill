@@ -9,6 +9,16 @@ interface SubscriptionTabProps {
 
 type TabType = 'plan' | 'billing' | 'history' | 'manage';
 
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
   const [loading, setLoading] = useState(true);
   const [subData, setSubData] = useState<any>(null);
@@ -69,6 +79,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     try {
       setIsProcessing(true);
       toast.loading('Initializing secure checkout...', { id: 'checkout' });
+      
       const res = await fetch('/api/subscriptions/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -78,8 +89,59 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
       
       if (!res.ok) throw new Error(data.error);
 
-      toast.success('Payment successful! (Simulated)', { id: 'checkout' });
-      fetchData();
+      const resScript = await loadRazorpayScript();
+      if (!resScript) {
+        throw new Error('Razorpay SDK failed to load. Are you online?');
+      }
+
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_dummy',
+        amount: data.amount,
+        currency: data.currency,
+        name: 'QControl Platform',
+        description: `Subscription for ${data.planName}`,
+        order_id: data.orderId,
+        handler: async function (response: any) {
+          toast.loading('Verifying payment...', { id: 'checkout' });
+          try {
+             const verifyRes = await fetch('/api/subscriptions/verify-payment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_signature: response.razorpay_signature,
+                    planId: planId
+                })
+             });
+             
+             if (verifyRes.ok) {
+                 toast.success('Payment successful!', { id: 'checkout' });
+                 fetchData();
+                 fetchHistory();
+             } else {
+                 const errData = await verifyRes.json();
+                 toast.error(errData.error || 'Payment verification failed', { id: 'checkout' });
+             }
+          } catch (e) {
+             toast.error('Payment verification failed', { id: 'checkout' });
+          }
+        },
+        prefill: {
+          name: subData?.owner_name || 'Business Owner',
+          email: 'owner@example.com'
+        },
+        theme: {
+          color: '#10b981'
+        }
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.on('payment.failed', function (response: any) {
+         toast.error(response.error.description || 'Payment Failed', { id: 'checkout' });
+      });
+      paymentObject.open();
+
     } catch (error: any) {
       toast.error(error.message, { id: 'checkout' });
     } finally {
@@ -109,7 +171,13 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     }
   };
 
-  if (loading) return <div className="p-8 flex justify-center items-center h-64 animate-pulse text-text-secondary">Loading Subscription Data...</div>;
+  if (loading) return (
+    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+      <div className="w-64 h-10 bg-border-light/50 rounded-lg animate-pulse mb-6" />
+      <div className="w-full h-32 bg-border-light/50 rounded-2xl animate-pulse" />
+      <div className="w-full h-[400px] bg-border-light/50 rounded-2xl animate-pulse" />
+    </div>
+  );
 
   const currentPlan = subData?.subscription_plans;
   const isExpired = subData && new Date(subData.current_period_end).getTime() < Date.now();
@@ -136,7 +204,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
   ] as const;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
+    <div className="max-w-6xl mx-auto space-y-6 animate-entrance pb-20">
       
       {/* Top Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
@@ -206,7 +274,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
         
         {/* --- PLAN & USAGE --- */}
         {activeTab === 'plan' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="space-y-8 animate-entrance">
             <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Usage & Limits</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -262,7 +330,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
         {/* --- PAYMENT & BILLING --- */}
         {activeTab === 'billing' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="space-y-8 animate-entrance">
             <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment Method & Billing Info</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -296,7 +364,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
         {/* --- INVOICES & HISTORY --- */}
         {activeTab === 'history' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="space-y-6 animate-entrance">
             <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment History</h3>
             
             {history.length === 0 ? (
@@ -339,7 +407,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
         {/* --- MANAGE SUBSCRIPTION --- */}
         {activeTab === 'manage' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="space-y-8 animate-entrance">
             <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Manage Subscription</h3>
             
             {/* Danger / Action Zone */}

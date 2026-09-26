@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
     }
 
-    await handleSessionIntervention({
+    const result = await handleSessionIntervention({
       action,
       session_id,
       business_id,
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       performed_by: 'dashboard_user'
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, sessionResult: result.sessionResult });
   } catch (error: any) {
     console.error('Intervention Error:', error);
     // Determine status code based on error message

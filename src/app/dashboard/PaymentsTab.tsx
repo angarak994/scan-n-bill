@@ -206,7 +206,7 @@ export default function PaymentsTab() {
                         <select 
                             value={statusFilter}
                             onChange={e => setStatusFilter(e.target.value as any)}
-                            className="bg-bg-surface border border-border-theme rounded-lg px-3 py-2 text-sm text-text-primary focus:border-accent outline-none font-bold"
+                            className="bg-bg-surface border border-border-theme rounded-lg px-3 py-2 text-sm text-text-primary outline-none font-bold input-premium"
                         >
                             <option value="all">All Status</option>
                             <option value="Paid">Paid</option>

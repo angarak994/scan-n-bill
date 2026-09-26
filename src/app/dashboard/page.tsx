@@ -1,12 +1,13 @@
 'use client';
 
 import { formatPhoneInput } from '@/lib/utils/formatPhoneInput';
-import { useEffect, useState, Suspense, useMemo, useRef, useCallback } from 'react';
+import { useEffect, useState, Suspense, useMemo, useRef, useCallback, useSyncExternalStore } from 'react';
 
 import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
 import { MenuManagerTab } from './MenuManagerTab';
 import { createClient } from '@supabase/supabase-js';
-import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker } from './components';
+import { EnhancedTableView } from './EnhancedTableView';
+import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
 import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
 import QKhataTab from './QKhataTab';
@@ -336,6 +337,7 @@ function DashboardContent() {
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, duration?: string, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string } | null>(null);
+  const [finalQRData, setFinalQRData] = useState<any>(null);
 
   // Happy Hour States
   const [selectedTable, setSelectedTable] = useState('');
@@ -655,12 +657,14 @@ function DashboardContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId, payment_method: paymentMethod, due_date: dueDate })
       });
+      const dataJson = await res.json();
       if (res.ok) {
         if (action === 'confirm_playing') {
           setOverdueSession(null);
         }
         // fetchData removed; Realtime updates sessions
         if (action === 'transfer') toast.success('✓ Table transferred.');
+        return dataJson;
       } else {
         setData(previousData); // Rollback
         toast.error("We couldn't complete your request. Please try again.");
@@ -1690,7 +1694,7 @@ function DashboardContent() {
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Revenue Card */}
-        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
+        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300">
           <div className="flex justify-between items-start mb-2 sm:mb-4">
             <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Daily Revenue</h3>
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
@@ -1720,7 +1724,7 @@ function DashboardContent() {
         {/* Active Tables Card */}
         <div 
           onClick={() => setSidebarTab('tables')}
-          className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300 cursor-pointer hover:border-accent/50"
+          className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300 cursor-pointer hover:border-accent/50"
         >
           <div className="flex justify-between items-start mb-2 sm:mb-4">
             <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
@@ -1739,7 +1743,7 @@ function DashboardContent() {
         </div>
 
         {/* Sessions Card */}
-        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300 col-span-1 sm:col-span-2 lg:col-span-1">
+        <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300 col-span-1 sm:col-span-2 lg:col-span-1">
           <div className="flex justify-between items-start mb-2 sm:mb-4">
             <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Sessions</h3>
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -1879,7 +1883,7 @@ function DashboardContent() {
                   const total = order.message.split('|')[1] || '0';
                   
                   return (
-                    <div key={order.id} className="p-4 rounded-lg border border-border-theme bg-bg-surface flex justify-between items-center hover:border-accent/50 transition-colors">
+                    <div key={order.id} className="p-4 rounded-lg border border-border-theme bg-bg-surface flex justify-between items-center hover:border-accent/50 smooth-transition animate-entrance" style={{ animationDelay: `${0.05 * Math.min(5, (orders.findIndex((o: any) => o.id === order.id) || 0))}s` }}>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-sm font-bold">{order.title}</p>
@@ -2189,10 +2193,66 @@ function DashboardContent() {
     );
   };
 
-  const renderTables = () => (
-    <div className="flex flex-col gap-8">
-      {/* Active Tables List */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden mt-4 shadow-sm hover:shadow-md transition-shadow duration-300">
+  const renderTables = () => {
+    if (preferences.enhanced_tables) {
+      return (
+        <div className="flex flex-col mt-2">
+          <EnhancedTableView
+            layoutToggleNode={
+              <div className="flex items-center gap-2 bg-bg-card border border-border-theme p-1 rounded-lg shadow-sm">
+                 <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">Layout</span>
+                 <button onClick={() => handleUpdatePreference('enhanced_tables', false)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-text-primary">Standard</button>
+                 <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-accent text-black shadow-sm pointer-events-none">Premium</button>
+              </div>
+            }
+            tables={data.tables || []}
+            activeSessions={data.activeSessions}
+            preferences={preferences}
+            pricingRules={data.pricingRules}
+            currentDiscounts={currentDiscounts}
+            activePromo={activePromo}
+            isPromoValid={isPromoValid}
+            menuItems={data.menu_items || []}
+            businessId={businessId!}
+            isPrivacyMode={isPrivacyMode}
+            formatINR={formatINR}
+            paymentQrConfig={(data as any)?.payment_qr_config}
+            onIntervention={handleIntervention}
+            onEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
+            onRefresh={fetchData}
+            onStartSession={(tableId, gameType) => {
+              setManualTable(tableId);
+              setManualGame(gameType);
+              setIsManualModalOpen(true);
+            }}
+            onReserveTable={(tableId, gameType) => {
+              setBookingTable(tableId);
+              setBookingGame(gameType);
+              setIsBookingModalOpen(true);
+            }}
+            onUpdateTables={async (tables) => { await handleSaveConfig(undefined, tables); }}
+            calculateBilling={calculateBilling}
+            parseDateString={parseDateString}
+            formatTimeReadable={formatTimeReadable}
+            getDisplayName={getDisplayName}
+            getGlobalNow={getGlobalNow}
+            subscribeToTimer={subscribeToTimer}
+            useSyncExternalStore={useSyncExternalStore}
+          />
+        </div>
+      );
+    }
+    return (
+    <div className="flex flex-col gap-4 mt-2">
+      <div className="flex justify-end">
+         <div className="flex items-center gap-2 bg-bg-card border border-border-theme p-1 rounded-lg shadow-sm">
+            <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">Layout</span>
+            <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-bg-surface text-text-primary border border-border-theme shadow-sm pointer-events-none">Standard</button>
+            <button onClick={() => handleUpdatePreference('enhanced_tables', true)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-accent">Premium</button>
+         </div>
+      </div>
+      
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden mt-2 shadow-sm hover:shadow-md transition-shadow duration-300">
         <div className="p-4 md:p-6 border-b border-border-theme flex justify-between items-center bg-bg-primary/50">
           <div>
             <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
@@ -2378,6 +2438,7 @@ function DashboardContent() {
       </div>
     </div>
   );
+};
 
   const renderCustomers = () => (
     <div className="flex flex-col gap-8 mt-4">
@@ -2613,6 +2674,42 @@ function DashboardContent() {
         <p className="text-text-secondary text-sm">Configure your business profile, pricing rules, and security preferences.</p>
       </div>
 
+      {/* UPI Payment Configuration */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <h2 className="text-2xl font-bold mb-2">UPI Payment</h2>
+        <p className="text-text-secondary text-sm mb-6">Configure your business UPI ID to dynamically generate payment QR codes when sessions end.</p>
+        
+        <div className="max-w-md flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Business UPI ID</label>
+            <div className="relative">
+              <input 
+                type="text" 
+                defaultValue={data?.pricingRules?.globalSettings?.preferences?.business_upi_id || ''}
+                placeholder="yourbusiness@upi"
+                onBlur={(e) => {
+                  const val = e.target.value.trim();
+                  if (val && !val.includes('@')) {
+                    toast.error('Please enter a valid UPI ID (e.g. name@upi)');
+                    return;
+                  }
+                  if (val !== (data?.pricingRules?.globalSettings?.preferences?.business_upi_id || '')) {
+                    handleUpdatePreference('business_upi_id', val);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" 
+              />
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-50 text-base">₹</span>
+            </div>
+          </div>
+          {data?.pricingRules?.globalSettings?.preferences?.business_upi_id ? (
+            <p className="text-xs text-accent font-bold mt-1">✓ UPI payments active</p>
+          ) : (
+            <p className="text-xs text-warning font-bold mt-1">⚠️ Please configure your UPI ID</p>
+          )}
+        </div>
+      </div>
+
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
               <h2 className="text-2xl font-bold mb-6">Business Goals</h2>
               <form onSubmit={async (e) => {
@@ -2639,7 +2736,7 @@ function DashboardContent() {
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
                   <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
                 </div>
-                <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+                <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors">
                   Save Goals
                 </button>
               </form>
@@ -3209,7 +3306,7 @@ function DashboardContent() {
                     </div>
                     <h4 className="text-sm font-bold text-text-primary mb-1">Upload QR Code</h4>
                     <p className="text-xs text-text-secondary mb-4">PNG, JPG up to 5MB</p>
-                    <label className="px-6 py-3 bg-accent text-white font-bold text-sm rounded-lg hover-lift hover:bg-accent/90 transition-colors shadow-lg cursor-pointer inline-block">
+                    <label className="px-6 py-3 bg-accent text-white font-bold text-sm rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors shadow-lg cursor-pointer inline-block">
                       Select File
                       <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
                         const file = e.target.files?.[0];
@@ -3277,7 +3374,7 @@ function DashboardContent() {
                         </select>
                       </div>
                     </div>
-                    <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift hover:bg-accent/90 transition-colors">
+                    <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors">
                       Save Qpulse
                     </button>
                   </form>
@@ -3331,6 +3428,16 @@ function DashboardContent() {
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
                 <input type="checkbox" checked={preferences.show_member_details} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Member Details in Tables</span>
+              </label>
+            </div>
+            <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
+              <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Table Experience</h3>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.enhanced_tables} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <div>
+                   <span className="text-sm font-bold text-text-primary">Enhanced Table View</span>
+                   <p className="text-xs text-text-secondary">Use the new interactive 3D table interface.</p>
+                </div>
               </label>
             </div>
             <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
@@ -3819,27 +3926,27 @@ function DashboardContent() {
           </div>
   
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-            <a href="#" className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-xl hover:shadow-accent/5 transition-all group flex flex-col items-start">
+            <button onClick={() => toast('Comprehensive documentation is being prepared for the new update.', { icon: '📚' })} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-xl hover:shadow-accent/5 transition-all group flex flex-col items-start w-full text-left">
               <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-inner">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
               </div>
               <h3 className="font-extrabold text-text-primary text-xl mb-2">Documentation</h3>
               <p className="text-sm text-text-secondary leading-relaxed">Read guides & tutorials on using QControl.</p>
-            </a>
-            <a href="#" className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5 transition-all group flex flex-col items-start">
+            </button>
+            <button onClick={() => toast('IoT Hardware integration is currently in private beta. Contact support to enable.', { icon: '🔌' })} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5 transition-all group flex flex-col items-start w-full text-left">
               <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-inner">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
               </div>
               <h3 className="font-extrabold text-text-primary text-xl mb-2">API & Hardware</h3>
               <p className="text-sm text-text-secondary leading-relaxed">Setup IoT switches & API integrations.</p>
-            </a>
-            <a href="#" className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-green-500/50 hover:shadow-xl hover:shadow-green-500/5 transition-all group flex flex-col items-start">
+            </button>
+            <button onClick={() => setSidebarTab('subscription')} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-green-500/50 hover:shadow-xl hover:shadow-green-500/5 transition-all group flex flex-col items-start w-full text-left">
               <div className="w-14 h-14 bg-green-500/10 rounded-2xl flex items-center justify-center text-green-500 mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-inner">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
               </div>
               <h3 className="font-extrabold text-text-primary text-xl mb-2">Billing & Pricing</h3>
               <p className="text-sm text-text-secondary leading-relaxed">Questions about subscription & payments.</p>
-            </a>
+            </button>
           </div>
   
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
@@ -3868,10 +3975,10 @@ function DashboardContent() {
               <h3 className="text-2xl font-black text-text-primary mb-2">Need direct help?</h3>
               <p className="text-sm text-text-secondary mb-8">Send us a message and our support team will get back to you within 24 hours.</p>
               
-              <form onSubmit={(e) => { e.preventDefault(); alert("Support request sent! Our team will contact you shortly."); }} className="flex flex-col gap-5 flex-1">
-                <input type="text" placeholder="Subject" className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none transition-all font-medium" required />
-                <textarea placeholder="Describe your issue in detail..." rows={6} className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none resize-none transition-all font-medium" required></textarea>
-                <button type="submit" className="mt-auto py-4 bg-text-primary text-bg-primary font-black uppercase tracking-widest text-sm rounded-xl hover:opacity-90 transition-opacity shadow-xl flex justify-center items-center gap-2">
+              <form onSubmit={(e) => { e.preventDefault(); toast.success("Support request sent! Our team will contact you shortly.", { icon: '✉️' }); e.currentTarget.reset(); }} className="flex flex-col gap-5 flex-1">
+                <input type="text" placeholder="Subject" className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm outline-none font-medium input-premium" required />
+                <textarea placeholder="Describe your issue in detail..." rows={6} className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm outline-none resize-none font-medium input-premium" required></textarea>
+                <button type="submit" className="mt-auto py-4 bg-text-primary text-bg-primary font-black uppercase tracking-widest text-sm rounded-xl shadow-[0_4px_15px_rgba(255,255,255,0.2)] flex justify-center items-center gap-2 btn-premium">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                   Submit Ticket
                 </button>
@@ -3887,7 +3994,7 @@ function DashboardContent() {
       {/* End Session Modal */}
       {endSessionData && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setEndSessionData(null)}>
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-entrance" onClick={(e) => e.stopPropagation()}>
             <div className="bg-danger/10 border-b border-danger/20 p-5">
               <h3 className="text-xl font-bold flex items-center gap-3 text-danger">
                 End Session
@@ -3945,7 +4052,7 @@ function DashboardContent() {
                       type="number" 
                       value={endSessionData.amountReceived}
                       onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
-                      className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-lg font-mono tabular-nums text-text-primary transition-all [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-lg font-mono tabular-nums text-text-primary input-premium [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       placeholder={String(endSessionData.cost)}
                     />
                   </div>
@@ -3959,7 +4066,7 @@ function DashboardContent() {
                       type="date"
                       value={endSessionData.dueDate}
                       onChange={(e) => setEndSessionData({...endSessionData, dueDate: e.target.value})}
-                      className="w-full px-4 py-3 bg-bg-primary border border-warning/30 rounded-xl focus:border-warning outline-none text-sm text-text-primary transition-all"
+                      className="w-full px-4 py-3 bg-bg-primary border border-warning/30 rounded-xl outline-none text-sm text-text-primary input-premium"
                     />
                   </div>
                   <button 
@@ -3990,19 +4097,26 @@ function DashboardContent() {
                   Cancel
                 </button>
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     const isCredit = endSessionData.paymentMode === 'credit';
                     const amountToRecord = isCredit ? 0 : (endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived));
                     const paymentMethod = isCredit ? 'QKhata' : 'Cash';
                     const dueDate = isCredit && endSessionData.dueDate ? endSessionData.dueDate : undefined;
                     
-                    handleIntervention('force_end', endSessionData.session.id, amountToRecord, undefined, paymentMethod, dueDate);
+                    const res = await handleIntervention('force_end', endSessionData.session.id, amountToRecord, undefined, paymentMethod, dueDate);
                     setEndSessionData(null);
                     if (overdueSession && overdueSession.id === endSessionData.session.id) {
                       setOverdueSession(null);
                     }
+                    if (!isCredit && res?.sessionResult) {
+                      setFinalQRData({
+                        table_id: endSessionData.session.table_id,
+                        game_type: endSessionData.session.game_type,
+                        cost: res.sessionResult.cost,
+                      });
+                    }
                   }}
-                  className={`flex-[2] py-3.5 text-white font-extrabold text-sm uppercase rounded-xl transition-colors shadow-lg ${endSessionData.paymentMode === 'credit' ? 'bg-warning text-black hover:bg-warning/90 shadow-warning/20' : 'bg-danger hover:bg-red-600 shadow-danger/20'}`}
+                  className={`flex-[2] py-3.5 text-white font-extrabold text-sm uppercase rounded-xl btn-premium ${endSessionData.paymentMode === 'credit' ? 'bg-warning text-black shadow-[0_4px_15px_rgba(250,204,21,0.4)]' : 'bg-danger shadow-[0_4px_15px_rgba(239,68,68,0.4)]'}`}
                 >
                   {endSessionData.paymentMode === 'credit' ? 'Confirm QKhata' : 'Confirm & End'}
                 </button>
@@ -4012,10 +4126,51 @@ function DashboardContent() {
         </div>
       )}
 
+      {/* Final QR Modal */}
+      {finalQRData && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-[#0B0F13] border border-[#1C2A29] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-entrance">
+            <div className="p-5 border-b border-[#1C2A29] text-center">
+              <h3 className="font-bold text-xl uppercase tracking-widest text-white">Payment</h3>
+              <p className="text-gray-400 text-sm mt-1">{finalQRData.table_id}</p>
+              <p className="text-accent text-xs font-mono font-bold capitalize">{finalQRData.game_type}</p>
+            </div>
+            
+            <div className="p-6 flex flex-col items-center gap-4">
+              <div className="text-center">
+                <p className="text-gray-400 text-xs uppercase tracking-widest font-bold">Final Amount</p>
+                <p className="text-4xl font-black text-accent mt-1 tabular-nums">{formatINR(finalQRData.cost)}</p>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl shadow-[0_0_20px_rgba(var(--accent-color),0.2)] w-48 h-48 mx-auto mt-2">
+                {data?.pricingRules?.globalSettings?.preferences?.business_upi_id ? (
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`upi://pay?pa=${data.pricingRules.globalSettings.preferences.business_upi_id}&pn=Business&am=${finalQRData.cost}&cu=INR`)}`} 
+                    alt="Payment QR" 
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 text-xs text-center border-2 border-dashed border-gray-200 rounded-lg p-2 gap-2">
+                    <span className="text-lg">⚠️</span>
+                    UPI payment is not configured for this business.
+                  </div>
+                )}
+              </div>
+              
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-2">Scan to Pay</p>
+              
+              <button onClick={() => setFinalQRData(null)} className="mt-4 w-full py-3 bg-[#16231E] hover:bg-[#1C2A29] text-white border border-[#274036] rounded-xl font-bold transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Overdue Session Modal */}
       {overdueSession && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setOverdueSession(null)}>
-          <div className="bg-bg-card border border-warning/50 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-bg-card border border-warning/50 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-entrance" onClick={(e) => e.stopPropagation()}>
             <div className="bg-warning/10 border-b border-warning/20 p-5">
               <h3 className="text-xl font-bold flex items-center gap-3 text-warning">
                 Confirmation Required
@@ -4131,7 +4286,7 @@ function DashboardContent() {
         </nav>
 
         <div className="p-4 flex flex-col gap-2 border-t border-border-theme/50">
-          <button onClick={() => setIsManualModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm transition-colors hover:bg-secondary/90 mb-2 shadow-[0_0_15px_rgba(240,165,0,0.3)]">
+          <button onClick={() => setIsManualModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2 shadow-[0_0_15px_rgba(240,165,0,0.3)] btn-premium">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
             New Session
           </button>
@@ -4190,7 +4345,7 @@ function DashboardContent() {
                     }
                     window.open(`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`, '_blank');
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift"
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift smooth-transition"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 </button>
@@ -4206,7 +4361,7 @@ function DashboardContent() {
                     const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'Qcontr01_bot';
                     window.open(`https://t.me/${botUsername}`, '_blank');
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-[#0088cc] transition-colors hover-lift"
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-[#0088cc] transition-colors hover-lift smooth-transition"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </button>
@@ -4214,7 +4369,7 @@ function DashboardContent() {
               <Tooltip text="Quick Scan">
                 <button
                   onClick={() => setIsQRModalOpen(true)}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-accent transition-colors hover-lift"
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-accent transition-colors hover-lift smooth-transition"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
                 </button>
@@ -4222,7 +4377,7 @@ function DashboardContent() {
               <Tooltip text="Toggle Privacy Mode">
                 <button
                   onClick={togglePrivacy}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift smooth-transition"
                 >
                   {isPrivacyMode ? <IconEyeOff /> : <IconEye />}
                 </button>
@@ -4254,7 +4409,7 @@ function DashboardContent() {
                       switchTheme();
                     });
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift"
+                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift smooth-transition"
                 >
                   <svg className="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -4317,7 +4472,7 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && <BookingsTab />}
+          {sidebarTab === 'bookings' && <BookingsTab businessId={businessId} bookings={data?.bookings || []} />}
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
@@ -4348,7 +4503,7 @@ function DashboardContent() {
       {/* New Session Modal (Admin) */}
       {isManualModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-xl my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-xl my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-entrance flex flex-col">
             <button 
               onClick={() => {
                 setIsManualModalOpen(false);
@@ -4393,11 +4548,11 @@ function DashboardContent() {
                       {selectedQkhataMember ? 'Change Member' : 'Select Member'}
                     </button>
                   </div>
-                  <input type="text" required={!isLazyModeEnabled} value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors" placeholder="Walk-In or Member Name" />
+                  <input type="text" required={!isLazyModeEnabled} value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary input-premium" placeholder="Walk-In or Member Name" />
 
                   {/* Redesigned QKhata Popover */}
                   {showQkhataPopover && (
-                    <div className="absolute top-[85px] left-0 right-0 bg-bg-card border border-border-theme rounded-xl shadow-2xl z-[100] flex flex-col max-h-[300px] animate-in fade-in zoom-in-95 duration-200">
+                    <div className="absolute top-[85px] left-0 right-0 bg-bg-card border border-border-theme rounded-xl shadow-2xl z-[100] flex flex-col max-h-[300px] animate-entrance">
                       <div className="p-3 border-b border-border-theme sticky top-0 z-10 bg-bg-card rounded-t-xl">
                         <div className="relative">
                           <svg className="w-4 h-4 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -4407,7 +4562,7 @@ function DashboardContent() {
                             value={qkhataSearch}
                             onChange={e => setQkhataSearch(e.target.value)}
                             placeholder="Search registered member..." 
-                            className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm outline-none focus:border-accent text-text-primary placeholder:text-text-disabled transition-colors"
+                            className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm outline-none text-text-primary placeholder:text-text-disabled input-premium"
                           />
                         </div>
                       </div>
@@ -4503,13 +4658,13 @@ function DashboardContent() {
                 )}
                 <div className={manualGame !== 'ps5' ? 'sm:col-span-2' : ''}>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
-                  <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors min-h-[48px]" />
+                  <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
-                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl focus:border-accent outline-none text-sm text-text-primary transition-colors min-h-[48px]" placeholder="Special requests..." />
+                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" placeholder="Special requests..." />
               </div>
 
               {/* Selected Member Highlight */}
@@ -4530,7 +4685,7 @@ function DashboardContent() {
                 </div>
               )}
               
-              <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-2 bg-accent text-white font-bold py-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent/20 flex items-center justify-center gap-2">
+              <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-2 bg-accent text-white font-bold py-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_15px_rgba(var(--accent),0.4)] flex items-center justify-center gap-2 btn-premium">
                 {isStartingManual ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -4551,7 +4706,7 @@ function DashboardContent() {
       {/* Manual Booking Modal (Additive) */}
       {isBookingModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingBooking ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-in fade-in zoom-in-95'}`}>
+          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingBooking ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-entrance'}`}>
             <button 
               onClick={() => setIsBookingModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -4582,7 +4737,7 @@ function DashboardContent() {
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Date <span className="text-danger">*</span></label>
-                  <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary h-[44px]" />
+                  <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" />
                 </div>
               </div>
 
@@ -4623,7 +4778,7 @@ function DashboardContent() {
               <div className="flex gap-4 w-full">
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
-                  <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary h-[44px]" placeholder="Optional" />
+                  <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" placeholder="Optional" />
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration <span className="text-danger">*</span></label>
@@ -4653,7 +4808,7 @@ function DashboardContent() {
                 </div>
               )}
               
-              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-2 bg-accent text-white font-bold py-3.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 shadow-lg shadow-accent/20">
+              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-2 bg-accent text-white font-bold py-3.5 rounded-lg disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium">
                 {isCreatingBooking ? 'Saving Booking...' : 'Save Booking'}
               </button>
             </form>
@@ -4664,7 +4819,7 @@ function DashboardContent() {
       {/* Edit Session Modal */}
       {editSession && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-entrance">
             <button 
               onClick={() => setEditSession(null)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -4678,17 +4833,17 @@ function DashboardContent() {
             <form onSubmit={handleEditSessionSubmit} className="p-8 flex flex-col gap-4">
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
-                <input type="text" required value={editCustomer} onChange={e => setEditCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                <input type="text" required value={editCustomer} onChange={e => setEditCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time</label>
-                <input type="datetime-local" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                <input type="datetime-local" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Notes</label>
-                <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
               </div>
-              <button type="submit" className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors">
+              <button type="submit" className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium">
                 Save Changes
               </button>
             </form>
@@ -4699,7 +4854,7 @@ function DashboardContent() {
       {/* QR Codes Modal */}
       {isQRModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] lg:max-w-5xl my-auto shadow-2xl relative max-h-[90vh] flex flex-col">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] lg:max-w-5xl my-auto shadow-2xl relative max-h-[90vh] flex flex-col animate-entrance">
             <button 
               onClick={() => setIsQRModalOpen(false)}
               className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
@@ -4756,7 +4911,7 @@ function DashboardContent() {
       {/* Logout Confirmation Modal */}
       {isLogoutModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-entrance text-center">
             <div className="w-16 h-16 bg-accent/20 text-accent rounded-full flex items-center justify-center mx-auto mb-4">
               <IconLogout />
             </div>
@@ -4770,7 +4925,7 @@ function DashboardContent() {
               </button>
               <button 
                 onClick={confirmLogout}
-                className="flex-1 py-3 bg-danger text-white font-bold text-sm rounded-lg hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
+                className="flex-1 py-3 bg-danger text-white font-bold text-sm rounded-lg shadow-[0_4px_15px_rgba(239,68,68,0.4)] btn-premium"
               >
                 Logout
               </button>
@@ -4782,7 +4937,7 @@ function DashboardContent() {
       {/* Delete Station Confirmation Modal */}
       {stationToDelete && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-sm shadow-2xl animate-entrance">
             <h3 className="text-lg font-bold mb-2">Delete {stationToDelete.name}?</h3>
             <p className="text-text-secondary text-sm mb-6">
               Are you sure you want to delete this station? This action cannot be undone.
@@ -4798,7 +4953,7 @@ function DashboardContent() {
               <button
                 type="button"
                 onClick={handleDeleteStation}
-                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg shadow-[0_4px_15px_rgba(239,68,68,0.4)] btn-premium"
               >
                 Delete
               </button>

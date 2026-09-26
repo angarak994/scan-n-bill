@@ -35,9 +35,13 @@ export async function POST(request: Request) {
     // In a real Razorpay implementation, you'd create a Subscription linked to a Plan created in Razorpay dashboard.
     // For local testing and to ensure it works immediately without external dashboard setup, we will create an Order.
     const orderOptions = {
-        amount: plan.monthly_price * 100, // amount in the smallest currency unit (paise)
+        amount: plan.monthly_price * 100,
         currency: "INR",
-        receipt: `receipt_order_${Date.now()}`
+        receipt: `receipt_order_${Date.now()}`,
+        notes: {
+            business_id: session.businessId,
+            plan_id: planId
+        }
     };
 
     const order = await razorpay.orders.create(orderOptions);

@@ -34,9 +34,8 @@ export async function POST(request: Request) {
     const twilioNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_WHATSAPP_NUMBER;
 
     if (!accountSid || !authToken || !twilioNumber) {
-        console.error("Twilio credentials missing. Falling back to mock SMS.");
-        console.log(`\n=======================================\n📲 [MOCK REMINDER SMS to ${customerPhone}]:\n${messageBody}\n=======================================\n`);
-        return NextResponse.json({ success: true, mocked: true, message: 'Mock reminder sent (Configure Twilio to send real SMS)' });
+        console.error("Twilio credentials missing.");
+        return NextResponse.json({ error: 'WhatsApp is not connected. Please connect WhatsApp first.' }, { status: 400 });
     }
 
     const client = twilio(accountSid, authToken);

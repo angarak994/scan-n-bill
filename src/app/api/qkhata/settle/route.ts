@@ -65,6 +65,34 @@ export async function POST(req: Request) {
 
         if (customerError) throw customerError;
 
+        // --- Telegram Notification ---
+        try {
+            const { data: business } = await supabase.from('businesses').select('pricing_rules').eq('id', businessId).single();
+            const owners = business?.pricing_rules?.globalSettings?.authorized_telegram_owners || [];
+            
+            const botToken = process.env.TELEGRAM_BOT_TOKEN;
+            if (botToken && owners.length > 0) {
+                const msg = `✅ <b>Payment Recorded</b>\n\nCollected: ₹${amount}\nFrom: ${selectedCustomerName}\nRemaining Balance: ₹${Math.round(newOutstanding)}`;
+                
+                for (const owner of owners) {
+                    if (owner.status !== 'revoked' && owner.chatId) {
+                        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                chat_id: owner.chatId,
+                                text: msg,
+                                parse_mode: 'HTML'
+                            })
+                        }).catch(e => console.error('Telegram notification error:', e));
+                    }
+                }
+            }
+        } catch (tgErr) {
+            console.error('Failed to send telegram notification for settlement:', tgErr);
+        }
+        // -----------------------------
+
         return NextResponse.json({ ok: true, customerId: customerIdToUse });
     } catch (error: any) {
         console.error('Settlement Error:', error);

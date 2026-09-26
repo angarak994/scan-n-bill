@@ -15,9 +15,8 @@ interface Booking {
   source: string;
 }
 
-export default function BookingsTab() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export default function BookingsTab({ businessId, bookings = [] }: { businessId?: string | null, bookings?: Booking[] }) {
+  const [isLoading, setIsLoading] = useState(false);
   const [tables, setTables] = useState<any[]>([]);
 
   // Modal State
@@ -32,25 +31,8 @@ export default function BookingsTab() {
   });
 
   useEffect(() => {
-    fetchData();
     fetchTables();
   }, []);
-
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await fetch(`/api/bookings?startDate=${today}&_t=${Date.now()}`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        setBookings(json.bookings || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch bookings", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchTables = async () => {
     try {
@@ -86,7 +68,6 @@ export default function BookingsTab() {
       if (res.ok && data.success) {
         toast.success('Booking confirmed!', { id: loadingToast });
         setIsModalOpen(false);
-        fetchData(); // refresh list
       } else {
         toast.error(data.error || 'Failed to create booking', { id: loadingToast });
       }
@@ -104,7 +85,7 @@ export default function BookingsTab() {
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="bg-accent hover:bg-accent-hover text-bg-surface font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-accent/20"
+          className="bg-accent hover:bg-accent-hover text-bg-surface font-bold py-2 px-6 rounded-lg btn-premium flex items-center gap-2 shadow-lg shadow-accent/20"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
           New Booking
@@ -117,7 +98,11 @@ export default function BookingsTab() {
         </div>
         
         {isLoading ? (
-          <div className="p-12 text-center text-text-secondary">Loading bookings...</div>
+          <div className="p-8 space-y-4">
+             {[1,2,3,4].map(i => (
+               <div key={i} className="w-full h-16 bg-border-light/50 rounded-lg animate-pulse" />
+             ))}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
@@ -187,7 +172,7 @@ export default function BookingsTab() {
                   required
                   value={formData.customer_name} 
                   onChange={e => setFormData({...formData, customer_name: e.target.value})}
-                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none" 
+                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium" 
                   placeholder="e.g. John Doe" 
                 />
               </div>
@@ -198,7 +183,7 @@ export default function BookingsTab() {
                   type="tel" 
                   value={formData.customer_phone} 
                   onChange={e => setFormData({...formData, customer_phone: e.target.value})}
-                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none" 
+                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium" 
                   placeholder="10 digit number" 
                 />
               </div>
@@ -209,7 +194,7 @@ export default function BookingsTab() {
                   <select 
                     value={formData.table_id} 
                     onChange={e => setFormData({...formData, table_id: e.target.value})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none font-mono"
+                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none font-mono input-premium"
                   >
                     {tables.map(t => (
                       <option key={t.id} value={t.id}>{t.id}</option>
@@ -221,7 +206,7 @@ export default function BookingsTab() {
                   <select 
                     value={formData.duration_minutes} 
                     onChange={e => setFormData({...formData, duration_minutes: Number(e.target.value)})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none"
+                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium"
                   >
                     <option value={30}>30 mins</option>
                     <option value={60}>1 Hour</option>
