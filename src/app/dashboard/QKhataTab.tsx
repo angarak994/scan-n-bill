@@ -235,7 +235,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     </div>
                     <div className="flex items-end gap-2 sm:gap-3 mb-2">
                         <span className="text-2xl sm:text-4xl font-bold text-danger/90 tracking-tight font-mono tabular-nums">{overdueAccountsCount}</span>
-                        <span className="text-xs text-text-secondary mb-1">High Risk (>₹5000)</span>
+                        <span className="text-xs text-text-secondary mb-1">High Risk (&gt;₹5000)</span>
                     </div>
                 </div>
             </div>
