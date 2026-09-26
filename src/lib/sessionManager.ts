@@ -468,7 +468,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let maxPlayers = 4;
     let configuredGameType = 'pool';
     if (businessId) {
-      const business = await businessManager.getBusiness(businessId);
+      const business = await businessManager.getBusiness(businessId, true); // force refresh so menu/pricing changes reflect immediately
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
@@ -529,7 +529,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let qpayConfig = undefined;
   let paymentQrConfig = undefined;
   if (businessId) {
-    const business = await businessManager.getBusiness(businessId);
+    const business = await businessManager.getBusiness(businessId, true);
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];

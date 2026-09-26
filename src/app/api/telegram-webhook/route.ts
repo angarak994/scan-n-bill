@@ -414,32 +414,6 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       if (update.message.reply_to_message) {
         const replyText = update.message.reply_to_message.text;
 
-        if (replyText.includes('Enter Customer Name') || replyText.includes('Enter player name')) {
-          const lines = replyText.split('\n');
-          const tableLine = lines.find((l: string) => l.startsWith('Table:') || l.startsWith('Enter player name for table:'));
-          const gameLine = lines.find((l: string) => l.startsWith('Game:'));
-          const playersLine = lines.find((l: string) => l.startsWith('Players:'));
-          if (!tableLine || !gameLine) return NextResponse.json({ ok: true });
-
-          
-          const tableId = tableLine.replace('Table:', '').replace('Enter player name for table:', '').trim();
-          const gameType = gameLine.replace('Game:', '').trim();
-          let numPlayers = 1;
-          if (playersLine) {
-            numPlayers = parseInt(playersLine.replace('Players:', '').trim()) || 1;
-          }
-          const playerName = text;
-          
-          // Start the session!
-          try {
-            const session = await startSession(tableId, gameType as any, playerName, business.id, numPlayers);
-            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`, mainMenu);
-          } catch (error: any) {
-            await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, mainMenu);
-          }
-          return NextResponse.json({ ok: true });
-        }
-
         if (replyText.includes('Enter Customer Name for Booking')) {
           const lines = replyText.split('\n');
           const gameLine = lines.find((l: string) => l.startsWith('Game:'));
@@ -484,6 +458,32 @@ Date: ${dateStr}
 Time: ${timeStr}`, mainMenu);
           } catch(e: any) {
              await sendTelegramMessage(chatId, `❌ Failed to create booking: ${e.message}`, mainMenu);
+          }
+          return NextResponse.json({ ok: true });
+        }
+
+        if (replyText.includes('Enter Customer Name') || replyText.includes('Enter player name')) {
+          const lines = replyText.split('\n');
+          const tableLine = lines.find((l: string) => l.startsWith('Table:') || l.startsWith('Enter player name for table:'));
+          const gameLine = lines.find((l: string) => l.startsWith('Game:'));
+          const playersLine = lines.find((l: string) => l.startsWith('Players:'));
+          if (!tableLine || !gameLine) return NextResponse.json({ ok: true });
+
+          
+          const tableId = tableLine.replace('Table:', '').replace('Enter player name for table:', '').trim();
+          const gameType = gameLine.replace('Game:', '').trim();
+          let numPlayers = 1;
+          if (playersLine) {
+            numPlayers = parseInt(playersLine.replace('Players:', '').trim()) || 1;
+          }
+          const playerName = text;
+          
+          // Start the session!
+          try {
+            const session = await startSession(tableId, gameType as any, playerName, business.id, numPlayers);
+            await sendTelegramMessage(chatId, `✅ <b>Session Started</b>\n\nPlayer: ${playerName}\nTable: ${tableId}\nGame: ${gameType}\nStarted At: ${formatTimeReadable(session.start_time)}`, mainMenu);
+          } catch (error: any) {
+            await sendTelegramMessage(chatId, `❌ Failed to start session: ${error.message}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }

@@ -21,33 +21,33 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             const customersData = dbCustomers;
             const membersData = memberships;
 
-            if (memberships) {
-                const membersList = memberships.map(m => {
-                    // Match with a true dbCustomer to get ledger balances if they've played
-                    const matchedCustomer = dbCustomers?.find(c => 
-                        (c.phone && c.phone === m.mobile) || 
-                        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase())
+            if (customersData) {
+                const membersList = customersData.filter((c: any) => c.name && c.name !== 'Guest').map(c => {
+                    const m = membersData?.find(m => 
+                        (m.mobile && c.phone && m.mobile === c.phone) || 
+                        (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+                        m.id === c.id
                     );
                     
                     return {
-                        id: matchedCustomer ? matchedCustomer.id : m.id, // Prefer db customer ID for ledger queries
-                        name: m.name,
-                        phone: m.mobile,
-                        outstanding_balance: matchedCustomer ? (matchedCustomer.outstanding_balance || 0) : 0,
-                        total_billed: matchedCustomer ? (matchedCustomer.total_billed || 0) : 0,
-                        total_paid: matchedCustomer ? (matchedCustomer.total_paid || 0) : 0,
-                        is_customer_record: !!matchedCustomer,
-                        tier: m.tier,
-                        loyalty_points: m.loyalty_points
+                        id: c.id,
+                        name: c.name,
+                        phone: c.phone || (m ? m.mobile : ''),
+                        outstanding_balance: c.outstanding_balance || 0,
+                        total_billed: c.total_billed || 0,
+                        total_paid: c.total_paid || 0,
+                        is_customer_record: true,
+                        tier: m ? m.tier : undefined,
+                        loyalty_points: m ? m.loyalty_points : undefined
                     };
                 });
                 
-                const sorted = membersList.sort((a, b) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
+                const sorted = membersList.sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
                 setCustomers(sorted);
                 
                 // If a customer is currently selected, refresh their specific data locally
                 if (selectedCustomer) {
-                    const freshCust = sorted.find(c => c.name === selectedCustomer.name);
+                    const freshCust = sorted.find((c: any) => c.name === selectedCustomer.name);
                     if (freshCust) setSelectedCustomer(freshCust);
                 }
             }

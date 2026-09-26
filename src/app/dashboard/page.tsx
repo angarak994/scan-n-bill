@@ -792,7 +792,7 @@ function DashboardContent() {
         }, 250);
       } else {
         const error = await res.json();
-        toast.error("We couldn't start the session. Please try again.");
+        toast.error(error.error || "We couldn't start the session. Please try again.");
       }
     } finally {
       setIsStartingManual(false);
@@ -4011,17 +4011,7 @@ function DashboardContent() {
               </div>
               
               {/* Payment Mode Toggle (Only for Members) */}
-              {(
-                 endSessionData.session.member_id ||
-                 (memberships || []).some((m: any) => 
-                   (m.name && m.name.trim().toLowerCase() === endSessionData.session.customer_name.trim().toLowerCase()) || 
-                   (m.mobile && m.mobile.trim() === endSessionData.session.customer_name.trim())
-                 ) ||
-                 (data?.dbCustomers || []).some((c: any) => 
-                   (c.name && c.name.trim().toLowerCase() === endSessionData.session.customer_name.trim().toLowerCase()) || 
-                   (c.phone && c.phone.trim() === endSessionData.session.customer_name.trim())
-                 )
-              ) && (
+              {!!endSessionData.session.member_id && (
                 <div className="flex gap-2 p-1 bg-bg-primary rounded-xl mt-4">
                   <button 
                     onClick={() => setEndSessionData({...endSessionData, paymentMode: 'now'})}
@@ -4640,7 +4630,7 @@ function DashboardContent() {
 
               {/* Start Time and Optional Players - 2 Columns */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {manualGame === 'ps5' && (
+                {(manualGame.toLowerCase() === 'ps5' || manualGame.toLowerCase() === 'playstation' || manualGame.toLowerCase() === 'ps4') && (
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Players <span className="text-danger">*</span></label>
                     <CustomSelect 
@@ -4651,7 +4641,7 @@ function DashboardContent() {
                     />
                   </div>
                 )}
-                <div className={manualGame !== 'ps5' ? 'sm:col-span-2' : ''}>
+                <div className={!(manualGame.toLowerCase() === 'ps5' || manualGame.toLowerCase() === 'playstation' || manualGame.toLowerCase() === 'ps4') ? 'sm:col-span-2' : ''}>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
                   <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" />
                 </div>

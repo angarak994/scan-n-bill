@@ -188,10 +188,16 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
     const qkhataStatus = qkhata ? 'Charged' : (session.payment_status === 'Pending' ? 'Pending' : 'N/A');
     const qkhataAmount = qkhata ? qkhata.amount : 0;
 
+    const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
+    const customerName = session.customer_name || 'Guest';
+    const formattedCustomerName = session.num_players && session.num_players > 1 
+      ? `${customerName} (${session.num_players} Players)`
+      : customerName;
+
     const values = [
-      session.id,
+      shortId,
       session.date || getCurrentISTDateStr(),
-      session.customer_name || 'Guest',
+      formattedCustomerName,
       session.member_id || '',
       session.table_id || '',
       session.game_type || '',
@@ -210,7 +216,7 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       session.notes || ''
     ];
 
-    await upsertRow('Sessions', 0, session.id, values, businessId || session.business_id);
+    await upsertRow('Sessions', 0, shortId, values, businessId || session.business_id);
   } catch (err) {
     console.error('syncSessionToSheet Error:', err);
   }

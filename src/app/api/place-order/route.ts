@@ -18,6 +18,30 @@ const getSheetsClient = () => {
   return google.sheets({ version: 'v4', auth });
 };
 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+
+async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) console.error("Telegram API Error:", data);
+    return data;
+  } catch (e) {
+    console.error('Failed to send telegram message', e);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const data = await request.json();
@@ -79,12 +103,13 @@ export async function POST(request: Request) {
       console.error('Failed to create order notification:', e);
     }
 
-    // Append to Google Sheets (existing)
-    try {
-      const sheets = getSheetsClient();
-      let spreadsheetId = business.google_sheet_id;
-      
-      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    // Append to Google Sheets (Non-blocking)
+    Promise.resolve().then(async () => {
+      try {
+        const sheets = getSheetsClient();
+        let spreadsheetId = business.google_sheet_id;
+        
+        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
       
       let foodSheet = spreadsheet.data.sheets?.find(s => s.properties?.title === 'Food Orders');
       
@@ -144,10 +169,10 @@ export async function POST(request: Request) {
             requestBody: { values: [row] },
           });
         } catch (e) { console.error("Google Sheets Food Order Error", e); }
-      });
-    } catch (sheetError) {
-      console.error("Google Sheets Init Error:", sheetError);
-    }
+      } catch (sheetError) {
+        console.error("Google Sheets Init Error:", sheetError);
+      }
+    }).catch(e => console.error(e));
 
     // Telegram Dispatch
     if (orderId && process.env.TELEGRAM_BOT_TOKEN) {

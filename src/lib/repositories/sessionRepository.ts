@@ -200,71 +200,7 @@ export const sessionRepository = {
     // ensuring startSession resolves nearly instantly for the user.
     // -----------------------------------------------------------
 
-    // 2. Sync append to Google Sheets (Non-blocking)
-    Promise.resolve().then(async () => {
-    try {
-      const sheets = getSheetsClient();
-      const config = await getSheetConfig(sheets, businessId);
 
-      // Dynamically fetch headers to prevent column mismatch if user rearranges sheet
-      const headerResponse = await sheets.spreadsheets.values.get({
-        spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'!1:1`,
-      });
-      const headers = headerResponse.data.values?.[0]?.map(h => String(h).trim().toLowerCase()) || [];
-      
-      const getIdx = (name: string) => headers.indexOf(name);
-      const rowLength = Math.max(headers.length, 11); // Ensure enough columns
-      const row = new Array(rowLength).fill('');
-      
-      const setVal = (colName: string, val: string) => {
-        const idx = getIdx(colName);
-        if (idx !== -1) {
-          row[idx] = val;
-        }
-      };
-
-      const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
-      const formattedCustomerName = session.num_players && session.num_players > 1 
-        ? `${session.customer_name} (${session.num_players} Players)`
-        : session.customer_name;
-
-      // If headers are somehow missing or non-standard, fallback to default indices
-      if (getIdx('date') === -1) {
-        row[0] = `'${shortId}`;
-        row[1] = `'${toSheetsDate(session.start_time)}`;
-        row[2] = formattedCustomerName;
-        row[3] = session.table_id;
-        row[4] = session.game_type;
-        row[5] = `'${toSheetsTime(session.start_time)}`;
-        row[10] = session.status;
-      } else {
-        setVal('session id', `'${shortId}`);
-        setVal('date', `'${toSheetsDate(session.start_time)}`);
-        setVal('customer name', formattedCustomerName);
-        setVal('table no', session.table_id);
-        setVal('game type', session.game_type);
-        setVal('start time', `'${toSheetsTime(session.start_time)}`);
-        setVal('status', session.status);
-        setVal('notes', session.notes || '');
-      }
-      
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: config.spreadsheetId,
-        range: `'${config.sheetTitle}'!A:K`,
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [row] },
-      });
-
-      // Mark synced in DB (Optional enhancement)
-      await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', insertedData.id);
-    } catch (sheetError) {
-      console.error("Google Sheets Sync Error on Create:", sheetError);
-      await supabase.from('sessions').update({ sync_status: 'FAILED' }).eq('id', insertedData.id);
-    }
-    }).catch(e => console.error('Background sheets sync error', e));
-  },
 
   update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean): Promise<void> => {
     // 1. Update Supabase

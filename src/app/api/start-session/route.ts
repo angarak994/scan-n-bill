@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     if (member_id && business_id) {
       const { supabase } = require('@/lib/supabaseClient');
       const { data: membership, error: memberError } = await supabase
-        .from('memberships')
+        .from('customers')
         .select('name, business_id')
         .eq('id', member_id)
         .eq('business_id', business_id)

@@ -539,7 +539,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <button
               onClick={handleStart}
               disabled={isStarting}
-              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg shadow-lg shadow-blue-500/30 btn-premium ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full mt-2 px-6 py-4 rounded-xl bg-gray-900 hover:bg-black dark:bg-black dark:hover:bg-gray-900 text-white font-bold text-lg shadow-xl shadow-black/20 btn-premium transition-all duration-300 ${isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isStarting ? 'Starting...' : 'Start Session'}
             </button>
