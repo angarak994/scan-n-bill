@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient'; // Service role client
 import bcrypt from 'bcryptjs';
 import { setSession } from '@/lib/auth';
+import { initializeGoogleSheet } from '@/lib/googleSheets';
 
 export async function POST(request: Request) {
   try {
@@ -15,6 +16,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Please enter a valid 10-digit mobile number.' }, { status: 400 });
     }
 
+    // Extract ID if user pasted full URL
+    let finalSheetId = formData.google_sheet_id.trim();
+    if (finalSheetId.includes('/d/')) {
+      const match = finalSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) {
+        finalSheetId = match[1];
+      }
+    }
+
+    try {
+      await initializeGoogleSheet(finalSheetId);
+    } catch (e) {
+      console.error('Failed to initialize Google Sheet tabs:', e);
+      return NextResponse.json({ error: 'Failed to initialize Google Sheet. Ensure the Service Account is an Editor.' }, { status: 400 });
+    }
+
     const hashedPin = await bcrypt.hash(formData.dashboard_pin.toString(), 10);
 
     // Since this uses the service_role client, it bypasses RLS.
@@ -24,7 +41,7 @@ export async function POST(request: Request) {
       contact_number: formData.contact_number,
       whatsapp_number: formData.whatsapp_number || null,
       dashboard_pin: hashedPin,
-      google_sheet_id: formData.google_sheet_id,
+      google_sheet_id: finalSheetId,
       status: 'ACTIVE',
       tables: [] // Start with empty tables
     }]).select().single();

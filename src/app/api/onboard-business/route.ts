@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import QRCode from 'qrcode';
 import { businessManager } from '@/lib/businessManager';
 import { normalizePhone } from '@/lib/utils/phoneValidation';
+import { initializeGoogleSheet } from '@/lib/googleSheets';
 
 const getSheetsClient = () => {
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
@@ -42,30 +43,8 @@ export async function POST(request: Request) {
     }
 
     // Verify Google Sheet and Inject Headers if empty
-    const sheets = getSheetsClient();
     try {
-      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: finalSheetId });
-      const firstSheetTitle = spreadsheet.data.sheets?.[0]?.properties?.title || 'Sheet1';
-      
-      // Check if A1 is empty
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: finalSheetId,
-        range: `'${firstSheetTitle}'!A1:J1`,
-      });
-
-      const rows = response.data.values;
-      if (!rows || rows.length === 0 || !rows[0] || rows[0].length === 0 || rows[0][0] === '') {
-        // Inject headers
-        const headers = ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Start Time', 'End Time', 'Duration', 'Applied Pricing', 'Amount', 'Status'];
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: finalSheetId,
-          range: `'${firstSheetTitle}'!A1:K1`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: {
-            values: [headers],
-          },
-        });
-      }
+      await initializeGoogleSheet(finalSheetId);
     } catch (err: any) {
       console.error("Google Sheets API Error:", err?.message || err);
       return NextResponse.json({ error: `Google Sheets Error: ${err?.message || 'Invalid ID or missing permissions. Share it with the service account.'}` }, { status: 400 });
