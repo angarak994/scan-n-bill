@@ -51,7 +51,7 @@ export async function POST(req: Request) {
         if (paymentError) throw paymentError;
 
         // Fetch current customer to update balances
-        const { data: customer, error: fetchErr } = await supabase.from('customers').select('*').eq('id', customerIdToUse).single();
+        const { data: customer, error: fetchErr } = await supabase.from('customers').select('*').eq('id', customerIdToUse).eq('business_id', businessId).single();
         if (fetchErr) throw fetchErr;
 
         const newTotalPaid = Number(customer.total_paid || 0) + Number(amount);

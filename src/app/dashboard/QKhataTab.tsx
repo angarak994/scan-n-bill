@@ -42,7 +42,9 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     };
                 });
                 
-                const sorted = membersList.sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
+                const sorted = membersList
+                    .filter((c: any) => c.tier !== undefined) // Only registered members
+                    .sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
                 setCustomers(sorted);
                 
                 // If a customer is currently selected, refresh their specific data locally

@@ -509,7 +509,7 @@ Time: ${timeStr}`, mainMenu);
              const idLine = lines.find((l: string) => l.startsWith('ID:'));
              if (idLine) {
                  const customerId = idLine.replace('ID:', '').trim();
-                 const { data: cust } = await supabase.from('customers').select('*').eq('id', customerId).single();
+                 const { data: cust } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
                  customer = cust;
              }
           }
@@ -560,7 +560,7 @@ Time: ${timeStr}`, mainMenu);
             
             const customerId = idLine.replace('ID: addcharge_', '').trim();
             
-            const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+            const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
             if (!customer) {
                 await sendTelegramMessage(chatId, `❌ Member not found.`, mainMenu);
                 return NextResponse.json({ ok: true });
@@ -768,10 +768,13 @@ Time: ${timeStr}`, mainMenu);
         return NextResponse.json({ ok: true });
       }
       else if (text === '📒 Member QKhata') {
-        const { data: customers } = await supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
+        const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
+        const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
+        
+        const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id)) || [];
         
         if (!customers || customers.length === 0) {
-           await sendTelegramMessage(chatId, `🎉 No outstanding QKhata balances found!`, mainMenu);
+           await sendTelegramMessage(chatId, `🎉 No outstanding QKhata balances found for registered members!`, mainMenu);
            return NextResponse.json({ ok: true });
         }
         
@@ -1005,7 +1008,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhatamem_')) {
           const customerId = callbackData.replace('qkhatamem_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           
           if (!customer) {
              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Member not found.`);
@@ -1047,13 +1050,16 @@ You can still access other businesses associated with your Telegram account.`, {
       }
 
       if (callbackData === 'qkhata_back') {
-        const { data: customers } = await supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
+        const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
+        const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
         
+        const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id)) || [];
+
         let msg = `📒 <b>Member QKhata Collections</b>\n\n`;
         let memberButtons: any[] = [];
         
         if (!customers || customers.length === 0) {
-           msg += `🎉 No outstanding QKhata balances found!\n\n`;
+           msg += `🎉 No outstanding QKhata balances found for registered members!\n\n`;
         } else {
            const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstanding_balance), 0);
            msg += `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\n`;
@@ -1079,7 +1085,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhatacollect_')) {
           const customerId = callbackData.replace('qkhatacollect_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           
           if (!customer) return NextResponse.json({ ok: true });
           
@@ -1090,7 +1096,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhatasettlefull_')) {
           const customerId = callbackData.replace('qkhatasettlefull_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           
           if (!customer) return NextResponse.json({ ok: true });
           
@@ -1113,7 +1119,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhataconfirm_')) {
           const customerId = callbackData.replace('qkhataconfirm_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           
           if (!customer) return NextResponse.json({ ok: true });
           
@@ -1147,8 +1153,11 @@ You can still access other businesses associated with your Telegram account.`, {
       }
 
       if (callbackData === 'qkhata_addcharge_menu') {
-          const { data: customers } = await supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', business.id).order('created_at', { ascending: false }).limit(20);
+          const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).order('created_at', { ascending: false });
+          const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
           
+          const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id))?.slice(0, 20) || [];
+
           if (!customers || customers.length === 0) {
              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No registered members found.`);
              else await sendTelegramMessage(chatId, `❌ No registered members found.`);
@@ -1174,7 +1183,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhata_addcharge_init_')) {
           const customerId = callbackData.replace('qkhata_addcharge_init_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           
           if (!customer) return NextResponse.json({ ok: true });
           
@@ -1191,7 +1200,7 @@ You can still access other businesses associated with your Telegram account.`, {
           
           const reason = reasonB64 && reasonB64 !== 'none' ? Buffer.from(reasonB64, 'base64').toString('utf-8') : 'Manual Charge';
           
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
           if (!customer) return NextResponse.json({ ok: true });
           
           try {
@@ -1208,7 +1217,7 @@ You can still access other businesses associated with your Telegram account.`, {
                 source: `Telegram Bot - ${reason}`
              });
              
-             const { data: updatedCustomer } = await supabase.from('customers').select('*').eq('id', customerId).single();
+             const { data: updatedCustomer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
              const newTotal = updatedCustomer ? Math.round(updatedCustomer.outstanding_balance) : (Math.round(customer.outstanding_balance) + amount);
              
              const msg = `✅ <b>QKhata Added Successfully</b>\n\nMember: ${customer.name}\nAdded: ₹${amount}\nReason: ${reason}\nPrevious Outstanding: ₹${Math.round(customer.outstanding_balance)}\nNew Outstanding: ₹${newTotal}`;
