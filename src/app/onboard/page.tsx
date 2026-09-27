@@ -168,6 +168,9 @@ export default function OnboardPage() {
 
       setQrs(data.qrs);
       setCreatedBusinessId(data.businessId);
+      if (data.pin) {
+        sessionStorage.setItem('dashboard_pin', data.pin);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -103,8 +103,9 @@ export const sessionRepository = {
       .from('sessions')
       .select('*')
       .eq('business_id', businessId)
-      .eq('table_id', table_id)
+      .ilike('table_id', table_id)
       .eq('status', 'ACTIVE')
+      .limit(1)
       .maybeSingle();
 
     if (error || !data) return null;

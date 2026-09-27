@@ -112,7 +112,7 @@ export async function startSession(table_id: string, game_type: GameType, custom
     id: uuid(),
     date: dateStr,
     customer_name: customer_name.trim(),
-    table_id,
+    table_id: table_id.trim(),
     game_type,
     start_time: timeStr,
     end_time: null,

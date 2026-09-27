@@ -140,7 +140,7 @@ export default function Login() {
           </form>
           
           <div className="mt-8 text-center pt-6 border-t border-border-theme">
-            <p className="text-sm text-text-secondary font-medium">New to QControl? <Link href="/register" className="text-accent font-bold hover:underline">Register your club</Link></p>
+            <p className="text-sm text-text-secondary font-medium">New to QControl? <Link href="/onboard" className="text-accent font-bold hover:underline">Register your club</Link></p>
           </div>
         </div>
       </div>

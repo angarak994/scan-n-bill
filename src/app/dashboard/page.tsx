@@ -584,6 +584,31 @@ function DashboardContent() {
     fetchRef.current = fetchDashboardData;
   }, [fetchDashboardData]);
 
+  const prevCompletedRef = useRef<any[]>([]);
+  useEffect(() => {
+    if (!data?.completedSessions) return;
+    
+    // Auto QR Billing Popup
+    if (data.pricingRules?.globalSettings?.preferences?.auto_qr_billing !== false) {
+      if (prevCompletedRef.current.length > 0) {
+        const newSessions = data.completedSessions.filter(
+          (s: any) => !prevCompletedRef.current.find(ps => ps.id === s.id)
+        );
+        if (newSessions.length > 0 && !finalQRData) {
+          const latest = newSessions[0];
+          setFinalQRData({
+            table_id: latest.table_id,
+            game_type: latest.game_type,
+            cost: latest.cost,
+            member_id: latest.member_id,
+            session_id: latest.id
+          });
+        }
+      }
+    }
+    prevCompletedRef.current = data.completedSessions;
+  }, [data?.completedSessions, data?.pricingRules?.globalSettings?.preferences?.auto_qr_billing, finalQRData]);
+
   useEffect(() => {
     if (isAuthorized) {
       // Setup Supabase Realtime for universal state synchronization
@@ -617,7 +642,7 @@ function DashboardContent() {
   }, [isAuthorized, businessId]);
 
   const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string, paymentMethod?: string, dueDate?: string) => {
-    if (!businessId || !data) return;
+    if (!businessId || !data) return null;
 
     // Optimistic UI Update
     const previousData = { ...data };
@@ -811,13 +836,21 @@ function DashboardContent() {
     return assigned.length > 0 ? assigned : Object.keys(data?.pricingRules?.rules || { pool: {} });
   };
 
-  const handleSaveConfig = async (newRules?: any, newTables?: any[]) => {
+  const handleSaveConfig = async (newRules?: any, newTables?: any[], googleSheetId?: string, businessProfile?: any) => {
     if (!businessId) return;
     setIsUpdatingConfig(true);
     try {
       const payload: any = { business_id: businessId };
       if (newRules !== undefined) payload.pricing_rules = newRules;
       if (newTables !== undefined) payload.tables = newTables;
+      if (googleSheetId !== undefined) payload.google_sheet_id = googleSheetId;
+      if (businessProfile !== undefined) {
+        payload.business_name = businessProfile.business_name;
+        payload.owner_name = businessProfile.owner_name;
+        payload.contact_number = businessProfile.contact_number;
+        payload.address = businessProfile.address;
+        payload.business_type = businessProfile.business_type;
+      }
       const res = await fetch('/api/update-business-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2669,6 +2702,103 @@ function DashboardContent() {
         <p className="text-text-secondary text-sm">Configure your business profile, pricing rules, and security preferences.</p>
       </div>
 
+      {/* Business Profile Configuration */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2.5">Business Profile</h2>
+            <p className="text-text-secondary text-sm mt-1">Update your basic business information.</p>
+          </div>
+        </div>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.currentTarget as HTMLFormElement);
+          const profile = {
+            business_name: formData.get('business_name'),
+            owner_name: formData.get('owner_name'),
+            contact_number: formData.get('contact_number'),
+            address: formData.get('address'),
+            business_type: formData.get('business_type')
+          };
+          await handleSaveConfig(undefined, undefined, undefined, profile);
+          setData(prev => prev ? { ...prev, businessName: profile.business_name as string, ownerName: profile.owner_name as string, contact_number: profile.contact_number as string, address: profile.address as string, business_type: profile.business_type as string } : prev);
+        }} className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Club Name</label>
+            <input type="text" name="business_name" defaultValue={data?.businessName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Owner Name</label>
+            <input type="text" name="owner_name" defaultValue={data?.ownerName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Contact Number</label>
+            <input type="text" name="contact_number" defaultValue={(data as any)?.contact_number || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Business Type</label>
+            <select name="business_type" defaultValue={(data as any)?.business_type || 'Pool/Snooker Club'} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary">
+              <option value="Pool/Snooker Club">Pool / Snooker Club</option>
+              <option value="Gaming Cafe / PS5">Gaming Cafe / PS5</option>
+              <option value="Turf / Sports Arena">Turf / Sports Arena</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Address</label>
+            <textarea name="address" defaultValue={(data as any)?.address || ''} rows={2} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary"></textarea>
+          </div>
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={isUpdatingConfig} className="w-full md:w-auto px-8 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
+              {isUpdatingConfig ? 'Saving...' : 'Save Profile'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Google Sheets Integration */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2.5">
+              Google Sheets Database
+            </h2>
+            <p className="text-text-secondary text-sm mt-1">
+              Connect a Google Sheet to sync all your active sessions, activity logs, and financial records in real-time.
+            </p>
+          </div>
+          {data?.google_sheet_id && (
+            <a href={`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`} target="_blank" rel="noreferrer" className="px-4 py-2 bg-green-500/10 text-green-500 font-bold text-sm rounded-lg border border-green-500/20 hover:bg-green-500/20 transition-colors">
+              Open Live Sheet ↗
+            </a>
+          )}
+        </div>
+
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (!businessId) return;
+          const formData = new FormData(e.currentTarget as HTMLFormElement);
+          let sheetId = (formData.get('google_sheet_id') as string).trim();
+          if (sheetId.includes('/d/')) {
+            const match = sheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            if (match && match[1]) sheetId = match[1];
+          }
+          await handleSaveConfig(undefined, undefined, sheetId);
+        }} className="max-w-md flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Google Sheet ID or URL</label>
+            <input type="text" name="google_sheet_id" defaultValue={data?.google_sheet_id || ''} placeholder="e.g. 1Fyz4aSQyzjvY..." className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+          </div>
+          <button type="submit" disabled={isUpdatingConfig} className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
+            {isUpdatingConfig ? 'Saving...' : 'Connect Sheet'}
+          </button>
+          <div className="mt-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-xs text-blue-400 font-bold mb-1">Important:</p>
+            <p className="text-xs text-text-secondary">You must share your Google Sheet with <span className="font-mono text-accent">qcontrol@qr-based-billing-438407.iam.gserviceaccount.com</span> and grant it <b>Editor</b> access.</p>
+          </div>
+        </form>
+      </div>
+
       {/* UPI Payment Configuration */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
         <h2 className="text-2xl font-bold mb-2">UPI Payment</h2>
@@ -2924,9 +3054,37 @@ function DashboardContent() {
                             )}
                           </div>
                           <p className="text-[11px] text-text-secondary italic mt-1">ℹ️ Changes save automatically when you click outside the input box.</p>
+                          <button onClick={() => {
+                            if (!confirm(`Are you sure you want to delete the ${selectedGameRule} category? This will break any tables mapped to it.`)) return;
+                            const newRules = { ...data?.pricingRules?.rules };
+                            delete newRules[selectedGameRule];
+                            const keys = Object.keys(newRules);
+                            if (keys.length > 0) setSelectedGameRule(keys[0]);
+                            handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                          }} className="mt-2 w-fit px-4 py-2 bg-error/10 text-error rounded hover:bg-error/20 transition-colors text-xs font-bold tracking-widest uppercase">
+                            Delete Category
+                          </button>
                         </div>
                       );
                     })()}
+
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget as HTMLFormElement);
+                      const newCat = (formData.get('new_category') as string).trim().toLowerCase();
+                      if (!newCat) return;
+                      if (data?.pricingRules?.rules?.[newCat]) {
+                        toast.error('Category already exists!');
+                        return;
+                      }
+                      const newRules = { ...data?.pricingRules?.rules, [newCat]: { type: 'fixed', rate: 200, multiplayer_mode: 'none' } };
+                      handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
+                      setSelectedGameRule(newCat);
+                      (e.target as HTMLFormElement).reset();
+                    }} className="flex gap-2">
+                      <input type="text" name="new_category" placeholder="Add new game category (e.g. Snooker)" className="flex-1 px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+                      <button type="submit" disabled={isUpdatingConfig} className="px-6 bg-accent text-white font-bold rounded-lg hover:bg-accent/90 transition-colors">Add</button>
+                    </form>
                   </div>
       </div>
 
@@ -3419,6 +3577,10 @@ function DashboardContent() {
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
                 <input type="checkbox" checked={preferences.show_pricing_on_dashboard} onChange={(e) => handleUpdatePreference('show_pricing_on_dashboard', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Live Pricing on Active Sessions</span>
+              </label>
+              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+                <input type="checkbox" checked={preferences.auto_qr_billing !== false} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <span className="text-sm font-semibold text-text-secondary">Show QR Billing Popup automatically when session ends</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
                 <input type="checkbox" checked={preferences.show_member_details} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
@@ -4093,11 +4255,13 @@ function DashboardContent() {
                     if (overdueSession && overdueSession.id === endSessionData.session.id) {
                       setOverdueSession(null);
                     }
-                    if (!isCredit && res?.sessionResult) {
+                    if (!isCredit && res?.sessionResult && (preferences as any).auto_qr_billing !== false) {
                       setFinalQRData({
                         table_id: endSessionData.session.table_id,
                         game_type: endSessionData.session.game_type,
                         cost: res.sessionResult.cost,
+                        member_id: endSessionData.session.member_id,
+                        session_id: endSessionData.session.id
                       });
                     }
                   }}
@@ -4144,9 +4308,36 @@ function DashboardContent() {
               
               <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-2">Scan to Pay</p>
               
-              <button onClick={() => setFinalQRData(null)} className="mt-4 w-full py-3 bg-[#16231E] hover:bg-[#1C2A29] text-white border border-[#274036] rounded-xl font-bold transition-colors">
-                Close
-              </button>
+              <div className="w-full flex flex-col gap-2 mt-4">
+                <button onClick={() => setFinalQRData(null)} className="w-full py-3 bg-[#16231E] hover:bg-[#1C2A29] text-white border border-[#274036] rounded-xl font-bold transition-colors">
+                  Close
+                </button>
+                {finalQRData.member_id && (
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/qkhata/convert', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ session_id: finalQRData.session_id, business_id: businessId })
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          toast.success('Successfully transferred to QKhata');
+                          setFinalQRData(null);
+                        } else {
+                          toast.error(data.error || 'Failed to transfer to QKhata');
+                        }
+                      } catch (e) {
+                        toast.error('Failed to transfer to QKhata');
+                      }
+                    }}
+                    className="w-full py-3 bg-warning text-black font-extrabold text-sm uppercase rounded-xl hover:bg-yellow-500 transition-colors shadow-lg shadow-warning/20"
+                  >
+                    Pay on Credit (QKhata)
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

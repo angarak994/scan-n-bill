@@ -5,10 +5,5 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 
 // We use the service role key to bypass RLS in the API routes.
 export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { persistSession: false },
-  global: {
-    fetch: (url, options) => {
-      return fetch(url, { ...options, cache: 'no-store' });
-    }
-  }
+  auth: { persistSession: false }
 });

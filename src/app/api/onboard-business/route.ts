@@ -4,20 +4,9 @@ import QRCode from 'qrcode';
 import { businessManager } from '@/lib/businessManager';
 import { normalizePhone } from '@/lib/utils/phoneValidation';
 import { initializeGoogleSheet } from '@/lib/googleSheets';
-
-const getSheetsClient = () => {
-  let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
-  privateKey = privateKey.replace(/^"|"$|'^|'$/g, '').replace(/\\n/g, '\n');
-
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: privateKey,
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  return google.sheets({ version: 'v4', auth });
-};
+import bcrypt from 'bcryptjs';
+import { setSession } from '@/lib/auth';
+import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(request: Request) {
   try {
@@ -33,7 +22,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Contact number must be exactly 10 digits' }, { status: 400 });
     }
 
-    // Extract ID if user pasted full URL
     let finalSheetId = google_sheet_id.trim();
     if (finalSheetId.includes('/d/')) {
       const match = finalSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -42,15 +30,17 @@ export async function POST(request: Request) {
       }
     }
 
-    // Verify Google Sheet and Inject Headers if empty
     try {
       await initializeGoogleSheet(finalSheetId);
     } catch (err: any) {
-      console.error("Google Sheets API Error:", err?.message || err);
-      return NextResponse.json({ error: `Google Sheets Error: ${err?.message || 'Invalid ID or missing permissions. Share it with the service account.'}` }, { status: 400 });
+      console.warn("Google Sheets API Initialization Warning (Non-Fatal):", err?.message || err);
     }
 
-    // Register Business in Supabase
+    const hashedPin = await bcrypt.hash(dashboard_pin.toString(), 10);
+    const dynamicTables = (tables && tables.length > 0) ? tables : [
+      { name: 'Table 1', id: 'Table 1', type: 'general' }
+    ];
+
     const businessId = await businessManager.registerBusiness({
       business_name,
       owner_name,
@@ -59,23 +49,30 @@ export async function POST(request: Request) {
       google_sheet_id: finalSheetId,
       business_type,
       pricing_rules,
-      tables,
-      dashboard_pin,
+      tables: dynamicTables,
+      dashboard_pin: hashedPin,
       menu_items,
       created_at: new Date().toISOString()
     });
 
-    // Generate QRs
+    const { data: growthPlan } = await supabase.from('subscription_plans').select('id').eq('name', 'Growth').single();
+    if (growthPlan) {
+       await supabase.from('business_subscriptions').insert([{
+          business_id: businessId,
+          plan_id: growthPlan.id,
+          status: 'trialing',
+          current_period_end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+       }]);
+    }
+
+    await setSession(businessId, 'owner');
+
     const origin = request.headers.get('origin') || 'https://billiards-qr-sessions.vercel.app';
-    
-    // Use dynamic tables or fallback if none provided
-    const dynamicTables = (tables && tables.length > 0) ? tables : [
-      { name: 'Table 1', id: 'Table 1', type: 'general' }
-    ];
+    const businessSlug = business_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
     const qrs = await Promise.all(dynamicTables.map(async (t: any) => {
       const tableId = t.id || t.table_id;
-      const url = `${origin}/session?table=${encodeURIComponent(tableId)}&type=${t.type}&b=${businessId}`;
+      const url = `${origin}/qr/${businessSlug}/${encodeURIComponent(tableId)}`;
       const dataUrl = await QRCode.toDataURL(url);
       return {
         name: t.name,
@@ -83,12 +80,11 @@ export async function POST(request: Request) {
       };
     }));
 
-    // Dashboard QR
     const dashboardUrl = `${origin}/dashboard`;
     const dashboardQr = await QRCode.toDataURL(dashboardUrl);
     qrs.push({ name: 'Owner Dashboard', dataUrl: dashboardQr });
 
-    return NextResponse.json({ success: true, businessId, qrs }, { status: 201 });
+    return NextResponse.json({ success: true, businessId, qrs, pin: dashboard_pin }, { status: 201 });
   } catch (err: unknown) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -42,7 +42,11 @@ export async function appendRow(sheetName: string, values: any[], businessId?: s
         }
       });
       return; // Success
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message && error.message.includes('Unable to parse range')) {
+        console.log(`Sheet '${sheetName}' not found. Initializing sheets...`);
+        try { await initializeGoogleSheet(spreadsheetId); } catch (e) { console.error("Failed to init sheets", e); }
+      }
       if (attempt === maxRetries) {
         console.error(`[CRITICAL] Failed to append row to ${sheetName} after ${maxRetries} attempts:`, error);
         // We log the error but we don't throw to avoid crashing the session logic.
@@ -160,7 +164,11 @@ export async function upsertRow(sheetName: string, idColumnIndex: number, unique
         });
       }
       return; // Success
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message && error.message.includes('Unable to parse range')) {
+        console.log(`Sheet '${sheetName}' not found. Initializing sheets...`);
+        try { await initializeGoogleSheet(spreadsheetId); } catch (e) { console.error("Failed to init sheets", e); }
+      }
       if (attempt === maxRetries) {
         console.error(`[CRITICAL] Failed to upsert row to ${sheetName} after ${maxRetries} attempts:`, error);
       } else {

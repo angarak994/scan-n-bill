@@ -34,7 +34,7 @@ export default function Home() {
           <Link href="/login" className="px-4 py-2 sm:px-6 sm:py-2.5 rounded-full font-bold text-sm sm:text-base text-text-secondary hover:text-text-primary hover:bg-bg-surface transition-colors">
             Log In
           </Link>
-          <Link href="/register" className="px-4 py-2 sm:px-6 sm:py-2.5 bg-accent text-white font-bold text-sm sm:text-base rounded-full hover:bg-accent/90 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          <Link href="/onboard" className="px-4 py-2 sm:px-6 sm:py-2.5 bg-accent text-white font-bold text-sm sm:text-base rounded-full hover:bg-accent/90 transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
             Get Started
           </Link>
         </div>

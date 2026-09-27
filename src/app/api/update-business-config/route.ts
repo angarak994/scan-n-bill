@@ -57,6 +57,12 @@ export async function POST(request: Request) {
 
     if (body.qpulse_config !== undefined) updatePayload.qpulse_config = body.qpulse_config;
     if (body.menu_items !== undefined) updatePayload.menu_items = body.menu_items;
+    if (body.google_sheet_id !== undefined) updatePayload.google_sheet_id = body.google_sheet_id;
+    if (body.business_name !== undefined) updatePayload.business_name = body.business_name;
+    if (body.owner_name !== undefined) updatePayload.owner_name = body.owner_name;
+    if (body.contact_number !== undefined) updatePayload.contact_number = body.contact_number;
+    if (body.address !== undefined) updatePayload.address = body.address;
+    if (body.business_type !== undefined) updatePayload.business_type = body.business_type;
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
