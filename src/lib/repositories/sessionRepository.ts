@@ -199,8 +199,7 @@ export const sessionRepository = {
     // We intentionally skip a secondary DB-level activeCheck here to shave off ~150ms of latency,
     // ensuring startSession resolves nearly instantly for the user.
     // -----------------------------------------------------------
-
-
+  },
 
   update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean): Promise<void> => {
     // 1. Update Supabase
