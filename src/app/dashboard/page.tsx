@@ -3234,7 +3234,6 @@ function DashboardContent() {
                     />
                   </div>
                 </div>
-                </div>
                 
                 {/* Specific Time Slot Toggle */}
                 <div className="bg-bg-surface border border-border-theme p-4 rounded-lg">
