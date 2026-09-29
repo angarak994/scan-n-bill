@@ -147,8 +147,19 @@ export async function PATCH(request: Request) {
     // Optional: if resuming a paused promo, we should check for overlaps again if we want to be robust, 
     // but typically paused implies it holds its spot or we allow resume.
     if (status === 'Active' || status === 'Scheduled') {
+      const { parseDateString } = require('@/lib/billing');
       const startT = existing.start_time;
       const endT = end_time || existing.end_time;
+      
+      const sTime = parseDateString(startT);
+      const eTime = parseDateString(endT);
+      const now = Date.now();
+      
+      if (eTime <= now) {
+         return NextResponse.json({ error: 'Cannot resume an expired promotion' }, { status: 400 });
+      }
+      updates.status = sTime > now ? 'Scheduled' : 'Active';
+      
       const { data: overlapping } = await supabase
         .from('promotions')
         .select('id, name')

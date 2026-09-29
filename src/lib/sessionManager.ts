@@ -588,7 +588,7 @@ export async function calculateServerBillingForSession(session: any, businessId:
   const endFull = customEndTime || (isPaused ? session.paused_at : new Date().toISOString());
   
   const { calculateBilling } = require('./billing');
-  return calculateBilling(
+  const result = calculateBilling(
     startFull,
     endFull,
     session.game_type,
@@ -599,4 +599,22 @@ export async function calculateServerBillingForSession(session: any, businessId:
     session.locked_rate,
     session.locked_rate_name
   );
+  
+  let finalFoodCost = session.food_cost || 0;
+  let foodDiscountAmount = 0;
+  if (discount && discount.percent > 0 && discount.applyToFood) {
+    const originalFoodCost = finalFoodCost;
+    finalFoodCost = finalFoodCost * (1 - (discount.percent / 100));
+    finalFoodCost = Math.round(finalFoodCost);
+    foodDiscountAmount = originalFoodCost - finalFoodCost;
+  }
+
+  return {
+    ...result,
+    tableCost: result.cost,
+    foodCost: finalFoodCost,
+    cost: result.cost + finalFoodCost,
+    totalBaseCost: result.baseCost + (session.food_cost || 0),
+    totalDiscountAmount: result.discountAmount + foodDiscountAmount
+  };
 }

@@ -235,7 +235,13 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
             }
             try {
               const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
-              liveCost = res.cost;
+              
+              let finalFoodCost = session.food_cost || 0;
+              if (tableDiscount && tableDiscount.percent > 0 && tableDiscount.applyToFood) {
+                finalFoodCost = finalFoodCost * (1 - (tableDiscount.percent / 100));
+                finalFoodCost = Math.round(finalFoodCost);
+              }
+              liveCost = res.cost + finalFoodCost;
               
               // Calculate exact live ticking duration
               const startMs = new Date(parseDateString(startFull)).getTime();
