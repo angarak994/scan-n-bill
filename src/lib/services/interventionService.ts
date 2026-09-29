@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
-import { calculateBilling } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
 import { logActivityToSheet } from '@/lib/googleSheets';
 

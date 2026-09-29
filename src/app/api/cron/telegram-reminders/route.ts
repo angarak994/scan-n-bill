@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
-import { calculateBilling } from '@/lib/billing';
+import { calculateServerBillingForSession } from '@/lib/sessionManager';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -68,8 +68,7 @@ export async function POST(request: Request) {
           let billText = '₹0';
           let durationText = '0m';
           try {
-            const activeDiscount = business.active_discounts?.[session.table_id];
-            const res = calculateBilling(startFull, new Date().toISOString(), session.game_type, business.pricing_rules, session.num_players || 1, activeDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+            const res = await calculateServerBillingForSession(session, business.id, new Date().toISOString());
             billText = `₹${Math.round(res.cost)}`;
             durationText = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
           } catch(e){}

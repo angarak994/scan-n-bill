@@ -4,7 +4,8 @@ export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
-import { calculateBilling, getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
+import { getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
+import { calculateServerBillingForSession } from '@/lib/sessionManager';
 import { handleSessionIntervention } from '@/lib/services/interventionService';
 import { startSession } from '@/lib/sessionManager';
 import { generateQpulseInsight } from '@/lib/services/qpulseService';
@@ -667,7 +668,7 @@ Time: ${timeStr}`, mainMenu);
           
           let billText = '₹0';
           try {
-            const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+            const res = await calculateServerBillingForSession(session, business.id, endFull);
             billText = `₹${Math.round(res.cost)}`;
           } catch(e){}
 
@@ -1560,7 +1561,7 @@ You can still access other businesses associated with your Telegram account.`, {
         let billText = '₹0';
         let billableDuration = '0m';
         try {
-          const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+          const res = await calculateServerBillingForSession(session, business.id, endFull);
           billText = `₹${Math.round(res.cost)}`;
           billableDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
         } catch(e){}
@@ -1647,7 +1648,7 @@ You can still access other businesses associated with your Telegram account.`, {
                 let breakdownStr = '';
                 let rateText = '₹0/hour';
                 try {
-                  const res = calculateBilling(startFull, endFull, updatedSession.game_type, business.pricing_rules, updatedSession.num_players || 1, undefined, updatedSession.paused_duration_seconds, updatedSession.locked_rate, updatedSession.locked_rate_name);
+                  const res = await calculateServerBillingForSession(updatedSession, business.id, endFull);
                   finalCost = Math.round(res.cost);
                   
                   if ((res as any).breakdown && (res as any).breakdown.length > 1) {
@@ -1711,7 +1712,7 @@ You can still access other businesses associated with your Telegram account.`, {
                   const isPaused = typeof updatedSession.paused_at === 'string' && updatedSession.paused_at.trim() !== '';
                   const startFull = typeof updatedSession.start_time === 'string' && updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
                   const endFull = typeof updatedSession.paused_at === 'string' && updatedSession.paused_at.trim() !== '' ? updatedSession.paused_at : new Date().toISOString();
-                  const res = calculateBilling(startFull, endFull, updatedSession.game_type, business.pricing_rules, updatedSession.num_players || 1, undefined, updatedSession.paused_duration_seconds, updatedSession.locked_rate, updatedSession.locked_rate_name);
+                  const res = await calculateServerBillingForSession(updatedSession, business.id, endFull);
                   billText = `₹${Math.round(res.cost)}`;
                   durationText = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
                 } catch(e){}
@@ -1800,7 +1801,7 @@ You can still access other businesses associated with your Telegram account.`, {
           
           let billText = '0';
           try {
-             const res = calculateBilling(startFull, endFull, session.game_type, business.pricing_rules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+             const res = await calculateServerBillingForSession(session, business.id, endFull);
              billText = `${Math.round(res.cost)}`;
           } catch(e){}
           

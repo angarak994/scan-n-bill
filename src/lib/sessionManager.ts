@@ -23,15 +23,29 @@ async function getCachedActivePromo(businessId: string) {
   if (cached && cached.expiresAt > now) {
     return cached.promo;
   }
-  const { data: activePromos } = await supabase
+  const { data: promos } = await supabase
     .from('promotions')
-    .select('id, discount_percent, end_time, time_slot_start, time_slot_end')
+    .select('id, discount_percent, start_time, end_time, time_slot_start, time_slot_end, status')
     .eq('business_id', businessId)
-    .eq('status', 'Active')
-    .limit(1);
-  const promo = activePromos?.[0];
-  promoCache.set(businessId, { promo, expiresAt: now + PROMO_CACHE_TTL_MS });
-  return promo;
+    .in('status', ['Active', 'Scheduled']); // Fetch both in case status hasn't synced yet
+    
+  if (promos && promos.length > 0) {
+    // Find one that is ACTUALLY active right now using pure time math (ignores delayed DB status)
+    const { parseDateString } = require('./billing');
+    const validPromo = promos.find(p => {
+      const sTime = parseDateString(p.start_time);
+      const eTime = parseDateString(p.end_time);
+      return sTime <= now && eTime > now && p.status !== 'Paused' && p.status !== 'Cancelled';
+    });
+    
+    if (validPromo) {
+      promoCache.set(businessId, { promo: validPromo, expiresAt: now + PROMO_CACHE_TTL_MS });
+      return validPromo;
+    }
+  }
+  
+  promoCache.set(businessId, { promo: undefined, expiresAt: now + PROMO_CACHE_TTL_MS });
+  return undefined;
 }
 
 export class ApiError extends Error {
@@ -150,42 +164,26 @@ export async function startSession(table_id: string, game_type: GameType, custom
   }
 }
 
-export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash', dueDate?: string) {
-  const session = await sessionRepository.findActiveByTable(table_id, businessId);
-  if (!session || !session.id) {
-    throw new ApiError(404, 'No active session found for this table');
+export async function resolveSessionDiscount(session: any, businessId: string, business: any) {
+  let discount = business?.active_discounts?.[session.table_id];
+  const now = new Date();
+  
+  // Use parseDateString from billing.ts to fix timezone bugs
+  const { parseDateString } = require('./billing');
+
+  // Fetch active promotion from db
+  const activePromo = await getCachedActivePromo(businessId);
+  const isPromoValid = activePromo && parseDateString(activePromo.end_time) > now.getTime();
+  if (!discount && isPromoValid) {
+    discount = { 
+      percent: activePromo.discount_percent, 
+      applyToFood: false,
+      time_slot_start: activePromo.time_slot_start || undefined,
+      time_slot_end: activePromo.time_slot_end || undefined
+    };
+    (session as any)._appliedPromoId = activePromo.id;
   }
 
-  const now = new Date();
-  const timeStr = now.toISOString();
-  const end_time = timeStr;
-  
-  // Backward compatibility: If it's an old session, start_time is just "07:35 PM". We need to combine it with the date.
-  const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-  const endFull = end_time;
-  
-  // Fetch business to get pricing and discounts
-  const business = businessId ? await businessManager.getBusiness(businessId) : null;
-  let pricingRules;
-  let discount;
-  if (business) {
-    pricingRules = business.pricing_rules;
-    discount = business.active_discounts?.[table_id];
-    
-    // Fetch active promotion from db
-    const activePromo = await getCachedActivePromo(business.id || '');
-    const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > now.getTime();
-    if (!discount && isPromoValid) {
-      discount = { 
-        percent: activePromo.discount_percent, 
-        applyToFood: false,
-        time_slot_start: activePromo.time_slot_start || undefined,
-        time_slot_end: activePromo.time_slot_end || undefined
-      };
-      (session as any)._appliedPromoId = activePromo.id;
-    }
-  }
-  
   // Membership Discount Logic via Native DB
   try {
     if (businessId) {
@@ -205,27 +203,22 @@ export async function endSession(table_id: string, businessId?: string, source: 
       }
         
       if (member && member.status === 'Active') {
-        // Define tier discounts
         let memberDiscountPercent = 0;
         if (member.tier === 'Elite') memberDiscountPercent = 30;
         else if (member.tier === 'VIP') memberDiscountPercent = 20;
         else if (member.tier === 'Pro') memberDiscountPercent = 10;
         else if (member.tier === 'Standard') memberDiscountPercent = 5;
         
-        // Use member discount if better than promo (and unset promo flag since it wasn't the winning discount)
         if (!discount || memberDiscountPercent > discount.percent) {
            discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
            (session as any)._appliedPromoId = undefined; // Promo didn't win
         }
-
-        // We will increment total_spend and loyalty_points later after final math
         (session as any)._matchedMemberId = member.id;
       }
 
       if (session.member_id && member) {
           (session as any)._isRegisteredCustomer = true;
       } else {
-          // Check if they exist in the customers table for QKhata eligibility
           const { data: customers } = await supabase
             .from('customers')
             .select('id, name, phone')
@@ -243,6 +236,29 @@ export async function endSession(table_id: string, businessId?: string, source: 
     }
   } catch (e) {
     console.error('Membership Lookup Error:', e);
+  }
+  return discount;
+}
+
+export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash', dueDate?: string) {
+  const session = await sessionRepository.findActiveByTable(table_id, businessId);
+  if (!session || !session.id) {
+    throw new ApiError(404, 'No active session found for this table');
+  }
+
+  const now = new Date();
+  const timeStr = now.toISOString();
+  const end_time = timeStr;
+  
+  const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+  const endFull = end_time;
+  
+  const business = businessId ? await businessManager.getBusiness(businessId) : null;
+  let pricingRules = business ? business.pricing_rules : undefined;
+  
+  let discount;
+  if (business && businessId) {
+    discount = await resolveSessionDiscount(session, businessId, business);
   }
   
   let totalPausedSecs = session.paused_duration_seconds || 0;
@@ -488,12 +504,8 @@ export async function getTableStatus(table_id: string, businessId?: string) {
         }
       }
 
-      // Fetch active promotion
-      const activePromo = await getCachedActivePromo(businessId);
-      const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
-      if (!discount && isPromoValid) {
-        discount = { percent: activePromo.discount_percent, applyToFood: false };
-      }
+      // Fetch active promotion using central logic (without membership overhead for polling, unless we cache it, but let's just use resolveSessionDiscount)
+      discount = await resolveSessionDiscount(activeSession, businessId, business);
     }
 
     return {
@@ -549,12 +561,8 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       }
     }
 
-    // Fetch active promotion
-    const activePromo = await getCachedActivePromo(businessId);
-    const isPromoValid = activePromo && new Date(activePromo.end_time).getTime() > Date.now();
-    if (!discount && isPromoValid) {
-      discount = { percent: activePromo.discount_percent, applyToFood: false };
-    }
+    // Fetch active promotion using central logic for idle state (using a dummy session)
+    discount = await resolveSessionDiscount({ table_id, customer_name: '' }, businessId, business);
   }
 
   return { 
@@ -569,4 +577,26 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     qpayConfig,
     paymentQrConfig,
   };
+}
+
+export async function calculateServerBillingForSession(session: any, businessId: string, customEndTime?: string) {
+  const business = await businessManager.getBusiness(businessId);
+  const discount = await resolveSessionDiscount(session, businessId, business);
+  
+  const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
+  const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+  const endFull = customEndTime || (isPaused ? session.paused_at : new Date().toISOString());
+  
+  const { calculateBilling } = require('./billing');
+  return calculateBilling(
+    startFull,
+    endFull,
+    session.game_type,
+    business?.pricing_rules,
+    session.num_players || 1,
+    discount,
+    session.paused_duration_seconds,
+    session.locked_rate,
+    session.locked_rate_name
+  );
 }

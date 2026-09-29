@@ -297,7 +297,8 @@ function DashboardContent() {
   
   const [promoStartDate, setPromoStartDate] = useState(getLocalTodayString());
   const [promoStartTime, setPromoStartTime] = useState(getLocalTimeString());
-  const [promoDurationDays, setPromoDurationDays] = useState('1');
+  const [promoEndDate, setPromoEndDate] = useState(getLocalTodayString());
+  const [promoEndTime, setPromoEndTime] = useState('23:59');
   const [isUpdatingPromo, setIsUpdatingPromo] = useState(false);
   const [isUpdatingGoals, setIsUpdatingGoals] = useState(false);
 
@@ -587,27 +588,8 @@ function DashboardContent() {
   const prevCompletedRef = useRef<any[]>([]);
   useEffect(() => {
     if (!data?.completedSessions) return;
-    
-    // Auto QR Billing Popup
-    if (data.pricingRules?.globalSettings?.preferences?.auto_qr_billing !== false) {
-      if (prevCompletedRef.current.length > 0) {
-        const newSessions = data.completedSessions.filter(
-          (s: any) => !prevCompletedRef.current.find(ps => ps.id === s.id)
-        );
-        if (newSessions.length > 0 && !finalQRData) {
-          const latest = newSessions[0];
-          setFinalQRData({
-            table_id: latest.table_id,
-            game_type: latest.game_type,
-            cost: latest.cost,
-            member_id: latest.member_id,
-            session_id: latest.id
-          });
-        }
-      }
-    }
     prevCompletedRef.current = data.completedSessions;
-  }, [data?.completedSessions, data?.pricingRules?.globalSettings?.preferences?.auto_qr_billing, finalQRData]);
+  }, [data?.completedSessions]);
 
   useEffect(() => {
     if (isAuthorized) {
@@ -1357,7 +1339,8 @@ function DashboardContent() {
           discount_percent: Number(promoDiscount), 
           start_date: promoStartDate,
           start_time: promoStartTime,
-          duration_days: Number(promoDurationDays),
+          end_date: promoEndDate,
+          end_time: promoEndTime,
           time_slot_start: promoTimeSlotEnabled ? promoTimeSlotStart : null,
           time_slot_end: promoTimeSlotEnabled ? promoTimeSlotEnd : null
         })
@@ -1690,7 +1673,7 @@ function DashboardContent() {
       highestTurnoverTableText = `Highest turnover: Table ${maxTable} (${maxCount} sessions)`;
     }
   }
-  const activePromo: ActivePromotion | null = data.activePromotions?.find((p: any) => p.status === 'Active' && new Date(p.start_time).getTime() <= now.getTime() && new Date(p.end_time).getTime() > now.getTime()) || null;
+  const activePromo: ActivePromotion | null = data.activePromotions?.find((p: any) => (p.status === 'Active' || p.status === 'Scheduled') && p.status !== 'Paused' && p.status !== 'Cancelled' && parseDateString(p.start_time) <= now.getTime() && parseDateString(p.end_time) > now.getTime()) || null;
   const isPromoValid = !!activePromo;
 
   // Active discount mapping
@@ -1849,7 +1832,7 @@ function DashboardContent() {
             <>
               <div className="relative z-10 flex justify-between items-start">
                 <div>
-                  <span className="inline-block px-3 py-1 bg-warning text-white text-[10px] font-bold tracking-widest uppercase rounded-full mb-4 animate-pulse">Live Promotion</span>
+                  <span className="inline-block px-3 py-1 bg-success/20 text-success text-[10px] font-bold tracking-widest uppercase rounded-full mb-4 animate-pulse">● Active Promotion</span>
                   <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">{activePromo.name}</h2>
                   <h3 className="text-3xl md:text-4xl font-bold text-accent">{activePromo.discount_percent}% Off Tables</h3>
                 </div>
@@ -3207,16 +3190,6 @@ function DashboardContent() {
                     className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Days) <span className="text-danger">*</span></label>
-                  <input 
-                    type="number" 
-                    required min="1" max="365"
-                    value={promoDurationDays}
-                    onChange={e => setPromoDurationDays(e.target.value)}
-                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
-                  />
-                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Date <span className="text-danger">*</span></label>
@@ -3238,6 +3211,29 @@ function DashboardContent() {
                       className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">End Date <span className="text-danger">*</span></label>
+                    <input 
+                      type="date" 
+                      required
+                      value={promoEndDate}
+                      onChange={e => setPromoEndDate(e.target.value)}
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">End Time <span className="text-danger">*</span></label>
+                    <input 
+                      type="time" 
+                      required
+                      value={promoEndTime}
+                      onChange={e => setPromoEndTime(e.target.value)}
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    />
+                  </div>
+                </div>
                 </div>
                 
                 {/* Specific Time Slot Toggle */}
@@ -3281,33 +3277,43 @@ function DashboardContent() {
                 {/* Live Preview */}
                 <div className="bg-bg-surface border border-border-theme p-4 rounded-lg text-sm flex flex-col gap-1">
                   {(() => {
-                    if (!promoStartDate || !promoStartTime || !promoDurationDays) return <span className="text-text-secondary">Fill all fields to see preview</span>;
-                    const istOffset = 5.5 * 60 * 60 * 1000;
-                    const [year, month, day] = promoStartDate.split('-').map(Number);
-                    const [hour, min] = promoStartTime.split(':').map(Number);
-                    const localTimeUtc = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
-                    const startDateTime = new Date(localTimeUtc.getTime() - istOffset);
-                    const endDateTime = new Date(startDateTime.getTime() + Number(promoDurationDays) * 24 * 60 * 60 * 1000);
-                    const isPastEnd = endDateTime <= new Date();
-                    const initialStatus = startDateTime > new Date() ? 'Scheduled' : 'Active';
-                    return (
-                      <>
-                        <div className="flex justify-between items-center"><span className="text-text-secondary">Starts:</span> <span className="font-bold">{startDateTime.toLocaleString()}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-text-secondary">Ends:</span> <span className="font-bold">{endDateTime.toLocaleString()}</span></div>
-                        <div className="flex justify-between items-center mt-2 border-t border-border-light pt-2">
-                          <span className="text-text-secondary">Initial Status:</span>
-                          <span className={`font-bold px-2 py-0.5 rounded text-xs ${isPastEnd ? 'bg-danger/20 text-danger' : (initialStatus === 'Active' ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent')}`}>
-                            {isPastEnd ? 'Invalid (Past End Date)' : initialStatus}
-                          </span>
-                        </div>
-                        {promoTimeSlotEnabled && promoTimeSlotStart && promoTimeSlotEnd && (
-                          <div className="flex justify-between items-center mt-1 border-t border-border-light/50 pt-1">
-                            <span className="text-text-secondary">Daily Window:</span>
-                            <span className="font-bold text-accent">{promoTimeSlotStart} - {promoTimeSlotEnd}</span>
+                    if (!promoStartDate || !promoStartTime || !promoEndDate || !promoEndTime) return <span className="text-text-secondary">Fill all fields to see preview</span>;
+                    try {
+                      const istOffset = 5.5 * 60 * 60 * 1000;
+                      
+                      const [year, month, day] = promoStartDate.split('-').map(Number);
+                      const [hour, min] = promoStartTime.split(':').map(Number);
+                      const localTimeUtc = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
+                      const startDateTime = new Date(localTimeUtc.getTime() - istOffset);
+                      
+                      const [endYear, endMonth, endDay] = promoEndDate.split('-').map(Number);
+                      const [endHour, endMin] = promoEndTime.split(':').map(Number);
+                      const endLocalTimeUtc = new Date(Date.UTC(endYear, endMonth - 1, endDay, endHour, endMin, 0));
+                      const endDateTime = new Date(endLocalTimeUtc.getTime() - istOffset);
+                      
+                      const isPastEnd = endDateTime <= new Date();
+                      const initialStatus = startDateTime > new Date() ? 'Scheduled' : 'Active';
+                      return (
+                        <>
+                          <div className="flex justify-between items-center"><span className="text-text-secondary">Starts:</span> <span className="font-bold">{startDateTime.toLocaleString()}</span></div>
+                          <div className="flex justify-between items-center"><span className="text-text-secondary">Ends:</span> <span className="font-bold">{endDateTime.toLocaleString()}</span></div>
+                          <div className="flex justify-between items-center mt-2 border-t border-border-light pt-2">
+                            <span className="text-text-secondary">Initial Status:</span>
+                            <span className={`font-bold px-2 py-0.5 rounded text-xs ${isPastEnd ? 'bg-danger/20 text-danger' : (initialStatus === 'Active' ? 'bg-success/20 text-success' : 'bg-accent/20 text-accent')}`}>
+                              {isPastEnd ? 'Invalid (Past End Date)' : initialStatus}
+                            </span>
                           </div>
-                        )}
-                      </>
-                    );
+                          {promoTimeSlotEnabled && promoTimeSlotStart && promoTimeSlotEnd && (
+                            <div className="flex justify-between items-center mt-1 border-t border-border-light/50 pt-1">
+                              <span className="text-text-secondary">Daily Window:</span>
+                              <span className="font-bold text-accent">{promoTimeSlotStart} - {promoTimeSlotEnd}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    } catch (e) {
+                      return <span className="text-danger text-sm">Invalid date format</span>;
+                    }
                   })()}
                 </div>
                 <div className="flex gap-4 mt-2">
@@ -3323,16 +3329,25 @@ function DashboardContent() {
                   <h3 className="text-lg font-bold mb-4">Current & Past Promotions</h3>
                   <div className="flex flex-col gap-3">
                     {data.activePromotions.map(promo => {
-                      const statusColor = promo.status === 'Active' ? 'bg-success/20 text-success' : 
-                                          promo.status === 'Scheduled' ? 'bg-accent/20 text-accent' : 
-                                          promo.status === 'Paused' ? 'bg-warning/20 text-warning' : 
+                      let displayStatus = promo.status;
+                      const sTime = parseDateString((promo as any).start_time);
+                      const eTime = parseDateString((promo as any).end_time);
+                      const currTime = now.getTime();
+                      if (displayStatus === 'Active' || displayStatus === 'Scheduled') {
+                        if (eTime <= currTime) displayStatus = 'Expired';
+                        else if (sTime <= currTime) displayStatus = 'Active';
+                        else displayStatus = 'Scheduled';
+                      }
+                      const statusColor = displayStatus === 'Active' ? 'bg-success/20 text-success' : 
+                                          displayStatus === 'Scheduled' ? 'bg-accent/20 text-accent' : 
+                                          displayStatus === 'Paused' ? 'bg-warning/20 text-warning' : 
                                           'bg-bg-surface text-text-secondary';
                       return (
                         <div key={promo.id} className="border border-border-theme bg-bg-surface rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-bold text-text-primary">{(promo as any).name}</span>
-                              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold ${statusColor}`}>{promo.status}</span>
+                              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold ${statusColor}`}>{displayStatus}</span>
                             </div>
                             <div className="text-xs text-text-secondary flex gap-2">
                               <span><strong className="text-text-primary">{promo.discount_percent}%</strong> off</span>
@@ -3346,16 +3361,16 @@ function DashboardContent() {
                             </div>
                           )}
                           <div className="flex flex-wrap gap-2">
-                            {promo.status === 'Scheduled' && (
+                            {displayStatus === 'Scheduled' && (
                               <button onClick={() => handleUpdatePromoStatus(promo.id, 'Cancelled')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">Cancel</button>
                             )}
-                            {promo.status === 'Active' && (
+                            {displayStatus === 'Active' && (
                               <>
                                 <button onClick={() => handleUpdatePromoStatus(promo.id, 'Paused')} disabled={isUpdatingPromo} className="text-xs bg-warning/10 text-warning border border-warning/30 px-3 py-1.5 rounded hover:bg-warning/20 font-bold transition-colors">Pause</button>
                                 <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End Early</button>
                               </>
                             )}
-                            {promo.status === 'Paused' && (
+                            {displayStatus === 'Paused' && (
                               <>
                                 <button onClick={() => handleUpdatePromoStatus(promo.id, 'Active')} disabled={isUpdatingPromo} className="text-xs bg-success/10 text-success border border-success/30 px-3 py-1.5 rounded hover:bg-success/20 font-bold transition-colors">Resume</button>
                                 <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End</button>

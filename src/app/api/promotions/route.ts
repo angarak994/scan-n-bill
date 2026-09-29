@@ -34,9 +34,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { title, discount_percent, start_date, start_time, duration_days, time_slot_start, time_slot_end } = await request.json();
+    const { title, discount_percent, start_date, start_time, end_date, end_time, time_slot_start, time_slot_end } = await request.json();
 
-    if (!title || !discount_percent || !start_date || !start_time || !duration_days) {
+    if (!title || !discount_percent || !start_date || !start_time || !end_date || !end_time) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -48,7 +48,11 @@ export async function POST(request: Request) {
     // Construct exact local time in UTC, then shift it back by offset to get true UTC
     const localTimeUtc = new Date(Date.UTC(year, month - 1, day, hour, min, 0));
     const startDateTime = new Date(localTimeUtc.getTime() - istOffset);
-    const endDateTime = new Date(startDateTime.getTime() + Number(duration_days) * 24 * 60 * 60 * 1000);
+
+    const [endYear, endMonth, endDay] = end_date.split('-').map(Number);
+    const [endHour, endMin] = end_time.split(':').map(Number);
+    const endLocalTimeUtc = new Date(Date.UTC(endYear, endMonth - 1, endDay, endHour, endMin, 0));
+    const endDateTime = new Date(endLocalTimeUtc.getTime() - istOffset);
 
     const now = new Date();
     if (endDateTime <= now) {
