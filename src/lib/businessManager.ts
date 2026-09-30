@@ -29,6 +29,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 const businessCache = new Map<string, CacheEntry>();
+const slugCache = new Map<string, { id: string, expiresAt: number }>();
 const CACHE_TTL_MS = 60000; // 1 minute
 
 export const businessManager = {
@@ -119,24 +120,34 @@ export const businessManager = {
   },
 
   getBusinessBySlug: async (slug: string): Promise<BusinessData | null> => {
+    const normalizedSlug = slug.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    
+    // Check if slug is a valid UUID
+    if (slug.length === 36) {
+        return businessManager.getBusiness(slug);
+    }
+    
+    // Check cache first
+    const now = Date.now();
+    const cachedId = slugCache.get(normalizedSlug);
+    if (cachedId && cachedId.expiresAt > now) {
+        return businessManager.getBusiness(cachedId.id);
+    }
+
     const { data: businesses, error } = await supabase
       .from('businesses')
       .select('id, business_name');
 
     if (error || !businesses) return null;
-
-    const normalizedSlug = slug.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     
     for (const b of businesses) {
       const bSlug = b.business_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      // Cache all slugs proactively to save future queries
+      slugCache.set(bSlug, { id: b.id, expiresAt: now + CACHE_TTL_MS });
+      
       if (bSlug === normalizedSlug) {
         return businessManager.getBusiness(b.id);
       }
-    }
-    
-    // Fallback: try matching UUID if slug was actually the ID
-    if (slug.length === 36) {
-        return businessManager.getBusiness(slug);
     }
     
     return null;

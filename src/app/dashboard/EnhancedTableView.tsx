@@ -7,8 +7,7 @@ interface EnhancedTableViewProps {
   preferences: any;
   pricingRules: any;
   currentDiscounts: any;
-  activePromo: any;
-  isPromoValid: boolean;
+  activePromotions: any[];
   menuItems: any[];
   businessId: string;
   isPrivacyMode: boolean;
@@ -19,7 +18,7 @@ interface EnhancedTableViewProps {
   onStartSession: (tableId: string, gameType: string) => void;
   onReserveTable: (tableId: string, gameType: string) => void;
   onUpdateTables: (tables: any[]) => Promise<void>;
-  calculateBilling: (start: string, end: string, gameType: string, pricingRules: any, players: number, discount: any, pausedSecs: number, lockedRate?: number, lockedRateName?: string) => { cost: number, duration: string, slabs_applied: string };
+  calculateBilling: (start: string, end: string, gameType: string, pricingRules: any, players: number, discount: any, pausedSecs: number, lockedRate?: number, lockedRateName?: string, activePromotions?: any[]) => { cost: number, baseCost: number, discountAmount: number, duration: string, slabs_applied: string, breakdown?: any[] };
   parseDateString: (dateStr: string) => number;
   formatTimeReadable: (timeStr: string, includeSecs?: boolean, dateStr?: string) => string;
   getDisplayName: (name: string, memberId?: string) => string;
@@ -33,7 +32,7 @@ interface EnhancedTableViewProps {
 export function EnhancedTableView(props: EnhancedTableViewProps) {
   const {
     tables, activeSessions, preferences, pricingRules, currentDiscounts,
-    activePromo, isPromoValid, menuItems, businessId, isPrivacyMode,
+    activePromotions, menuItems, businessId, isPrivacyMode,
     formatINR, onIntervention, onEndSession, onStartSession, onReserveTable, onUpdateTables,
     calculateBilling, getDisplayName, getGlobalNow, subscribeToTimer, useSyncExternalStore,
     parseDateString
@@ -232,16 +231,8 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
             const endFull = isPaused ? session.paused_at : now.toISOString();
             
             tableDiscount = currentDiscounts?.[table.id] || undefined;
-            if (!tableDiscount && isPromoValid && activePromo) {
-              tableDiscount = { 
-                percent: activePromo.discount_percent, 
-                applyToFood: false,
-                time_slot_start: activePromo.time_slot_start || undefined,
-                time_slot_end: activePromo.time_slot_end || undefined
-              };
-            }
             try {
-              const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
+              const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
               
               liveDiscount += (res.discountAmount || 0);
               let finalFoodCost = session.food_cost || 0;

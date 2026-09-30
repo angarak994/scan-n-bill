@@ -127,10 +127,11 @@ export function calculateCost(
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean; time_slot_start?: string; time_slot_end?: string },
+  manualDiscount?: { percent: number; applyToFood: boolean; },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
-  lockedRateName?: string
+  lockedRateName?: string,
+  activePromotions: any[] = []
 ): { cost: number, baseCost: number, discountAmount: number, slabsApplied: string, breakdown?: { startMs: number; endMs: number; rate: number; cost: number; slabName: string }[] } {
   const elapsedMs = Math.max(0, endMs - startMs);
   const pausedMs = Math.max(0, (pausedDurationSecs || 0) * 1000);
@@ -149,21 +150,21 @@ export function calculateCost(
     billedDurationMinutes = Math.ceil(durationMinutes / 15) * 15;
   }
   
-  const enablePeakRules = pricing?.globalSettings?.enable_peak_rules ?? true; // Default to true based on user request
+  const enablePeakRules = pricing?.globalSettings?.enable_peak_rules ?? true;
 
   if (enablePeakRules) {
-    // The 10-Minute Trap: If they play between 50 and 60 minutes, bump them to exactly 60.
+    // The 10-Minute Trap
     if (billedDurationMinutes >= 50 && billedDurationMinutes <= 60) {
       billedDurationMinutes = 60;
     }
   }
 
   let unpausedTotalCost = 0;
+  let noPromoTotalCost = 0; // For tracking base cost before system promotions
   const appliedSlabs = new Set<string>();
   const breakdown: { startMs: number; endMs: number; rate: number; cost: number; slabName: string }[] = [];
 
   // Evaluate rates across the exact full elapsed stay [startMs, endMs].
-  // This accurately captures dynamic rate transitions during the customer's real visits.
   let currentMs = startMs;
   const evaluationEndMs = Math.max(startMs, endMs);
   
@@ -172,32 +173,77 @@ export function calculateCost(
       const nextMs = Math.min(currentMs + 60000, evaluationEndMs);
       const chunkHours = (nextMs - currentMs) / 3600000;
 
-      let rate = 0; let slabName = '';
+      let rate = 0; 
+      let slabName = '';
+      let isPromoApplied = false;
+
+      // Base rate calculation (no promo)
+      let rawBaseRate = 0;
       if (lockedRate !== undefined && lockedRate !== null) {
-        rate = Number(lockedRate); slabName = lockedRateName || 'Dynamic Rate';
+        rawBaseRate = Number(lockedRate);
       } else {
-        const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
-        rate = cr.rate; slabName = cr.slabName;
+        rawBaseRate = getCurrentRate(gameType, currentMs, pricing, numPlayers).rate;
       }
-      
-      // Happy Hour per-minute discount logic
-      if (discount && discount.percent > 0 && discount.time_slot_start && discount.time_slot_end) {
-        const currentHour = new Date(currentMs + IST_OFFSET).getUTCHours();
-        const currentMin = new Date(currentMs + IST_OFFSET).getUTCMinutes();
-        const currentTotalMins = currentHour * 60 + currentMin;
-        const [startH, startM] = discount.time_slot_start.split(':').map(Number);
-        const [endH, endM] = discount.time_slot_end.split(':').map(Number);
-        const startTotalMins = startH * 60 + startM;
-        const endTotalMins = endH * 60 + endM;
+      noPromoTotalCost += (chunkHours * rawBaseRate);
+
+      // Check for active system promotions for this exact minute
+      for (const promo of activePromotions) {
+        if (promo.status !== 'Active' && promo.status !== 'Scheduled') continue;
         
-        if (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins) {
-          rate = rate * (1 - (discount.percent / 100));
-          slabName += ` (${discount.percent}% HH Off)`;
+        const pStart = parseDateString(promo.start_time);
+        const pEnd = parseDateString(promo.end_time);
+        
+        if (currentMs >= pStart && currentMs < pEnd) {
+          // Check Time Slot (Happy Hour constraint within the promo)
+          if (promo.time_slot_start && promo.time_slot_end) {
+            const currentHour = new Date(currentMs + IST_OFFSET).getUTCHours();
+            const currentMin = new Date(currentMs + IST_OFFSET).getUTCMinutes();
+            const currentTotalMins = currentHour * 60 + currentMin;
+            const [startH, startM] = promo.time_slot_start.split(':').map(Number);
+            const [endH, endM] = promo.time_slot_end.split(':').map(Number);
+            if (currentTotalMins < (startH * 60 + startM) || currentTotalMins >= (endH * 60 + endM)) {
+              continue; // Outside daily happy hour window
+            }
+          }
+          
+          // Check game type constraint
+          if (promo.applicable_game_types && promo.applicable_game_types.length > 0) {
+             if (!promo.applicable_game_types.includes(gameType?.toLowerCase() || '')) continue;
+          }
+
+          // Apply promotion
+          if (promo.promo_type === 'fixed_price' && promo.fixed_price !== null) {
+             rate = Number(promo.fixed_price);
+             slabName = `Promo: ${promo.name} (Fixed Rate)`;
+             isPromoApplied = true;
+             break;
+          } else if (promo.promo_type === 'fixed_amount' && promo.fixed_amount_discount !== null) {
+             rate = Math.max(0, rawBaseRate - Number(promo.fixed_amount_discount));
+             slabName = `Promo: ${promo.name} (-₹${promo.fixed_amount_discount})`;
+             isPromoApplied = true;
+             break;
+          } else {
+             const discountPercent = Number(promo.discount_percent || 0);
+             if (discountPercent > 0) {
+               rate = rawBaseRate * (1 - (discountPercent / 100));
+               slabName = `Promo: ${promo.name} (${discountPercent}% Off)`;
+               isPromoApplied = true;
+               break;
+             }
+          }
+        }
+      }
+
+      if (!isPromoApplied) {
+        if (lockedRate !== undefined && lockedRate !== null) {
+          rate = Number(lockedRate); slabName = lockedRateName || 'Dynamic Rate';
+        } else {
+          const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
+          rate = cr.rate; slabName = cr.slabName;
         }
       }
 
       appliedSlabs.add(slabName);
-      
       const chunkCost = chunkHours * rate;
       unpausedTotalCost += chunkCost;
       
@@ -211,19 +257,22 @@ export function calculateCost(
       currentMs = nextMs;
     }
   } else {
+    // 0 elapsed time
     const cr = lockedRate !== undefined && lockedRate !== null
       ? { rate: Number(lockedRate), slabName: lockedRateName || 'Dynamic Rate' }
       : getCurrentRate(gameType, startMs, pricing, numPlayers);
     appliedSlabs.add(cr.slabName);
   }
 
-  // Proportional rate scaling: exactly maps active billable hours to the rate structure,
-  // preventing revenue loss, skipped time, or rounding drift when sessions are paused/resumed.
   const elapsedHours = (evaluationEndMs - startMs) / 3600000;
   const billedHours = billedDurationMinutes / 60;
+  
   let totalCost = 0;
+  let baseCost = 0;
+  
   if (elapsedHours > 0) {
     totalCost = (unpausedTotalCost / elapsedHours) * billedHours;
+    baseCost = (noPromoTotalCost / elapsedHours) * billedHours;
   }
 
   // Apply rounding rules
@@ -232,51 +281,28 @@ export function calculateCost(
 
   if (roundingMode === 'nearest_5') {
     finalCost = Math.round(totalCost / 5) * 5;
+    baseCost = Math.round(baseCost / 5) * 5;
   } else if (roundingMode === 'up_5') {
     finalCost = Math.ceil(totalCost / 5) * 5;
+    baseCost = Math.ceil(baseCost / 5) * 5;
   } else if (roundingMode === 'down_5') {
     finalCost = Math.floor(totalCost / 5) * 5;
+    baseCost = Math.floor(baseCost / 5) * 5;
   } else if (roundingMode === 'none') {
-    finalCost = Math.round(totalCost); // Round to nearest ₹1 to avoid weird decimals
+    finalCost = Math.round(totalCost);
+    baseCost = Math.round(baseCost);
   }
 
-  let baseCost = finalCost;
-  let discountAmount = 0;
+  let discountAmount = Math.max(0, baseCost - finalCost);
   
-  // Apply Flat Session Discount (only if not a specific Happy Hour time slot, which was already applied per-minute)
-  if (discount && discount.percent > 0 && (!discount.time_slot_start || !discount.time_slot_end)) {
-    finalCost = finalCost * (1 - (discount.percent / 100));
+  // Apply Flat Session Manual Discount (on top of promos)
+  if (manualDiscount && manualDiscount.percent > 0) {
+    const finalBeforeManual = finalCost;
+    finalCost = finalCost * (1 - (manualDiscount.percent / 100));
     finalCost = Math.round(finalCost);
-    discountAmount = baseCost - finalCost;
-  } else if (discount && discount.percent > 0 && discount.time_slot_start && discount.time_slot_end) {
-    // For Happy Hour, we already applied it to unpausedTotalCost per-minute.
-    // The finalCost naturally reflects it. We just need to calculate what it *would* have been.
-    let noPromoTotalCost = 0;
-    let curr = startMs;
-    while (curr < evaluationEndMs) {
-      const nextMs = Math.min(curr + 60000, evaluationEndMs);
-      const chunkHours = (nextMs - curr) / 3600000;
-      let rawRate = 0;
-      if (lockedRate !== undefined && lockedRate !== null) {
-        rawRate = Number(lockedRate);
-      } else {
-        const cr = getCurrentRate(gameType, curr, pricing, numPlayers);
-        rawRate = cr.rate;
-      }
-      noPromoTotalCost += (chunkHours * rawRate);
-      curr = nextMs;
-    }
-    
-    if (elapsedHours > 0) {
-      let noPromoCostScaled = (noPromoTotalCost / elapsedHours) * billedHours;
-      if (roundingMode === 'nearest_5') noPromoCostScaled = Math.round(noPromoCostScaled / 5) * 5;
-      else if (roundingMode === 'up_5') noPromoCostScaled = Math.ceil(noPromoCostScaled / 5) * 5;
-      else if (roundingMode === 'down_5') noPromoCostScaled = Math.floor(noPromoCostScaled / 5) * 5;
-      else if (roundingMode === 'none') noPromoCostScaled = Math.round(noPromoCostScaled);
-      
-      baseCost = noPromoCostScaled;
-      discountAmount = Math.max(0, baseCost - finalCost);
-    }
+    // Add the manual discount chunk to the total discountAmount
+    discountAmount += (finalBeforeManual - finalCost);
+    appliedSlabs.add(`Manual Discount (${manualDiscount.percent}% Off)`);
   }
 
   return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None', breakdown };
@@ -291,10 +317,11 @@ export function calculateBilling(
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  discount?: { percent: number; applyToFood: boolean; time_slot_start?: string; time_slot_end?: string },
+  manualDiscount?: { percent: number; applyToFood: boolean; },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
-  lockedRateName?: string
+  lockedRateName?: string,
+  activePromotions: any[] = []
 ) {
   const startMs = parseDateString(startString);
   const endMs = parseDateString(endString);
@@ -306,7 +333,9 @@ export function calculateBilling(
     throw new Error('endTime cannot be before startTime');
   }
 
-  const { cost, baseCost, discountAmount, slabsApplied, breakdown } = calculateCost(startMs, endMs, gameType, pricing, numPlayers, discount, pausedDurationSecs, lockedRate, lockedRateName);
+  const { cost, baseCost, discountAmount, slabsApplied, breakdown } = calculateCost(
+    startMs, endMs, gameType, pricing, numPlayers, manualDiscount, pausedDurationSecs, lockedRate, lockedRateName, activePromotions
+  );
 
   const totalSeconds = Math.max(0, (endMs - startMs) / 1000);
   const pausedSeconds = Math.max(0, pausedDurationSecs || 0);

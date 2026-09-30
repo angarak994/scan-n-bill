@@ -677,7 +677,7 @@ Time: ${timeStr}`, mainMenu);
         let masterMsg = `📋 <b>Active Sessions (${activeSessions.length})</b>\n\n`;
         const masterButtons: any[] = [];
         
-        for (const session of activeSessions) {
+        const sessionDetails = await Promise.all(activeSessions.map(async (session) => {
           const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
           const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString();
@@ -692,7 +692,7 @@ Time: ${timeStr}`, mainMenu);
 
           const startedTime = formatTimeReadable(startFull);
           const customerLabel = isMember ? 'Member' : 'Cust';
-          masterMsg += `• <b>${session.table_id}</b> (${session.game_type})\n  ${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\n  Amt: ${billText} ${isPaused ? '(⏸)' : ''}\n\n`;
+          const msgFragment = `• <b>${session.table_id}</b> (${session.game_type})\n  ${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\n  Amt: ${billText} ${isPaused ? '(⏸)' : ''}\n\n`;
           
           const row = [
             isPaused 
@@ -705,7 +705,12 @@ Time: ${timeStr}`, mainMenu);
           }
           
           row.push({ text: `🛑 Stop`, callback_data: `end_${session.id}` });
-          masterButtons.push(row);
+          return { msgFragment, row };
+        }));
+
+        for (const detail of sessionDetails) {
+          masterMsg += detail.msgFragment;
+          masterButtons.push(detail.row);
         }
         if (activeSessions.length > 1) {
           masterButtons.push([{ text: `⏸ Pause All`, callback_data: `pause_all` }]);

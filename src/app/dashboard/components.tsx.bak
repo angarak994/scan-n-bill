@@ -233,12 +233,17 @@ export function NotificationBell({ businessId }: { businessId: string }) {
 export function LiveTotalOpenCounter({ activeSessions, pricingRules, currentDiscounts, activePromotions }: any) {
   const now = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
   
+  const isPromoValid = activePromotions && new Date(activePromotions.end_time).getTime() > now.getTime();
+  
   const totalOpenBill = activeSessions.reduce((acc: number, session: any) => {
     const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
     try {
       let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
+      if (!tableDiscount && isPromoValid && activePromotions) {
+        tableDiscount = { percent: activePromotions.discount_percent, applyToFood: false };
+      }
       const endFull = session.paused_at ? session.paused_at : now.toISOString();
-      const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
+      const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
       return acc + res.cost;
     } catch { return acc; }
   }, 0);
@@ -246,17 +251,13 @@ export function LiveTotalOpenCounter({ activeSessions, pricingRules, currentDisc
   return <span className="font-mono tabular-nums">{totalOpenBill.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).replace('₹', '₹')}</span>;
 }
 
-export function LivePromoTimer({ activePromotions }: { activePromotions: any[] }) {
+export function LivePromoTimer({ activePromotions }: { activePromotions: any }) {
   const now = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
 
   let timeLeft = "00:00:00";
-  if (activePromotions && activePromotions.length > 0) {
-    // Find the promotion ending soonest that is currently active
-    const activeValidPromos = activePromotions.filter(p => new Date(p.end_time).getTime() > now.getTime() && new Date(p.start_time).getTime() <= now.getTime());
-    if (activeValidPromos.length > 0) {
-      // Sort by end time ascending
-      activeValidPromos.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
-      const end = new Date(activeValidPromos[0].end_time).getTime();
+  if (activePromotions) {
+    const end = new Date(activePromotions.end_time).getTime();
+    if (end > now.getTime()) {
       const diffSecs = Math.floor((end - now.getTime()) / 1000);
       const h = Math.floor(diffSecs / 3600);
       const m = Math.floor((diffSecs % 3600) / 60);
@@ -274,7 +275,7 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
   return <>{value}</>;
 };
 
-export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activePromotions, pricingRules, preferences, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, activePromotions: any, pricingRules: any, preferences?: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
+export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activePromotions, pricingRules, preferences, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, isPromoValid: boolean, activePromotions: any, pricingRules: any, preferences?: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
   const globalNowDate = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
   const isRunning = session.status === 'ACTIVE' && !session.paused_at;
   
@@ -291,7 +292,15 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activ
   
   try {
     tableDiscount = currentDiscounts?.[session.table_id] || undefined;
-    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
+    if (!tableDiscount && isPromoValid && activePromotions) {
+      tableDiscount = { 
+        percent: activePromotions.discount_percent, 
+        applyToFood: false,
+        time_slot_start: activePromotions.time_slot_start || undefined,
+        time_slot_end: activePromotions.time_slot_end || undefined
+      };
+    }
+    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
     liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
     
     let finalFoodCost = session.food_cost || 0;

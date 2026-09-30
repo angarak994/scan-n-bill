@@ -52,9 +52,6 @@ export async function GET(request: Request) {
     localTodayStart.setHours(0, 0, 0, 0);
     const startOfDayUTC = localTodayStart.toISOString();
 
-    // Auto-expire and auto-activate promotions
-    await supabase.rpc('update_expired_promotions');
-
     const [
       sessions,
       { data: interventions },

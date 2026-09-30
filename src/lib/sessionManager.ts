@@ -17,7 +17,7 @@ interface PromoCacheEntry {
 const promoCache = new Map<string, PromoCacheEntry>();
 const PROMO_CACHE_TTL_MS = 60000; // 1 minute
 
-async function getCachedActivePromo(businessId: string) {
+async function getCachedActivePromos(businessId: string) {
   const now = Date.now();
   const cached = promoCache.get(businessId);
   if (cached && cached.expiresAt > now) {
@@ -25,27 +25,23 @@ async function getCachedActivePromo(businessId: string) {
   }
   const { data: promos } = await supabase
     .from('promotions')
-    .select('id, discount_percent, start_time, end_time, time_slot_start, time_slot_end, status')
+    .select('id, name, description, promo_type, fixed_price, fixed_amount_discount, discount_percent, applicable_game_types, applicable_tables, start_time, end_time, time_slot_start, time_slot_end, status')
     .eq('business_id', businessId)
     .in('status', ['Active', 'Scheduled']); // Fetch both in case status hasn't synced yet
     
   if (promos && promos.length > 0) {
-    // Find one that is ACTUALLY active right now using pure time math (ignores delayed DB status)
     const { parseDateString } = require('./billing');
-    const validPromo = promos.find(p => {
-      const sTime = parseDateString(p.start_time);
+    const validPromos = promos.filter(p => {
       const eTime = parseDateString(p.end_time);
-      return sTime <= now && eTime > now && p.status !== 'Paused' && p.status !== 'Cancelled';
+      return eTime > now && p.status !== 'Paused' && p.status !== 'Cancelled';
     });
     
-    if (validPromo) {
-      promoCache.set(businessId, { promo: validPromo, expiresAt: now + PROMO_CACHE_TTL_MS });
-      return validPromo;
-    }
+    promoCache.set(businessId, { promo: validPromos, expiresAt: now + PROMO_CACHE_TTL_MS });
+    return validPromos;
   }
   
-  promoCache.set(businessId, { promo: undefined, expiresAt: now + PROMO_CACHE_TTL_MS });
-  return undefined;
+  promoCache.set(businessId, { promo: [], expiresAt: now + PROMO_CACHE_TTL_MS });
+  return [];
 }
 
 const membershipsCache = new Map<string, { data: any[], expiresAt: number }>();
@@ -64,7 +60,7 @@ async function getCachedCustomers(businessId: string) {
   const now = Date.now();
   const cached = customersCache.get(businessId);
   if (cached && cached.expiresAt > now) return cached.data;
-  const { data } = await supabase.from('customers').select('id, name, phone').eq('business_id', businessId);
+  const { data } = await supabase.from('customers').select('id, name, phone').eq('business_id', businessId).limit(5000);
   const result = data || [];
   customersCache.set(businessId, { data: result, expiresAt: now + 60000 });
   return result;
@@ -194,18 +190,7 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
   // Use parseDateString from billing.ts to fix timezone bugs
   const { parseDateString } = require('./billing');
 
-  // Fetch active promotion from db
-  const activePromo = await getCachedActivePromo(businessId);
-  const isPromoValid = activePromo && parseDateString(activePromo.end_time) > now.getTime();
-  if (!discount && isPromoValid) {
-    discount = { 
-      percent: activePromo.discount_percent, 
-      applyToFood: false,
-      time_slot_start: activePromo.time_slot_start || undefined,
-      time_slot_end: activePromo.time_slot_end || undefined
-    };
-    (session as any)._appliedPromoId = activePromo.id;
-  }
+
 
   // Membership Discount Logic via Native DB
   try {
@@ -246,12 +231,15 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
       } else {
           const customers = await getCachedCustomers(businessId);
           const cName = session.customer_name?.trim().toLowerCase() || '';
-          if (customers) {
+          if (customers && cName && cName !== 'guest') {
             const match = customers.find((c: any) => 
               (c.name && c.name.trim().toLowerCase() === cName) || 
               (c.phone && c.phone.trim() === cName)
             );
-            if (match) (session as any)._isRegisteredCustomer = true;
+            if (match) {
+                (session as any)._isRegisteredCustomer = true;
+                (session as any)._matchedCustomerId = match.id;
+            }
           }
       }
     }
@@ -288,6 +276,8 @@ export async function endSession(table_id: string, businessId?: string, source: 
     totalPausedSecs += ongoingPausedSecs;
   }
 
+  const activePromotions = businessId ? await getCachedActivePromos(businessId) : [];
+  
   const { duration, cost: timeCost, baseCost, discountAmount, slabs_applied } = calculateBilling(
     startFull, 
     endFull, 
@@ -297,8 +287,15 @@ export async function endSession(table_id: string, businessId?: string, source: 
     discount, 
     totalPausedSecs, 
     session.locked_rate, 
-    session.locked_rate_name
+    session.locked_rate_name,
+    activePromotions
   );
+  
+  // Track applied promos
+  const usedPromos = activePromotions.filter((p: any) => slabs_applied.includes(p.name));
+  if (usedPromos.length > 0) {
+    (session as any)._usedPromos = usedPromos;
+  }
   
   let finalFoodCost = session.food_cost || 0;
   let foodDiscountAmount = 0;
@@ -353,6 +350,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
             businessId,
             sessionId: session.id,
             customerName: session.customer_name,
+            customerId: (session as any)._matchedCustomerId || (session as any)._matchedMemberId,
             totalBilled: totalCost,
             amountPaid: actualAmountPaid,
             paymentMethod: paymentMethod,
@@ -418,14 +416,16 @@ export async function endSession(table_id: string, businessId?: string, source: 
     }).catch(e => console.error(e));
   }
 
-  if ((session as any)._appliedPromoId) {
+  if ((session as any)._usedPromos && (session as any)._usedPromos.length > 0) {
     Promise.resolve().then(async () => {
     try {
-      const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', (session as any)._appliedPromoId).single();
-      if (promo) {
-         await supabase.from('promotions').update({
-            usage_count: (promo.usage_count || 0) + 1
-         }).eq('id', (session as any)._appliedPromoId);
+      for (const usedPromo of (session as any)._usedPromos) {
+        const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', usedPromo.id).single();
+        if (promo) {
+           await supabase.from('promotions').update({
+              usage_count: (promo.usage_count || 0) + 1
+           }).eq('id', usedPromo.id);
+        }
       }
     } catch (e) {
       console.error('Failed to increment promotion usage', e);
@@ -509,7 +509,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let maxPlayers = 4;
     let configuredGameType = 'pool';
     if (businessId) {
-      const business = await businessManager.getBusiness(businessId, true); // force refresh so menu/pricing changes reflect immediately
+      const business = await businessManager.getBusiness(businessId); // Removed forceRefresh to prevent DB overload
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
@@ -566,7 +566,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let qpayConfig = undefined;
   let paymentQrConfig = undefined;
   if (businessId) {
-    const business = await businessManager.getBusiness(businessId, true);
+    const business = await businessManager.getBusiness(businessId);
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
@@ -612,6 +612,8 @@ export async function calculateServerBillingForSession(session: any, businessId:
   const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
   const endFull = customEndTime || (isPaused ? session.paused_at : new Date().toISOString());
   
+  const activePromotions = businessId ? await getCachedActivePromos(businessId) : [];
+  
   const { calculateBilling } = require('./billing');
   const result = calculateBilling(
     startFull,
@@ -622,7 +624,8 @@ export async function calculateServerBillingForSession(session: any, businessId:
     discount,
     session.paused_duration_seconds,
     session.locked_rate,
-    session.locked_rate_name
+    session.locked_rate_name,
+    activePromotions
   );
   
   let finalFoodCost = session.food_cost || 0;

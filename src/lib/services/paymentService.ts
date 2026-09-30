@@ -7,6 +7,7 @@ export interface PaymentPayload {
     businessId: string;
     sessionId?: string;
     customerName: string;
+    customerId?: string;
     totalBilled: number;
     amountPaid: number;
     paymentMethod: string;
@@ -16,16 +17,16 @@ export interface PaymentPayload {
 }
 
 export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
-    const { businessId, sessionId, customerName, totalBilled, amountPaid, paymentMethod, paymentStatus, dueDate, source } = payload;
+    const { businessId, sessionId, customerName, customerId: providedCustomerId, totalBilled, amountPaid, paymentMethod, paymentStatus, dueDate, source } = payload;
 
     if (!businessId) return;
     const finalCustomerName = customerName || 'Walk-in';
 
     // 1. Resolve or Create Customer (for Ledger)
-    let customerId;
+    let customerId = providedCustomerId;
     
     // First, try matching by phone if it's a mobile number (assume 10 digits as simple heuristic or just match exactly)
-    if (finalCustomerName !== 'Walk-in') {
+    if (!customerId && finalCustomerName !== 'Walk-in') {
         const { data: existingCustomer } = await supabase
             .from('customers')
             .select('id, total_billed, total_paid, outstanding_balance')
@@ -35,14 +36,17 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
             .single();
         if (existingCustomer) {
             customerId = existingCustomer.id;
-            // Update outstanding balance atomically
-            const { error: ledgerError } = await supabase.rpc('increment_customer_ledger', {
-                p_customer_id: customerId,
-                p_billed: totalBilled,
-                p_paid: amountPaid
-            });
-            if (ledgerError) console.error("Failed to update ledger atomically", ledgerError);
         }
+    }
+    
+    if (customerId) {
+        // Update outstanding balance atomically
+        const { error: ledgerError } = await supabase.rpc('increment_customer_ledger', {
+            p_customer_id: customerId,
+            p_billed: totalBilled,
+            p_paid: amountPaid
+        });
+        if (ledgerError) console.error("Failed to update ledger atomically", ledgerError);
     }
 
     if (!customerId) {

@@ -1229,10 +1229,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (isAuthorized) {
-      setTimeout(() => {
-         fetchMemberships();
-         fetchMembershipPlans();
-      }, 0);
+      setTimeout(() => fetchMemberships(), 0);
     }
   }, [isAuthorized]);
 

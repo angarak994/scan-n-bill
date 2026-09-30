@@ -34,9 +34,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { title, discount_percent, start_date, start_time, end_date, end_time, time_slot_start, time_slot_end } = await request.json();
+    const { 
+      title, description, promo_type, discount_percent, fixed_price, fixed_amount_discount,
+      applicable_game_types, applicable_tables,
+      start_date, start_time, end_date, end_time, time_slot_start, time_slot_end 
+    } = await request.json();
 
-    if (!title || !discount_percent || !start_date || !start_time || !end_date || !end_time) {
+    if (!title || !start_date || !start_time || !end_date || !end_time) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -84,7 +88,13 @@ export async function POST(request: Request) {
       .insert([{
         business_id: sessionCookie.businessId,
         name: title,
-        discount_percent: Number(discount_percent),
+        description: description || null,
+        promo_type: promo_type || 'percentage',
+        discount_percent: discount_percent ? Number(discount_percent) : 0,
+        fixed_price: fixed_price ? Number(fixed_price) : null,
+        fixed_amount_discount: fixed_amount_discount ? Number(fixed_amount_discount) : null,
+        applicable_game_types: applicable_game_types || null,
+        applicable_tables: applicable_tables || null,
         start_time: startDateTime.toISOString(),
         end_time: endDateTime.toISOString(),
         status: initialStatus,
