@@ -11,14 +11,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { mobile } = await request.json();
-    if (!mobile) {
-      return NextResponse.json({ error: 'Mobile number is required' }, { status: 400 });
+    const { contact } = await request.json();
+    if (!contact) {
+      return NextResponse.json({ error: 'Contact (Mobile or Email) is required' }, { status: 400 });
     }
 
-    const normalizedMobile = normalizePhone(mobile);
-    if (!normalizedMobile) {
-      return NextResponse.json({ error: 'Mobile number must be exactly 10 digits' }, { status: 400 });
+    let normalizedContact = contact.trim().toLowerCase();
+    const isEmail = normalizedContact.includes('@');
+    
+    if (!isEmail) {
+      normalizedContact = normalizePhone(contact);
+      if (!normalizedContact) {
+        return NextResponse.json({ error: 'Invalid mobile number (must be 10 digits)' }, { status: 400 });
+      }
     }
 
     // Rate Limiting & Cooldown Check
@@ -26,7 +31,7 @@ export async function POST(request: Request) {
       .from('otp_verifications')
       .select('created_at')
       .eq('business_id', sessionCookie.businessId)
-      .eq('mobile', normalizedMobile)
+      .eq('mobile', normalizedContact)
       .order('created_at', { ascending: false })
       .limit(3);
 
@@ -57,19 +62,49 @@ export async function POST(request: Request) {
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
+    // We store the email in the existing 'mobile' column to avoid DB migrations for local testing
     const { error: insertError } = await supabase
       .from('otp_verifications')
       .insert([{
         business_id: sessionCookie.businessId,
-        mobile: normalizedMobile,
+        mobile: normalizedContact,
         otp_hash: otpHash,
         expires_at: expiresAt.toISOString()
       }]);
 
     if (insertError) throw insertError;
 
-    // Simulate SMS Delivery
-    console.log(`\n=======================================\n📲 [MOCK SMS] OTP for ${mobile} is: ${otp}\n=======================================\n`);
+    if (isEmail) {
+      try {
+        const { Resend } = require('resend');
+        // Fallback key just for local console-logging if none provided, 
+        // though Resend needs a real key to send real emails.
+        const resend = new Resend(process.env.RESEND_API_KEY || 're_dummy_key');
+        
+        console.log(`\n=======================================\n📧 [MOCK EMAIL] To: ${normalizedContact}\nSubject: Your QControl Code\nOTP: ${otp}\n=======================================\n`);
+        
+        if (process.env.RESEND_API_KEY) {
+           await resend.emails.send({
+            from: 'QControl <onboarding@resend.dev>',
+            to: normalizedContact,
+            subject: 'Your QControl Verification Code',
+            html: `
+              <div style="font-family: sans-serif; padding: 20px;">
+                <h2>Welcome to QControl!</h2>
+                <p>Your secure verification code is:</p>
+                <h1 style="letter-spacing: 5px; color: #10B981;">${otp}</h1>
+                <p>This code will expire in 5 minutes.</p>
+              </div>
+            `
+          });
+        }
+      } catch (err) {
+        console.error('Email delivery error:', err);
+      }
+    } else {
+      // Simulate SMS Delivery
+      console.log(`\n=======================================\n📲 [MOCK SMS] OTP for ${normalizedContact} is: ${otp}\n=======================================\n`);
+    }
 
     return NextResponse.json({ success: true, message: 'OTP sent successfully' });
 

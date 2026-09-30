@@ -232,7 +232,7 @@ function DashboardContent() {
       );
       
       return {
-        id: matchedCustomer ? matchedCustomer.id : m.id,
+        id: m.id, // Must use membership ID since sessions.member_id is a foreign key to memberships
         name: m.name,
         phone: m.mobile,
         outstanding_balance: matchedCustomer ? (matchedCustomer.outstanding_balance || 0) : 0
@@ -405,8 +405,8 @@ function DashboardContent() {
       let url = '/api/dashboard-data';
       url += `?startDate=${targetStartDate}&endDate=${targetEndDate}`;
 
-      // Deduplicate identical in-flight requests
-      if (activeFetch.current && activeFetch.current.url === url) {
+      // Deduplicate identical in-flight requests unless it's a background realtime sync
+      if (!isBackground && activeFetch.current && activeFetch.current.url === url) {
          await activeFetch.current.promise;
          return;
       }
@@ -425,9 +425,9 @@ function DashboardContent() {
       if (res.ok) {
         const json = await res.json();
         
-        // If this fetch was for the current day, update the main dashboard data
         if (targetStartDate === currentDay && targetEndDate === currentDay) {
           setData(json);
+          setMembershipPlans(json.membership_plans || []);
           if (json.businessId) setBusinessId(json.businessId);
           setIsAuthorized(true);
           if (json.has_logged_in === false) {
@@ -580,10 +580,10 @@ function DashboardContent() {
     checkOverdue();
   }, [isAuthorized]);
 
-  const fetchRef = useRef(fetchDashboardData);
+  const fetchRef = useRef(fetchData);
   useEffect(() => {
-    fetchRef.current = fetchDashboardData;
-  }, [fetchDashboardData]);
+    fetchRef.current = fetchData;
+  }, [fetchData]);
 
   const prevCompletedRef = useRef<any[]>([]);
   useEffect(() => {
@@ -600,20 +600,12 @@ function DashboardContent() {
         const handleSync = () => {
           if (syncTimeout.current) clearTimeout(syncTimeout.current);
           syncTimeout.current = setTimeout(() => {
-             const today = getLocalDateStr();
-             fetchRef.current(today, today, true);
+             fetchRef.current(undefined, true);
           }, 800);
         };
 
-        subscription = supabase.channel('dashboard_changes')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'businesses', filter: `id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'promotions', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'memberships', filter: `business_id=eq.${businessId}` }, handleSync)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'session_interventions' }, handleSync) // interventions don't have business_id natively, handled via fetch
+        subscription = supabase.channel('dashboard_sync_channel')
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dashboard_syncs', filter: `business_id=eq.${businessId}` }, handleSync)
           .subscribe();
       }
       
@@ -690,7 +682,7 @@ function DashboardContent() {
         toast.success('✓ Booking started successfully.');
       } else {
         const error = await res.json();
-        toast.error("We couldn't start the session. Please try again.");
+        toast.error(error.error || "We couldn't start the session. Please try again.");
       }
     } catch (e) {
       toast.error('Network error. Could not start session.');
@@ -1073,13 +1065,13 @@ function DashboardContent() {
   
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMember.mobile || newMember.mobile.length < 10) return toast.error('Enter a valid mobile number');
+    if (!newMember.mobile || newMember.mobile.length < 5) return toast.error('Enter a valid mobile number or email');
     setIsSendingOtp(true);
     try {
       const res = await fetch('/api/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mobile: newMember.mobile })
+        body: JSON.stringify({ contact: newMember.mobile }) // newMember.mobile holds the generic input
       });
       const data = await res.json();
       if (res.ok) {
@@ -1100,7 +1092,7 @@ function DashboardContent() {
       const res = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mobile: newMember.mobile, otp })
+        body: JSON.stringify({ contact: newMember.mobile, otp })
       });
       const data = await res.json();
       if (res.ok) {
@@ -1137,6 +1129,31 @@ function DashboardContent() {
       }
     } catch(e) { toast.error('Error'); }
     setIsCreatingPlan(false);
+  };
+
+  const handleLoadDummyPlans = async () => {
+    setIsPlansLoading(true);
+    try {
+      const dummies = [
+        { name: 'Bronze Monthly', price: 999, duration_months: 1, discount_percent: 5, benefits: ['5% off F&B', 'Basic Access'] },
+        { name: 'Silver Quarterly', price: 2499, duration_months: 3, discount_percent: 10, benefits: ['10% off F&B', 'Free Locker'] },
+        { name: 'Gold Annual', price: 7999, duration_months: 12, discount_percent: 20, benefits: ['20% off F&B', 'Priority Booking', 'Free Locker'] }
+      ];
+      
+      for (const plan of dummies) {
+        await fetch('/api/membership-plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(plan)
+        });
+      }
+      await fetchMembershipPlans();
+      toast.success('Template plans generated!');
+    } catch(e) {
+      toast.error('Failed to load templates');
+    } finally {
+      setIsPlansLoading(false);
+    }
   };
 
   const handleTogglePlanStatus = async (plan: any) => {
@@ -1815,7 +1832,19 @@ function DashboardContent() {
                     <span className="text-xs font-bold text-accent">{formatTimeReadable(booking.start_time, true, booking.booking_date)} • {booking.duration_minutes}m</span>
                     <div className="flex gap-2">
                       <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-2 py-1 rounded border border-danger/50 text-danger text-[10px] font-bold uppercase hover:bg-danger/10">No Show</button>
-                      <button onClick={() => handleStartBooking(booking.id)} className="px-3 py-1 rounded bg-accent text-white text-[10px] font-bold uppercase hover:bg-accent/90 shadow-lg shadow-accent/20">Start</button>
+                      {(() => {
+                        const isOccupied = data?.activeSessions?.some((s: any) => s.table_id === booking.table_id);
+                        return (
+                          <button 
+                            onClick={() => !isOccupied && handleStartBooking(booking.id)} 
+                            disabled={isOccupied}
+                            title={isOccupied ? "Table is currently occupied" : "Start Session"}
+                            className={`px-3 py-1 rounded text-white text-[10px] font-bold uppercase shadow-lg ${isOccupied ? 'bg-gray-500 cursor-not-allowed opacity-50' : 'bg-accent hover:bg-accent/90 shadow-accent/20'}`}
+                          >
+                            {isOccupied ? 'Occupied' : 'Start'}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -3655,7 +3684,16 @@ function DashboardContent() {
         {isPlansLoading ? (
           <p className="text-sm text-text-secondary">Loading plans...</p>
         ) : membershipPlans.length === 0 ? (
-          <p className="text-sm text-text-secondary italic bg-bg-surface p-4 rounded-lg border border-border-theme">No membership plans created yet.</p>
+          <div className="bg-bg-surface p-6 rounded-xl border border-border-theme flex flex-col items-center justify-center text-center">
+             <div className="w-12 h-12 rounded-full bg-accent/10 text-accent flex items-center justify-center mb-4">
+               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+             </div>
+             <h3 className="text-lg font-bold mb-2">No Membership Plans Yet</h3>
+             <p className="text-sm text-text-secondary max-w-md mb-6">Create your own customized membership plans using the form above, or click below to generate a few industry-standard templates to get started quickly.</p>
+             <button onClick={handleLoadDummyPlans} disabled={isPlansLoading} className="px-6 py-2.5 rounded-lg border border-accent/50 text-accent font-bold text-sm hover:bg-accent/10 transition-colors shadow-sm">
+                Load Example Templates
+             </button>
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border-theme">
             <table className="w-full text-left text-sm">

@@ -21,29 +21,35 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             const customersData = dbCustomers;
             const membersData = memberships;
 
-            if (customersData) {
-                const membersList = customersData.filter((c: any) => c.name && c.name !== 'Guest').map(c => {
-                    const m = membersData?.find(m => 
-                        (m.mobile && c.phone && m.mobile === c.phone) || 
-                        (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+            if (membersData) {
+                const membersList = membersData.map((m: any) => {
+                    // Find all matching customers to sum their balances
+                    const matchedCustomers = customersData?.filter((c: any) => 
+                        (c.phone && m.mobile && c.phone === m.mobile) || 
+                        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase()) ||
                         m.id === c.id
-                    );
+                    ) || [];
+                    
+                    const outstanding_balance = matchedCustomers.reduce((acc, c) => acc + (c.outstanding_balance || 0), 0);
+                    const total_billed = matchedCustomers.reduce((acc, c) => acc + (c.total_billed || 0), 0);
+                    const total_paid = matchedCustomers.reduce((acc, c) => acc + (c.total_paid || 0), 0);
+                    
+                    const ledger_id = matchedCustomers.length > 0 ? matchedCustomers[0].id : m.id;
                     
                     return {
-                        id: c.id,
-                        name: c.name,
-                        phone: c.phone || (m ? m.mobile : ''),
-                        outstanding_balance: c.outstanding_balance || 0,
-                        total_billed: c.total_billed || 0,
-                        total_paid: c.total_paid || 0,
-                        is_customer_record: true,
-                        tier: m ? m.tier : undefined,
-                        loyalty_points: m ? m.loyalty_points : undefined
+                        id: ledger_id, // Use the legacy customer ID for ledger queries and payments
+                        name: m.name,
+                        phone: m.mobile || '',
+                        outstanding_balance,
+                        total_billed,
+                        total_paid,
+                        is_customer_record: matchedCustomers.length > 0,
+                        tier: m.tier,
+                        loyalty_points: m.loyalty_points
                     };
                 });
                 
                 const sorted = membersList
-                    .filter((c: any) => c.tier !== undefined) // Only registered members
                     .sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
                 setCustomers(sorted);
                 

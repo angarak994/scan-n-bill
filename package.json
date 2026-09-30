@@ -25,6 +25,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hot-toast": "^2.6.0",
+    "resend": "^6.31.0",
     "twilio": "^6.0.2",
     "uuid": "^14.0.1"
   },

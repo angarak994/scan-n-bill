@@ -4,6 +4,8 @@ import { businessManager } from '@/lib/businessManager';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { supabase } from '@/lib/supabaseClient';
 
+import { getSession } from '@/lib/auth';
+
 const getSheetsClient = () => {
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
   privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
@@ -44,16 +46,31 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
 
 export async function POST(request: Request) {
   try {
+    const sessionCookie = await getSession();
     const data = await request.json();
-    const { session_id, business_id, cart } = data;
+    let { session_id, business_id, cart } = data;
 
     if (!session_id || !business_id || !cart) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    if (sessionCookie && sessionCookie.businessId) {
+      if (sessionCookie.businessId !== business_id) {
+        return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+      }
+      business_id = sessionCookie.businessId;
+    }
+
     const business = await businessManager.getBusiness(business_id);
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    }
+    
+    if (!sessionCookie) {
+      const prefs = business.pricing_rules?.globalSettings?.preferences || {};
+      if (prefs.auto_qr_billing === false) {
+          return NextResponse.json({ error: 'QR actions are disabled for this business' }, { status: 403 });
+      }
     }
 
     const session = await sessionRepository.findById(session_id, business_id);
@@ -79,11 +96,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Empty order' }, { status: 400 });
     }
 
-    // Update session food_cost in Supabase
-    const currentFoodCost = session.food_cost || 0;
-    const newFoodCost = currentFoodCost + orderTotal;
+    // Update session food_cost atomically in Supabase
+    const { data: newFoodCost, error: updateError } = await supabase.rpc('increment_food_cost', {
+      p_session_id: session_id,
+      p_amount: orderTotal
+    });
     
-    await sessionRepository.update(session_id, { food_cost: newFoodCost }, business_id);
+    if (updateError) {
+      console.error('Failed to update food_cost:', updateError);
+      return NextResponse.json({ error: 'Failed to update order cost' }, { status: 500 });
+    }
 
     // Create Notification to track order status
     const itemsJson = JSON.stringify(cart);

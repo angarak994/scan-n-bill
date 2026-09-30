@@ -62,7 +62,8 @@ export async function GET(request: Request) {
       { data: activePromotions },
       { data: dbCustomers },
       { data: memberships },
-      { data: foodOrders }
+      { data: foodOrders },
+      { data: membership_plans }
     ] = await Promise.all([
       sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
       supabase
@@ -71,7 +72,7 @@ export async function GET(request: Request) {
         .eq('sessions.business_id', businessId)
         .eq('intervention_type', 'force_close')
         .gte('created_at', startOfDayUTC),
-      supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', startDate),
+      supabase.from('bookings').select('*').eq('business_id', businessId).gte('booking_date', todayDateStr),
       supabase
         .from('promotions')
         .select('*')
@@ -80,16 +81,24 @@ export async function GET(request: Request) {
       supabase
         .from('customers')
         .select('id, name, phone, outstanding_balance')
-        .eq('business_id', businessId),
+        .eq('business_id', businessId)
+        .order('updated_at', { ascending: false })
+        .limit(1000),
       supabase
         .from('memberships')
         .select('id, name, mobile, points')
-        .eq('business_id', businessId),
+        .eq('business_id', businessId)
+        .limit(1000),
       supabase
         .from('notifications')
         .select('*')
         .eq('business_id', businessId)
         .in('type', ['order_pending', 'order_accepted'])
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('membership_plans')
+        .select('*')
+        .eq('business_id', businessId)
         .order('created_at', { ascending: false })
     ]);
 
@@ -165,7 +174,8 @@ export async function GET(request: Request) {
       whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false },
       menu_items: business.menu_items || [],
       entitlement: entitlement,
-      foodOrders: foodOrders || []
+      foodOrders: foodOrders || [],
+      membership_plans: membership_plans || []
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);

@@ -43,10 +43,14 @@ export async function POST(request: Request) {
     const { startSession } = require('@/lib/sessionManager');
     let session;
     try {
+      const finalCustomerName = (booking.customer_name && booking.customer_name.trim() !== '') 
+        ? booking.customer_name 
+        : 'Guest';
+        
       session = await startSession(
         booking.table_id,
         booking.game_type as any,
-        booking.customer_name,
+        finalCustomerName,
         business_id,
         booking.num_players || 1,
         (booking as any).member_id

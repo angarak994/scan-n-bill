@@ -48,6 +48,29 @@ async function getCachedActivePromo(businessId: string) {
   return undefined;
 }
 
+const membershipsCache = new Map<string, { data: any[], expiresAt: number }>();
+async function getCachedMemberships(businessId: string) {
+  const now = Date.now();
+  const cached = membershipsCache.get(businessId);
+  if (cached && cached.expiresAt > now) return cached.data;
+  const { data } = await supabase.from('memberships').select('*').eq('business_id', businessId);
+  const result = data || [];
+  membershipsCache.set(businessId, { data: result, expiresAt: now + 60000 });
+  return result;
+}
+
+const customersCache = new Map<string, { data: any[], expiresAt: number }>();
+async function getCachedCustomers(businessId: string) {
+  const now = Date.now();
+  const cached = customersCache.get(businessId);
+  if (cached && cached.expiresAt > now) return cached.data;
+  const { data } = await supabase.from('customers').select('id, name, phone').eq('business_id', businessId);
+  const result = data || [];
+  customersCache.set(businessId, { data: result, expiresAt: now + 60000 });
+  return result;
+}
+
+
 export class ApiError extends Error {
   statusCode: number;
   constructor(statusCode: number, message: string) {
@@ -188,18 +211,20 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
   try {
     if (businessId) {
       let member = null;
+      
+      // Use cached memberships
+      const memberships = await getCachedMemberships(businessId);
+      
       if (session.member_id) {
-         const { data } = await supabase.from('memberships').select('*').eq('id', session.member_id).single();
-         member = data;
+         member = memberships.find((m: any) => m.id === session.member_id);
       } else {
-         const { data } = await supabase
-           .from('memberships')
-           .select('*')
-           .eq('business_id', businessId)
-           .or(`mobile.eq.${session.customer_name},name.eq.${session.customer_name}`)
-           .limit(1)
-           .single();
-         member = data;
+         const searchName = session.customer_name?.trim().toLowerCase();
+         if (searchName) {
+            member = memberships.find((m: any) => 
+               (m.mobile && m.mobile.trim() === searchName) || 
+               (m.name && m.name.trim().toLowerCase() === searchName)
+            );
+         }
       }
         
       if (member && member.status === 'Active') {
@@ -219,14 +244,10 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
       if (session.member_id && member) {
           (session as any)._isRegisteredCustomer = true;
       } else {
-          const { data: customers } = await supabase
-            .from('customers')
-            .select('id, name, phone')
-            .eq('business_id', businessId);
-          
+          const customers = await getCachedCustomers(businessId);
           const cName = session.customer_name?.trim().toLowerCase() || '';
           if (customers) {
-            const match = customers.find(c => 
+            const match = customers.find((c: any) => 
               (c.name && c.name.trim().toLowerCase() === cName) || 
               (c.phone && c.phone.trim() === cName)
             );
@@ -324,9 +345,8 @@ export async function endSession(table_id: string, businessId?: string, source: 
     paused_duration_seconds: totalPausedSecs,
   } as any, businessId, true);
 
-  // QKhata / Payment logic integration (Non-blocking)
+  // QKhata / Payment logic integration (Synchronous to prevent financial data loss)
   if (businessId) {
-    Promise.resolve().then(async () => {
     try {
         const { createLedgerEntryAndPayment } = require('./services/paymentService');
         await createLedgerEntryAndPayment({
@@ -340,37 +360,42 @@ export async function endSession(table_id: string, businessId?: string, source: 
             dueDate: dueDate,
             source: finalSource
         });
-        
-        // --- WhatsApp Notification for Registered Members ---
-        if ((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer) {
-            const { data: customer } = await supabase
-              .from('customers')
-              .select('phone, outstanding_balance')
-              .eq('business_id', businessId)
-              .or(`name.ilike.${session.customer_name},phone.eq.${session.customer_name}`)
-              .limit(1)
-              .single();
-              
-            if (customer && customer.phone) {
-               const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
-               const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
-               
-               const cleanPhone = normalizePhone(customer.phone) || '';
-               if (cleanPhone.length >= 10) {
-                  const { sendWhatsAppText } = require('./whatsapp');
-                  let overrideToken;
-                  let overridePhoneId;
-                  if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
-                      overrideToken = business.whatsapp_config.token;
-                      overridePhoneId = business.whatsapp_config.phoneId;
-                  }
-                  await sendWhatsAppText(cleanPhone, msg, false, overrideToken, overridePhoneId);
-               }
-            }
-        }
     } catch (e) {
-        console.error("QKhata/Payment Service / WhatsApp Error", e);
+        console.error("QKhata/Payment Service Error", e);
     }
+        
+    // --- Notifications (Non-blocking) ---
+    Promise.resolve().then(async () => {
+        try {
+            if ((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer) {
+                const { data: customer } = await supabase
+                  .from('customers')
+                  .select('phone, outstanding_balance')
+                  .eq('business_id', businessId)
+                  .or(`name.ilike.${session.customer_name},phone.eq.${session.customer_name}`)
+                  .limit(1)
+                  .single();
+                  
+                if (customer && customer.phone) {
+                   const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
+                   const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
+                   
+                   const cleanPhone = normalizePhone(customer.phone) || '';
+                   if (cleanPhone.length >= 10) {
+                      const { sendWhatsAppText } = require('./whatsapp');
+                      let overrideToken;
+                      let overridePhoneId;
+                      if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
+                          overrideToken = business.whatsapp_config.token;
+                          overridePhoneId = business.whatsapp_config.phoneId;
+                      }
+                      await sendWhatsAppText(cleanPhone, msg, false, overrideToken, overridePhoneId);
+                   }
+                }
+            }
+        } catch (e) {
+            console.error("WhatsApp Notification Error", e);
+        }
     }).catch(e => console.error(e));
   }
 

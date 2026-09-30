@@ -35,17 +35,13 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
             .single();
         if (existingCustomer) {
             customerId = existingCustomer.id;
-            // Update outstanding balance
-            const newTotalBilled = Number(existingCustomer.total_billed) + totalBilled;
-            const newTotalPaid = Number(existingCustomer.total_paid) + amountPaid;
-            const newOutstanding = newTotalBilled - newTotalPaid;
-            
-            await supabase.from('customers').update({
-                total_billed: newTotalBilled,
-                total_paid: newTotalPaid,
-                outstanding_balance: newOutstanding,
-                updated_at: new Date().toISOString()
-            }).eq('id', customerId);
+            // Update outstanding balance atomically
+            const { error: ledgerError } = await supabase.rpc('increment_customer_ledger', {
+                p_customer_id: customerId,
+                p_billed: totalBilled,
+                p_paid: amountPaid
+            });
+            if (ledgerError) console.error("Failed to update ledger atomically", ledgerError);
         }
     }
 

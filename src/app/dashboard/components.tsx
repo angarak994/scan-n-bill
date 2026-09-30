@@ -293,7 +293,12 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, isPro
   try {
     tableDiscount = currentDiscounts?.[session.table_id] || undefined;
     if (!tableDiscount && isPromoValid && activePromo) {
-      tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
+      tableDiscount = { 
+        percent: activePromo.discount_percent, 
+        applyToFood: false,
+        time_slot_start: activePromo.time_slot_start || undefined,
+        time_slot_end: activePromo.time_slot_end || undefined
+      };
     }
     const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
     liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');

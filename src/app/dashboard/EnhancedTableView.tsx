@@ -223,23 +223,32 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
 
           let liveCost = 0;
           let liveDuration = '';
+          let liveDiscount = 0;
+          let tableDiscount: any = undefined;
           
           if (isOccupied) {
             const now = !isPaused ? globalNowDate : new Date(parseDateString(session.paused_at));
             const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
             const endFull = isPaused ? session.paused_at : now.toISOString();
             
-            let tableDiscount = currentDiscounts?.[table.id] || undefined;
+            tableDiscount = currentDiscounts?.[table.id] || undefined;
             if (!tableDiscount && isPromoValid && activePromo) {
-              tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
+              tableDiscount = { 
+                percent: activePromo.discount_percent, 
+                applyToFood: false,
+                time_slot_start: activePromo.time_slot_start || undefined,
+                time_slot_end: activePromo.time_slot_end || undefined
+              };
             }
             try {
               const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name);
               
+              liveDiscount += (res.discountAmount || 0);
               let finalFoodCost = session.food_cost || 0;
               if (tableDiscount && tableDiscount.percent > 0 && tableDiscount.applyToFood) {
-                finalFoodCost = finalFoodCost * (1 - (tableDiscount.percent / 100));
-                finalFoodCost = Math.round(finalFoodCost);
+                const foodDiscount = finalFoodCost * (tableDiscount.percent / 100);
+                liveDiscount += Math.round(foodDiscount);
+                finalFoodCost = Math.round(finalFoodCost - foodDiscount);
               }
               liveCost = res.cost + finalFoodCost;
               
@@ -300,38 +309,58 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                {/* Body */}
                <div className="flex-1 flex flex-col justify-center relative z-10 mt-1">
                   {isOccupied ? (
-                     <div className="bg-bg-primary rounded-xl p-4 border border-[#16231E] flex flex-col gap-2 shadow-inner">
+                     <div className="bg-bg-primary rounded-xl p-4 border border-border-theme flex flex-col gap-2 shadow-inner">
                         <p className="text-[10px] text-accent/70 text-center tracking-widest font-bold">SESSION ELAPSED</p>
-                        <p className="text-3xl font-mono text-accent text-center font-black tracking-tight">{isPrivacyMode ? '••:••:••' : liveDuration}</p>
+                        <p className="text-4xl font-mono text-accent text-center font-black tracking-tight">{isPrivacyMode ? '••:••:••' : liveDuration}</p>
                         
-                        <div className="flex justify-between text-[11px] mt-4 text-text-secondary font-medium">
+                        <div className="flex justify-between text-[13px] mt-4 text-text-secondary font-medium">
                            <span>Table Fee:</span>
                            <span className="text-text-primary font-mono">{formatINR(liveCost - (session.food_cost || 0))}</span>
                         </div>
                         {(session.food_cost > 0) && (
                         <div 
                            onClick={(e) => { e.stopPropagation(); handleViewOrdersClick(session.id); }}
-                           className="flex justify-between text-[11px] text-yellow-500/80 font-medium cursor-pointer hover:text-yellow-400 transition-colors group mt-1"
+                           className="flex justify-between text-[13px] text-yellow-500/80 font-medium cursor-pointer hover:text-yellow-400 transition-colors group mt-1"
                         >
                            <span className="flex items-center gap-1">
                              F&B Orders 
-                             <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                             <svg className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
                            </span>
                            <span className="text-yellow-500 font-mono">{formatINR(session.food_cost)}</span>
                         </div>
                         )}
-                        <div className="border-t border-[#16231E] my-3"></div>
+                        {(liveDiscount > 0) && (
+                        <div className="flex justify-between text-[13px] text-success/90 font-medium mt-1 relative group cursor-pointer transition-colors hover:text-success">
+                           <span className="flex items-center gap-1">
+                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                             Discount
+                           </span>
+                           <span className="text-success font-mono font-bold">- {formatINR(liveDiscount)}</span>
+                           
+                           {/* Discount Tooltip */}
+                           <div className="absolute left-0 bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-50 translate-y-2 group-hover:translate-y-0">
+                             <div className="bg-bg-primary border border-border-theme text-text-primary px-3 py-2 rounded-xl shadow-2xl shadow-black/20 whitespace-nowrap">
+                               <p className="font-black text-[13px] text-success tracking-tight mb-1">{tableDiscount?.percent || 0}% OFF Applied</p>
+                               <p className="text-text-secondary text-[11px] font-medium">Applies to: <span className="text-text-primary">{tableDiscount?.applyToFood ? 'Table Fee + F&B' : 'Table Fee only'}</span></p>
+                             </div>
+                           </div>
+                        </div>
+                        )}
+                        <div className="border-t border-border-theme my-3"></div>
                         <div className="flex justify-between items-end gap-2">
-                           <div className="text-[10px] text-text-disabled flex flex-col leading-tight">
-                              <div className="flex items-center gap-1 mb-0.5">
-                                 <svg className="w-3 h-3 text-accent shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" /></svg>
-                                 <span className="truncate max-w-[80px]">Relay auto-switch:</span>
+                           <div className="text-[11px] flex flex-col leading-tight">
+                              <div className="flex items-center gap-1 mb-1 text-text-disabled">
+                                 <svg className="w-3.5 h-3.5 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                 <span className="font-semibold text-[10px]">IoT Smart Relay</span>
                               </div>
-                              <span className="text-accent font-bold ml-4">Armed</span>
+                              <div className="flex items-center gap-1.5 ml-4">
+                                <div className="w-1.5 h-1.5 bg-text-disabled/40 rounded-full"></div>
+                                <span className="text-text-disabled/80 font-bold tracking-widest uppercase text-[9px]">Not Configured</span>
+                              </div>
                            </div>
                            <div className="flex flex-col items-end shrink-0">
-                             <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-0.5">Total</span>
-                             <span className="text-lg font-black text-text-primary font-mono leading-none">{isPrivacyMode ? '••••' : formatINR(liveCost)}</span>
+                             <span className="text-[11px] font-bold text-text-secondary uppercase tracking-widest mb-0.5">Total</span>
+                             <span className="text-2xl font-black text-text-primary font-mono leading-none">{isPrivacyMode ? '••••' : formatINR(liveCost)}</span>
                            </div>
                         </div>
                      </div>

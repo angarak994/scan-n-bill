@@ -111,15 +111,30 @@ function getMainMenuKeyboard(allActiveMembershipsCount: number = 0) {
   return { keyboard, resize_keyboard: true };
 }
 
-async function getBusinessContext(chatId: string | number) {
+const businessContextCache = new Map<string, { data: any, expiresAt: number }>();
+
+async function getBusinessContext(chatId: string | number, forceRefresh = false) {
   const searchId = String(chatId).trim();
+  const now = Date.now();
+  
+  if (!forceRefresh) {
+    const cached = businessContextCache.get(searchId);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+  }
+
   const { data: businesses, error } = await supabase
     .from('businesses')
     .select('id, pricing_rules, tables, business_name')
     .contains('pricing_rules', { globalSettings: { authorized_telegram_owners: [{ chatId: searchId }] } });
 
   if (error) console.error("[DB Error] getBusinessContext:", error);
-  if (!businesses) return { activeMembership: null, allActiveMemberships: [], revokedContext: null };
+  if (!businesses) {
+    const emptyResult = { activeMembership: null, allActiveMemberships: [], revokedContext: null };
+    businessContextCache.set(searchId, { data: emptyResult, expiresAt: now + 30000 });
+    return emptyResult;
+  }
   
   let revokedContext = null;
   let allActiveMemberships: any[] = [];
@@ -144,7 +159,9 @@ async function getBusinessContext(chatId: string | number) {
       }
     }
   }
-  return { activeMembership, allActiveMemberships, revokedContext };
+  const result = { activeMembership, allActiveMemberships, revokedContext };
+  businessContextCache.set(searchId, { data: result, expiresAt: now + 30000 });
+  return result;
 }
 
 async function switchBusinessContext(chatId: string | number, targetBusinessId: string) {
@@ -177,6 +194,7 @@ async function switchBusinessContext(chatId: string | number, targetBusinessId: 
        await supabase.from('businesses').update({ pricing_rules: b.pricing_rules }).eq('id', b.id);
     }
   }
+  businessContextCache.delete(searchId); // Invalidate cache so next fetch reflects new context
 }
 
 const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
@@ -201,12 +219,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
     }
 
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
     const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: webhookUrl,
-        drop_pending_updates: true
+        drop_pending_updates: true,
+        secret_token: WEBHOOK_SECRET
       })
     });
     
@@ -654,17 +674,15 @@ Time: ${timeStr}`, mainMenu);
           return NextResponse.json({ ok: true });
         }
         
+        let masterMsg = `📋 <b>Active Sessions (${activeSessions.length})</b>\n\n`;
+        const masterButtons: any[] = [];
+        
         for (const session of activeSessions) {
           const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
           const endFull = isPaused ? (session.paused_at as never || session.paused_at) : new Date().toISOString();
           
-          let isMember = false;
-          let memberId = '';
-          if (session.member_id) {
-              isMember = true;
-              memberId = session.member_id;
-          }
+          let isMember = !!session.member_id;
           
           let billText = '₹0';
           try {
@@ -673,22 +691,28 @@ Time: ${timeStr}`, mainMenu);
           } catch(e){}
 
           const startedTime = formatTimeReadable(startFull);
-          const customerLabel = isMember ? 'Member' : 'Customer';
-          const msg = `<b>${session.table_id} — ${session.game_type}</b>\n${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\nStarted: ${startedTime}\nAmount: ${billText}${isPaused ? '\n(⏸ Paused)' : ''}`;
+          const customerLabel = isMember ? 'Member' : 'Cust';
+          masterMsg += `• <b>${session.table_id}</b> (${session.game_type})\n  ${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\n  Amt: ${billText} ${isPaused ? '(⏸)' : ''}\n\n`;
           
-          const buttons = [
-            [
-              isPaused 
-                ? { text: `▶️ Resume`, callback_data: `resume_${session.id}` }
-                : { text: `⏸ Pause`, callback_data: `pause_${session.id}` },
-              { text: `🛑 Stop`, callback_data: `end_${session.id}` }
-            ]
+          const row = [
+            isPaused 
+              ? { text: `▶️ ${session.table_id}`, callback_data: `resume_${session.id}` }
+              : { text: `⏸ ${session.table_id}`, callback_data: `pause_${session.id}` }
           ];
+          
           if (isMember) {
-             buttons[0].splice(1, 0, { text: `📒 QKhata`, callback_data: `qkhatainit_${session.id}` });
+             row.push({ text: `📒 QK`, callback_data: `qkhatainit_${session.id}` });
           }
-          await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
+          
+          row.push({ text: `🛑 Stop`, callback_data: `end_${session.id}` });
+          masterButtons.push(row);
         }
+        if (activeSessions.length > 1) {
+          masterButtons.push([{ text: `⏸ Pause All`, callback_data: `pause_all` }]);
+          masterButtons.push([{ text: `🔴 End All (${activeSessions.length})`, callback_data: `end_all` }]);
+        }
+        
+        await sendTelegramMessage(chatId, masterMsg, { inline_keyboard: masterButtons });
       }
       else if (text === '🛑 Stop Session') {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
@@ -729,29 +753,29 @@ Time: ${timeStr}`, mainMenu);
       else if (text === '💰 Today\'s Summary') {
         const dateStr = getCurrentISTDateStr();
         
-        const { data: completedSessions } = await supabase
-          .from('sessions')
-          .select('cost, duration')
-          .eq('business_id', business.id)
-          .eq('status', 'COMPLETED')
-          .eq('date', dateStr);
+        const [sessionsResponse, qpulseInsight] = await Promise.all([
+          supabase
+            .from('sessions')
+            .select('cost, duration')
+            .eq('business_id', business.id)
+            .eq('status', 'COMPLETED')
+            .eq('date', dateStr),
+          generateQpulseInsight(business.id)
+        ]);
+        
+        const completedSessions = sessionsResponse.data;
           
         if (!completedSessions || completedSessions.length === 0) {
           await sendTelegramMessage(chatId, `No completed sessions today (${dateStr}).`, mainMenu);
         } else {
           let totalRevenue = 0;
-          let totalDurationMins = 0;
           
           completedSessions.forEach(s => {
             totalRevenue += Number(s.cost) || 0;
-            // duration is like "1 hr 30 min" or "45 min", we can just count sessions or try parsing.
-            // Let's just do total revenue and session count.
           });
-          
           
           let msg = `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
           
-          const qpulseInsight = await generateQpulseInsight(business.id);
           if (qpulseInsight && qpulseInsight.telegram) {
             msg += `\n\n<b>Qpulse Insight</b>\n${qpulseInsight.telegram}`;
           }
@@ -769,8 +793,13 @@ Time: ${timeStr}`, mainMenu);
         return NextResponse.json({ ok: true });
       }
       else if (text === '📒 Member QKhata') {
-        const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
-        const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
+        const [customersResponse, membershipsResponse] = await Promise.all([
+          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false }),
+          supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
+        ]);
+        
+        const rawCustomers = customersResponse.data;
+        const memberships = membershipsResponse.data;
         
         const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id)) || [];
         
@@ -1588,6 +1617,71 @@ You can still access other businesses associated with your Telegram account.`, {
           await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
         }
       }
+      else if (callbackData === 'pause_all' || callbackData === 'end_all') {
+         if (messageId) {
+            editTelegramMessageReplyMarkup(chatId, messageId, {
+               inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'ignore' }]]
+            }).catch(console.error);
+         }
+         
+         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
+         if (!activeSessions || activeSessions.length === 0) {
+            answerCallbackQuery(callbackQueryId, 'No active sessions to process.').catch(console.error);
+            return NextResponse.json({ ok: true });
+         }
+         
+         let successCount = 0;
+         let summaryDetails = '';
+         const action = callbackData === 'pause_all' ? 'pause' : 'force_end';
+         
+         for (const session of activeSessions) {
+            // For pause_all, skip already paused sessions
+            if (action === 'pause' && session.paused_at) continue;
+            
+            try {
+               const { dbUpdates } = await handleSessionIntervention({
+                 action,
+                 session_id: session.id,
+                 business_id: business.id,
+                 performed_by: 'Qbot'
+               });
+               successCount++;
+
+               if (action === 'force_end') {
+                  const updatedSession = { ...session, ...(dbUpdates || {}) };
+                  const isPaused = typeof updatedSession.paused_at === 'string' && updatedSession.paused_at.trim() !== '';
+                  const startFull = typeof updatedSession.start_time === 'string' && updatedSession.start_time.includes('T') ? updatedSession.start_time : `${updatedSession.date}, ${updatedSession.start_time}`;
+                  const endFull = isPaused ? updatedSession.paused_at : new Date().toISOString();
+                  
+                  let billText = '₹0';
+                  try {
+                     const res = await calculateServerBillingForSession(updatedSession, business.id, endFull);
+                     billText = `₹${Math.round(res.cost)}`;
+                  } catch(e){}
+                  
+                  summaryDetails += `• <b>${session.table_id}</b>: ${escapeHtml(session.customer_name || 'Guest')} - ${billText}\n`;
+               }
+            } catch(e) {
+               console.error(`Failed to ${action} session ${session.id}:`, e);
+            }
+         }
+         
+         const verb = action === 'pause' ? 'paused' : 'ended';
+         let msg = `✅ <b>Action Complete</b>\n\nSuccessfully ${verb} ${successCount} active session(s).`;
+         
+         if (action === 'force_end' && successCount > 0) {
+            msg += `\n\n<b>Stopped Sessions Summary:</b>\n${summaryDetails}`;
+         }
+
+         answerCallbackQuery(callbackQueryId, `Successfully ${verb} ${successCount} session(s)`).catch(console.error);
+         
+         if (messageId) {
+            await editTelegramMessageText(chatId, messageId, msg);
+         } else {
+            await sendTelegramMessage(chatId, msg, mainMenu);
+         }
+         return NextResponse.json({ ok: true });
+      }
       else if (callbackData.startsWith('pause_') || callbackData.startsWith('resume_') || callbackData.startsWith('end_') || callbackData.startsWith('confirm_')) {
         const actionPrefix = callbackData.split('_')[0];
         const sessionId = callbackData.substring(actionPrefix.length + 1);
@@ -2092,13 +2186,26 @@ Table: ${tableId}
   }
 }
 
+const recentUpdates = new Set<number>();
+
 async function verifyIdempotency(updateId: number, chatId: string): Promise<boolean> {
+  if (recentUpdates.has(updateId)) {
+    console.log(`[Idempotency] Memory cache duplicate update ignored: ${updateId}`);
+    return false;
+  }
+  recentUpdates.add(updateId);
+  // Optional cleanup
+  if (recentUpdates.size > 1000) {
+     const iter = recentUpdates.values();
+     for (let i = 0; i < 500; i++) recentUpdates.delete(iter.next().value);
+  }
+
   const { error } = await supabase.from('telegram_updates').insert({
     update_id: updateId,
     chat_id: chatId
   });
   if (error && error.code === '23505') { // Unique constraint violation
-    console.log(`[Idempotency] Duplicate update ignored: ${updateId}`);
+    console.log(`[Idempotency] DB duplicate update ignored: ${updateId}`);
     return false;
   }
   return true;
@@ -2107,6 +2214,14 @@ async function verifyIdempotency(updateId: number, chatId: string): Promise<bool
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
+    const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
+    
+    if (clientSecret !== WEBHOOK_SECRET) {
+      console.warn('Unauthorized Telegram Webhook attempt.');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const update = await request.json();
     const updateId = update.update_id;
     const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;

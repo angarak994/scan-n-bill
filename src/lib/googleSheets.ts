@@ -179,6 +179,69 @@ export async function upsertRow(sheetName: string, idColumnIndex: number, unique
   }
 }
 
+export async function updateRowDirectly(sheetName: string, rowNum: string, values: any[], businessId?: string, maxRetries = 3) {
+  let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    if (business && business.google_sheet_id) spreadsheetId = business.google_sheet_id;
+  }
+  if (!spreadsheetId) return;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const sheets = await getGoogleSheetsClient();
+      const range = `${sheetName}!A${rowNum}`;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [values] }
+      });
+      return;
+    } catch (error: any) {
+      if (attempt === maxRetries) {
+        console.error(`[CRITICAL] Failed to direct update row in ${sheetName}:`, error);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+}
+
+export async function appendAndGetRange(sheetName: string, values: any[], businessId?: string, maxRetries = 3): Promise<string | null> {
+  let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  if (businessId) {
+    const business = await businessManager.getBusiness(businessId);
+    if (business && business.google_sheet_id) spreadsheetId = business.google_sheet_id;
+  }
+  if (!spreadsheetId) return null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const sheets = await getGoogleSheetsClient();
+      const res = await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `'${sheetName}'!A1`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [values] }
+      });
+      return res.data.updates?.updatedRange || null;
+    } catch (error: any) {
+      if (error.message && error.message.includes('Unable to parse range')) {
+        console.log(`Sheet '${sheetName}' not found. Initializing sheets...`);
+        try { await initializeGoogleSheet(spreadsheetId); } catch (e) { }
+      }
+      if (attempt === maxRetries) {
+        console.error(`[CRITICAL] Failed to append and get range in ${sheetName}:`, error);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+  }
+  return null;
+}
+
 export async function syncSessionToSheet(sessionId: string, businessId?: string) {
   try {
     const { data: session } = await supabase.from('sessions').select('*').eq('id', sessionId).single();
@@ -224,7 +287,18 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       session.notes || ''
     ];
 
-    await upsertRow('Sessions', 0, shortId, values, businessId || session.business_id);
+    if (session.google_sheet_row_id) {
+       await updateRowDirectly('Sessions', session.google_sheet_row_id, values, businessId || session.business_id);
+    } else {
+       const range = await appendAndGetRange('Sessions', values, businessId || session.business_id);
+       if (range) {
+          // Range format typically like 'Sessions'!A15:S15
+          const rowMatch = range.match(/[a-zA-Z]+(\d+)/);
+          if (rowMatch && rowMatch[1]) {
+             await supabase.from('sessions').update({ google_sheet_row_id: rowMatch[1] }).eq('id', sessionId);
+          }
+       }
+    }
   } catch (err) {
     console.error('syncSessionToSheet Error:', err);
   }
@@ -307,22 +381,75 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
       });
     }
 
-    // Now inject headers for any sheet that is empty
+    // Now inject headers for any sheet that is empty, OR force overwrite them to ensure they are up to date!
     for (const reqSheet of requiredSheets) {
-      const res = await sheets.spreadsheets.values.get({
+      // Always overwrite headers to ensure schema updates are applied
+      await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `'${reqSheet.title}'!A1:Z1`
+        range: `'${reqSheet.title}'!A1:${String.fromCharCode(65 + reqSheet.headers.length - 1)}1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [reqSheet.headers] }
       });
-      const rows = res.data.values;
-      if (!rows || rows.length === 0 || !rows[0] || rows[0].length === 0 || rows[0][0] === '') {
-        await sheets.spreadsheets.values.update({
+    }
+
+    // Apply Premium Formatting (Bold Headers, Background Color, Freeze Row 1, Auto-Resize)
+    try {
+      const latestSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+      const formatRequests: any[] = [];
+      
+      latestSpreadsheet.data.sheets?.forEach(sheet => {
+        const sheetId = sheet.properties?.sheetId;
+        if (sheetId !== undefined) {
+          // Freeze top row
+          formatRequests.push({
+            updateSheetProperties: {
+              properties: {
+                sheetId: sheetId,
+                gridProperties: { frozenRowCount: 1 }
+              },
+              fields: 'gridProperties.frozenRowCount'
+            }
+          });
+          
+          // Format header row (Bold, dark gray background, white text)
+          formatRequests.push({
+            repeatCell: {
+              range: { sheetId: sheetId, startRowIndex: 0, endRowIndex: 1 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.2, green: 0.2, blue: 0.2 },
+                  textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 11 },
+                  horizontalAlignment: 'CENTER'
+                }
+              },
+              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+            }
+          });
+          
+          // Auto-resize columns A to Z
+          formatRequests.push({
+            autoResizeDimensions: {
+              dimensions: {
+                sheetId: sheetId,
+                dimension: 'COLUMNS',
+                startIndex: 0,
+                endIndex: 20
+              }
+            }
+          });
+        }
+      });
+      
+      if (formatRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
-          range: `'${reqSheet.title}'!A1:${String.fromCharCode(65 + reqSheet.headers.length - 1)}1`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [reqSheet.headers] }
+          requestBody: { requests: formatRequests }
         });
       }
+    } catch (formatErr) {
+      console.error('Failed to apply premium formatting to sheets:', formatErr);
     }
+    
   } catch (error) {
     console.error('Failed to initialize Google Sheet:', error);
   }

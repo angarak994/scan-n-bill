@@ -11,22 +11,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { mobile, otp } = await request.json();
-    if (!mobile || !otp) {
-      return NextResponse.json({ error: 'Mobile and OTP are required' }, { status: 400 });
+    const { contact, otp } = await request.json();
+    if (!contact || !otp) {
+      return NextResponse.json({ error: 'Contact and OTP are required' }, { status: 400 });
     }
 
-    const normalizedMobile = normalizePhone(mobile);
-    if (!normalizedMobile) {
-      return NextResponse.json({ error: 'Mobile number must be exactly 10 digits' }, { status: 400 });
+    let normalizedContact = contact.trim().toLowerCase();
+    const isEmail = normalizedContact.includes('@');
+    
+    if (!isEmail) {
+      normalizedContact = normalizePhone(contact);
+      if (!normalizedContact) {
+        return NextResponse.json({ error: 'Invalid mobile number' }, { status: 400 });
+      }
     }
 
-    // Get the most recent active OTP for this mobile
+    // Get the most recent active OTP for this contact
     const { data: verifications, error: fetchError } = await supabase
       .from('otp_verifications')
       .select('*')
       .eq('business_id', sessionCookie.businessId)
-      .eq('mobile', normalizedMobile)
+      .eq('mobile', normalizedContact)
       .order('created_at', { ascending: false })
       .limit(1);
 
