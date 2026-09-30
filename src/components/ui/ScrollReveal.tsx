@@ -59,6 +59,7 @@ export default function ScrollReveal({
         observer.unobserve(currentRef);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threshold]);
 
   const baseClasses = `transition-all motion-reduce:transition-none motion-reduce:opacity-100 motion-reduce:transform-none ${className}`;

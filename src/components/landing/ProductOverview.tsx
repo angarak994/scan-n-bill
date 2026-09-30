@@ -1,5 +1,4 @@
-import ScrollReveal from '@/components/ui/ScrollReveal';
-import InteractiveCard from '@/components/landing/InteractiveCard';
+
 
 export default function ProductOverview() {
   const modules = [
@@ -67,32 +66,26 @@ export default function ProductOverview() {
 
   return (
     <section id="product" className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-16 sm:py-24 bg-bg-primary">
-      <ScrollReveal animation="fade-up" delay={0}>
-        <div className="mb-12 sm:mb-16">
-          <h2 className="text-3xl sm:text-5xl font-bold tracking-tight mb-4">
-            Everything you need, built in.
-          </h2>
-          <p className="text-text-secondary text-lg sm:text-xl max-w-2xl">
-            A modular ecosystem designed specifically for the complexities of modern gaming lounges and entertainment venues.
-          </p>
-        </div>
-      </ScrollReveal>
+      <div className="mb-12 sm:mb-16">
+        <h2 className="text-3xl sm:text-5xl font-bold tracking-tight mb-4">
+          Everything you need, built in.
+        </h2>
+        <p className="text-text-secondary text-lg sm:text-xl max-w-2xl">
+          A modular ecosystem designed specifically for the complexities of modern gaming lounges and entertainment venues.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {modules.map((module, index) => (
-          <ScrollReveal key={index} animation="fade-up" delay={(index % 4) * 100}>
-            <InteractiveCard className="h-full rounded-xl">
-              <div className="bg-bg-surface p-6 rounded-xl border border-border-light hover:border-accent/30 transition-all group h-full">
-                <div className="w-10 h-10 rounded-lg bg-bg-card border border-border-light flex items-center justify-center text-text-primary mb-4 group-hover:scale-110 group-hover:text-accent transition-all shadow-sm">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    {module.icon}
-                  </svg>
-                </div>
-                <h4 className="font-bold text-text-primary mb-2 group-hover:text-accent transition-colors">{module.title}</h4>
-                <p className="text-text-secondary text-sm leading-relaxed">{module.description}</p>
-              </div>
-            </InteractiveCard>
-          </ScrollReveal>
+          <div key={index} className="bg-bg-surface p-6 rounded-xl border border-border-light h-full">
+            <div className="w-10 h-10 rounded-lg bg-bg-card border border-border-light flex items-center justify-center text-text-primary mb-4 shadow-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {module.icon}
+              </svg>
+            </div>
+            <h4 className="font-bold text-text-primary mb-2">{module.title}</h4>
+            <p className="text-text-secondary text-sm leading-relaxed">{module.description}</p>
+          </div>
         ))}
       </div>
     </section>

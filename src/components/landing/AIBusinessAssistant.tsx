@@ -37,7 +37,7 @@ export default function AIBusinessAssistant() {
                 <li>Table 3 utilization hit 85% (highest this month).</li>
                 <li>QR menu food orders increased by 22%.</li>
               </ul>
-              <p className="text-accent font-medium text-xs mt-2">✨ Recommendation: Consider adjusting Saturday evening rates up by 10% during peak hours.</p>
+              <p className="text-accent font-medium text-xs mt-2">Recommendation: Consider adjusting Saturday evening rates up by 10% during peak hours.</p>
             </ScrollReveal>
             
             <div className="mt-4 border-t border-border-light pt-4 flex gap-2">

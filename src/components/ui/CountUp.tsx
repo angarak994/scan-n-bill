@@ -48,6 +48,7 @@ export default function CountUp({ end, duration = 2000, suffix = '', prefix = ''
       cancelAnimationFrame(animationFrame);
       if (currentRef) observer.unobserve(currentRef);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [end, duration]);
 
   return <span ref={ref} className="font-mono tabular-nums">{prefix}{count}{suffix}</span>;

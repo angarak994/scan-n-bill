@@ -1,60 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
-  /* Layout & Backgrounds */
-  --background: #fcfcfc;
-  --foreground: #09090b;
-
-  --bg-primary: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-card: #ffffff;
-  
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #64748b;
-  --text-disabled: #94a3b8;
-  
-  /* Borders */
-  --border: rgba(15, 23, 42, 0.08);
-  --border-light: rgba(15, 23, 42, 0.04);
-  
-  /* Core Colors */
-  --primary: #0f172a;      /* Deep blue-gray for high contrast primary elements */
-  --secondary: #3b82f6;    /* Vibrant blue for links/secondary accents */
-  --accent: #10b981;       /* Emerald green for primary active/start actions */
-  
-  /* Status Colors */
-  --success: #10b981;      /* Emerald */
-  --warning: #f59e0b;      /* Amber */
-  --error: #ef4444;        /* Red */
-  --danger: #ef4444;
-  --info: #0ea5e9;         /* Light Blue */
-  --disabled: #e2e8f0;     /* Disabled state backgrounds */
-}
-
-.dark {
   color-scheme: dark;
   /* Layout & Backgrounds */
   --background: #09090b;
   --foreground: #fafafa;
 
-  --bg-primary: #09090b;
-  --bg-surface: #141414;
-  --bg-card: #141414;
+  --bg-primary: #040806; /* ultra deep slate-green */
+  --bg-surface: #0a120d; /* slightly lighter surface */
+  --bg-card: #0c1610;    /* card background */
   
   /* Text */
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-disabled: #52525b;
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-disabled: #475569;
   
   /* Borders */
-  --border: #27272a;
-  --border-light: #18181b;
+  --border: #1a2e23;
+  --border-light: #0f1c15;
   
   /* Core Colors */
-  --primary: #fafafa;
-  --secondary: #60a5fa;
+  --primary: #ffffff;
+  --secondary: #38bdf8;
   --accent: #10b981;
   
   /* Status Colors */
@@ -104,22 +71,32 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Glassmorphism utilities */
+/* Premium Text Gradients */
+.text-gradient {
+  background: linear-gradient(180deg, #ffffff 0%, #a1a1aa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glassmorphism & Backgrounds (Refined) */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
+  box-shadow: 0 4px 24px -12px rgba(0,0,0,0.5);
 }
 
-.dark .glass-panel {
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid var(--border);
+.bg-grid-pattern {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
-/* UI Micro-interactions & Premium Motion */
+/* UI Micro-interactions & Premium Motion (Refined) */
 .card-glow {
-  box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
+  border: 1px solid var(--accent);
+  background: var(--bg-surface);
+  box-shadow: 0 4px 20px -10px rgba(16, 185, 129, 0.15);
 }
 
 .hover-lift {
@@ -128,10 +105,6 @@ body {
 
 .hover-lift:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-}
-
-.dark .hover-lift:hover {
   box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
 }
 
@@ -275,4 +248,33 @@ body {
               fill 300ms cubic-bezier(0.4, 0, 0.2, 1),
               stroke 300ms cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Hero Entrance Animations */
+@keyframes hero-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-hero-reveal {
+  animation: hero-reveal 400ms cubic-bezier(0.0, 0.0, 0.2, 1) forwards;
+}
+
+.animate-hero-reveal-delayed {
+  animation: hero-reveal 400ms cubic-bezier(0.0, 0.0, 0.2, 1) forwards;
+  animation-delay: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-reveal, .animate-hero-reveal-delayed {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }

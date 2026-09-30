@@ -13,7 +13,7 @@ export default function MouseGlow() {
     const isMobile = window.innerWidth < 768 || navigator.maxTouchPoints > 0;
     
     if (mediaQuery.matches || isMobile) {
-      setIsActive(false);
+      setTimeout(() => setIsActive(false), 0);
       return;
     }
 

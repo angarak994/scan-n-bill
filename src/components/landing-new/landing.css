@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* 
+      LIGHT THEME 
+      Warm paper/chalk background, ink text, brass and green accents.
+    */
+    --bg-base: #faf9f6;       /* Warm paper */
+    --bg-surface: #f3f1ec;    /* Slightly deeper */
+    --bg-elevated: #ffffff;   /* Pure white cards */
+    
+    --baize-green: #0a3622;
+    --baize-light: #166534;
+    --brass: #b59654;
+    
+    /* Neutral Ramp */
+    --gray-50: #fbfbfa;
+    --gray-100: #f4f4f5;
+    --gray-200: #e4e4e7;
+    --gray-300: #d4d4d8;
+    --gray-400: #a1a1aa;
+    --gray-500: #71717a;
+    --gray-600: #52525b;
+    --gray-700: #3f3f46;
+    --gray-800: #27272a;
+    --gray-900: #18181b;
+
+    /* Semantic */
+    --success: #16a34a;
+    --warning: #eab308;
+    --danger: #dc2626;
+    --info: #2563eb;
+    
+    --accent: var(--baize-green);
+    --accent-hover: var(--baize-light);
+    
+    --text-primary: var(--gray-900);
+    --text-secondary: var(--gray-600);
+    --text-muted: var(--gray-500);
+    
+    --border-hairline: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.15);
+    --focus-ring: rgba(22, 101, 52, 0.5);
+
+    /* Elevation */
+    --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  }
+
+  [data-theme="dark"] {
+    /* 
+      DARK THEME 
+      Deep baize green and near-black, warm brass/chalk accents.
+    */
+    --bg-base: #060806;       
+    --bg-surface: #0a0e0b;    
+    --bg-elevated: #111612;   
+    
+    --baize-green: #0a3622;
+    --baize-light: #166534;
+    --brass: #b59654;
+    
+    /* Semantic */
+    --success: #22c55e;
+    --warning: #facc15;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    
+    --accent: var(--baize-light);
+    --accent-hover: #1c7e42;
+    
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --text-muted: #52525b;
+    
+    --border-hairline: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --focus-ring: rgba(22, 101, 52, 0.8);
+
+    /* Elevation in Dark Mode relies more on surface lightness and borders than drop shadows */
+    --shadow-sm: none;
+    --shadow-md: 0 4px 20px -2px rgba(0,0,0,0.5);
+    --shadow-lg: 0 10px 30px -5px rgba(0,0,0,0.8);
+  }
+
+  .landing-scope {
+    /* Typography Tokens */
+    --font-display: var(--font-hanken-grotesk), -apple-system, sans-serif;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: var(--font-jetbrains-mono), monospace;
+    
+    /* Modular Scale */
+    --text-xs: 0.75rem;     /* 12px */
+    --text-sm: 0.875rem;    /* 14px */
+    --text-base: 1rem;      /* 16px */
+    --text-lg: 1.125rem;    /* 18px */
+    --text-xl: 1.25rem;     /* 20px */
+    --text-2xl: 1.563rem;   /* 25px */
+    --text-3xl: 1.953rem;   /* 31px */
+    --text-4xl: 2.441rem;   /* 39px */
+    --text-5xl: 3.052rem;   /* 48px */
+    --text-6xl: 3.815rem;   /* 61px */
+    
+    /* Radii Tokens */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+
+    /* Spacing 8pt Rhythm */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-12: 48px;
+    --space-16: 64px;
+    --space-24: 96px;
+    --space-32: 128px;
+
+    /* Base Reset */
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    line-height: 1.6;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+@layer utilities {
+  /* Text */
+  .text-balance { text-wrap: balance; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  
+  /* Focus Rings */
+  .focus-ring {
+    outline: none;
+  }
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* Interaction Motion */
+  .transition-interactive {
+    transition: transform 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, opacity 150ms ease-out;
+  }
+  
+  .active-press:active {
+    transform: scale(0.98);
+  }
+
+  /* Structural Motion */
+  .transition-structural {
+    transition: all 250ms ease;
+  }
+  
+  /* Reveal Animation */
+  .reveal-initial {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .reveal-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  /* Reduced Motion */
+  @media (prefers-reduced-motion: reduce) {
+    .transition-interactive, .transition-structural, .active-press:active, .reveal-initial {
+      transition: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+    }
+  }
+}
