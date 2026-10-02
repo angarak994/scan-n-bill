@@ -44,10 +44,66 @@ export default function OnboardPage() {
   const [qrs, setQrs] = useState<{ name: string; dataUrl: string }[]>([]);
   const [createdBusinessId, setCreatedBusinessId] = useState<string>('');
 
+  const [onboardMode, setOnboardMode] = useState<'selection' | 'demo' | 'pricing' | 'payment' | 'production'>('selection');
+  const [selectedPlan, setSelectedPlan] = useState<'essential' | 'growth'>('growth');
+
   const handleBasicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleDemoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.business_name || !formData.owner_name || !formData.contact_number || !formData.dashboard_pin) {
+      setError('Please fill out all required fields.');
+      return;
+    }
+    if (!/^\d{4}$/.test(formData.dashboard_pin)) {
+      setError('Dashboard PIN must be exactly 4 digits.');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+
+    try {
+      const payload = {
+        ...formData,
+        google_sheet_id: 'demo-sheet-' + Math.random().toString(36).substring(7),
+        pricing_rules: { 
+          rules: { 'pool': { type: 'fixed', rate: 200 } }, 
+          globalSettings: { rounding_mode: 'nearest_5', enable_peak_rules: false } 
+        },
+        tables: [
+          { id: 'T1', name: 'Table 1', type: 'pool' },
+          { id: 'T2', name: 'Table 2', type: 'pool' }
+        ],
+        menu_items: []
+      };
+
+      const res = await fetch('/api/onboard-business', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate demo business');
+      }
+
+      setQrs(data.qrs);
+      setCreatedBusinessId(data.businessId);
+      if (data.pin) {
+        sessionStorage.setItem('dashboard_pin', data.pin);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ... (keeping existing handlers below)
   const addPricingRule = () => {
     if (!newGameType) return;
     const gameTypeKey = newGameType.toLowerCase().trim();
@@ -132,7 +188,6 @@ export default function OnboardPage() {
         return;
       }
     }
-    // Step 3 is menu (optional, so no validation needed)
     setError('');
     setStep(step + 1);
   };
@@ -179,58 +234,243 @@ export default function OnboardPage() {
   };
 
   const handleDownloadAll = () => {
-    // In a real app, we'd use JSZip, but here we can just trigger multiple downloads
-    // or provide a simple print window.
     window.print();
   };
 
   if (qrs.length > 0) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary">
         <div className="max-w-6xl w-full flex flex-col gap-8 items-center">
           <div className="flex flex-col items-center gap-4 text-center">
-            <h1 className="text-4xl font-bold text-green-600 dark:text-green-400">Business Onboarded Successfully!</h1>
-            <p className="text-xl text-gray-600 dark:text-gray-300">
-              Your tables are set up and pricing rules applied. Print these QR codes to accept sessions.
+            <h1 className="text-4xl font-black text-accent">Business Generated Successfully!</h1>
+            <p className="text-xl text-text-secondary">
+              Your tables are set up and pricing rules applied.
             </p>
-            <button
-              onClick={handleDownloadAll}
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-colors mt-4 print:hidden"
-            >
-              Print All QR Codes
-            </button>
             <a
               href={`/dashboard`}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-lg transition-colors mt-2 print:hidden"
+              className="px-8 py-4 bg-accent hover:bg-accent/90 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:scale-105 mt-2 print:hidden"
             >
-              Go to Dashboard →
+              Enter Dashboard →
             </a>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full print:grid-cols-2 print:gap-4">
-            {qrs.map((qr) => (
-              <div key={qr.name} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl flex flex-col items-center border border-gray-200 dark:border-gray-700 print:shadow-none print:border-2">
-                <h2 className="text-xl font-bold mb-4 text-center">{qr.name}</h2>
-                <img src={qr.dataUrl} alt={qr.name} className="w-48 h-48 mb-4 border-4 border-white shadow-sm rounded-lg" />
-                <a
-                  href={qr.dataUrl}
-                  download={`${qr.name.replace(/ /g, '_')}_QR.png`}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow transition-colors w-full text-center print:hidden"
-                >
-                  Download PNG
-                </a>
-              </div>
-            ))}
           </div>
         </div>
       </main>
     );
   }
 
+  if (onboardMode === 'selection') {
+    return (
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+        <div className="max-w-4xl w-full">
+          <div className="text-center mb-12">
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight mb-4">How would you like to start?</h1>
+            <p className="text-text-secondary text-lg">Choose a deployment mode for your club.</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Demo Sandbox Card */}
+            <div 
+              onClick={() => setOnboardMode('demo')}
+              className="group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-accent shadow-2xl bg-bg-surface"
+            >
+              <div className="w-16 h-16 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold mb-3">Quick Demo Sandbox</h2>
+              <p className="text-text-secondary mb-6 text-sm leading-relaxed">
+                Start instantly with a pre-configured dashboard. We auto-generate tables and standard pricing so you can test QControl immediately. No Google Sheets required.
+              </p>
+              <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-accent group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
+                Launch Sandbox
+              </div>
+            </div>
+
+            {/* Production Setup Card */}
+            <div 
+              onClick={() => setOnboardMode('pricing')}
+              className="group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-blue-500 shadow-2xl bg-bg-surface"
+            >
+              <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                <svg className="w-8 h-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold mb-3">Full Production Setup</h2>
+              <p className="text-text-secondary mb-6 text-sm leading-relaxed">
+                Configure your real business. Set up custom time-based pricing rules, link your Google Sheets for QKhata, and generate live QR codes for your tables.
+              </p>
+              <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-blue-500 group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
+                Start Production Setup
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (onboardMode === 'demo') {
+    return (
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border bg-bg-surface p-8">
+          <div className="flex items-center gap-4 mb-8">
+            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </button>
+            <h1 className="text-2xl font-bold">Demo Sandbox Setup</h1>
+          </div>
+          
+          <form onSubmit={handleDemoSubmit} className="flex flex-col gap-5">
+            {error && (
+              <div className="p-4 bg-error/10 border border-error/20 text-error rounded-xl text-sm font-medium">
+                {error}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-bold text-text-secondary mb-2">Demo Club Name</label>
+              <input required type="text" name="business_name" value={formData.business_name} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., Strike Zone (Demo)" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-text-secondary mb-2">Your Name</label>
+              <input required type="text" name="owner_name" value={formData.owner_name} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., John Doe" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-text-secondary mb-2">Phone Number</label>
+              <input required type="text" name="contact_number" value={formData.contact_number} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., 9999999999" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-text-secondary mb-2">Dashboard PIN (4 Digits)</label>
+              <input required type="password" maxLength={4} pattern="\d{4}" name="dashboard_pin" value={formData.dashboard_pin} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary tracking-widest font-mono" placeholder="1234" />
+            </div>
+            
+            <button disabled={loading} type="submit" className="w-full mt-4 px-6 py-4 rounded-xl bg-accent hover:bg-accent/90 text-white font-bold text-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50">
+              {loading ? 'Generating Sandbox...' : 'Launch Demo Sandbox →'}
+            </button>
+            <p className="text-xs text-text-secondary text-center">This will instantly generate a dummy dashboard with pre-configured tables and a fixed ₹200/hr pricing rule.</p>
+          </form>
+        </div>
+      </main>
+    );
+  }
+  if (onboardMode === 'pricing') {
+    return (
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+        <div className="max-w-5xl w-full">
+          <div className="flex items-center gap-4 mb-8">
+            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary bg-bg-surface p-2 rounded-full border border-border">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </button>
+            <h1 className="text-3xl font-bold">Choose Your License</h1>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Essential Plan */}
+            <div 
+              onClick={() => setSelectedPlan('essential')}
+              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer ${selectedPlan === 'essential' ? 'border-accent shadow-[0_0_30px_rgba(16,185,129,0.15)] bg-bg-card' : 'border-border bg-bg-surface hover:border-border-theme'}`}
+            >
+              <h3 className="text-xl font-bold text-text-secondary mb-2">Essential</h3>
+              <div className="mb-6"><span className="text-4xl font-black">₹999</span><span className="text-text-secondary">/mo</span></div>
+              <ul className="space-y-4 mb-8 flex-1 text-sm">
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Up to 5 Tables</li>
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Standard QR Billing</li>
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Basic Telegram Alerts</li>
+              </ul>
+              <button onClick={() => { setSelectedPlan('essential'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'essential' ? 'bg-accent text-white' : 'bg-bg-card text-text-primary border border-border'}`}>
+                Select Essential
+              </button>
+            </div>
+
+            {/* Growth Plan */}
+            <div 
+              onClick={() => setSelectedPlan('growth')}
+              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer relative overflow-hidden ${selectedPlan === 'growth' ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-bg-card' : 'border-border bg-bg-surface hover:border-border-theme'}`}
+            >
+              <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-widest">Recommended</div>
+              <h3 className="text-xl font-bold text-blue-500 mb-2">Growth</h3>
+              <div className="mb-6"><span className="text-4xl font-black">₹2,499</span><span className="text-text-secondary">/mo</span></div>
+              <ul className="space-y-4 mb-8 flex-1 text-sm">
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Unlimited Tables</li>
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>QKhata (Google Sheets Sync)</li>
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Time-based Smart Pricing</li>
+                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Food & Beverage Engine</li>
+              </ul>
+              <button onClick={() => { setSelectedPlan('growth'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'growth' ? 'bg-blue-600 text-white' : 'bg-bg-card text-text-primary border border-border'}`}>
+                Select Growth
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (onboardMode === 'payment') {
+    return (
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border bg-bg-surface p-8 animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex items-center gap-4 mb-8">
+            <button onClick={() => setOnboardMode('pricing')} className="text-text-secondary hover:text-text-primary">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </button>
+            <h1 className="text-2xl font-bold">Secure Checkout</h1>
+          </div>
+          
+          <div className="bg-bg-card border border-border rounded-xl p-4 mb-6">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-text-secondary">Selected Plan</span>
+              <span className="font-bold capitalize">{selectedPlan}</span>
+            </div>
+            <div className="flex justify-between items-center text-lg font-black">
+              <span>Total Due</span>
+              <span>₹{selectedPlan === 'essential' ? '999' : '2,499'}</span>
+            </div>
+          </div>
+
+          <div className="space-y-4 mb-8">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Card Number</label>
+              <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary flex items-center justify-between font-mono">
+                <span>•••• •••• •••• 4242</span>
+                <svg className="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><path d="M2.993 6.696C2.993 5.759 3.75 5 4.687 5h14.626c.937 0 1.694.759 1.694 1.696v10.608c0 .937-.757 1.696-1.694 1.696H4.687c-.937 0-1.694-.759-1.694-1.696V6.696zM4.687 6.696h14.626v2.122H4.687V6.696zm0 4.243v6.365h14.626v-6.365H4.687z"/></svg>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Expiry</label>
+                <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary font-mono">12 / 28</div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">CVC</label>
+                <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary font-mono">•••</div>
+              </div>
+            </div>
+          </div>
+
+          <button onClick={() => setOnboardMode('production')} className="w-full px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all flex items-center justify-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Pay & Continue Setup
+          </button>
+          <p className="text-xs text-text-secondary text-center mt-4">Simulated secure checkout for Demo Environment.</p>
+        </div>
+      </main>
+    );
+  }
+
+  // Production Setup Flow
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="max-w-2xl w-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-8 text-white">
-          <h1 className="text-3xl font-extrabold text-center">Self-Service Setup</h1>
+    <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+      <div className="max-w-2xl w-full bg-bg-surface rounded-2xl shadow-2xl overflow-hidden border border-border">
+        <div className="bg-bg-card border-b border-border p-8 relative">
+          <button onClick={() => setOnboardMode('selection')} className="absolute top-8 left-8 text-text-secondary hover:text-text-primary">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+          </button>
+          <h1 className="text-3xl font-extrabold text-center">Production Setup</h1>
           <div className="flex flex-wrap justify-center gap-4 sm:gap-8 mt-6">
             <div className={`flex flex-col items-center opacity-${step >= 1 ? '100' : '50'} transition-opacity`}>
               <div className="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center font-bold mb-2 shadow">1</div>
