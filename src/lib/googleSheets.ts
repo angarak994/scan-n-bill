@@ -103,19 +103,14 @@ export async function getMembershipByCustomer(customerQuery: string, businessId?
 }
 
 export async function syncBookingToSheet(bookingData: any, businessId?: string) {
-  // Store: Booking ID, Business ID, Customer Name, Table, Date, Time, Duration, Status, Session ID, Created At, Updated At
   await appendRow('Bookings', [
     bookingData.id || 'Pending',
-    businessId || bookingData.business_id || '',
-    bookingData.customer_name,
-    bookingData.table_id,
     bookingData.booking_date,
     bookingData.start_time,
+    bookingData.customer_name,
+    bookingData.table_id,
     bookingData.duration_minutes || 60,
-    bookingData.status || 'confirmed',
-    bookingData.session_id || '',
-    new Date().toISOString(),
-    new Date().toISOString()
+    bookingData.status || 'confirmed'
   ], businessId);
 }
 
@@ -269,21 +264,12 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       shortId,
       session.date || getCurrentISTDateStr(),
       formattedCustomerName,
-      session.member_id || '',
       session.table_id || '',
       session.game_type || '',
-      startReadable,
-      endReadable,
       session.duration || '0m',
-      session.paused_duration_seconds || 0,
-      session.applied_pricing || 'Fixed Rate',
       session.cost || 0,
       session.payment_status || 'Pending',
-      session.status || 'ACTIVE',
-      session.completed_by || 'System',
       qkhataStatus,
-      qkhataAmount,
-      qkhata?.id || '',
       session.notes || ''
     ];
 
@@ -315,13 +301,9 @@ export async function syncMemberToSheet(customerId: string, businessId?: string)
       customer.id,
       customer.name || 'Unknown',
       customer.phone || '',
-      customer.email || '',
       membership ? membership.tier : 'None',
-      new Date(customer.created_at).toLocaleDateString(),
       customer.total_billed || 0,
-      customer.total_paid || 0,
       customer.outstanding_balance || 0,
-      customer.updated_at ? new Date(customer.updated_at).toLocaleString() : '',
       'Active'
     ];
 
@@ -335,10 +317,10 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
   
   // Define required sheets and their headers
   const requiredSheets = [
-    { title: 'Sessions', headers: ['Session ID', 'Date', 'Customer Name', 'Member ID', 'Table No', 'Game Type', 'Start Time', 'End Time', 'Duration', 'Paused (s)', 'Applied Pricing', 'Amount', 'Payment Status', 'Status', 'Completed By', 'QKhata Status', 'QKhata Amount', 'QKhata ID', 'Notes'] },
+    { title: 'Sessions', headers: ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Duration', 'Amount', 'Payment Status', 'QKhata Sync', 'Notes'] },
     { title: 'Activity Logs', headers: ['Timestamp', 'Action', 'User', 'Table', 'Session', 'Details'] },
-    { title: 'Members', headers: ['ID', 'Name', 'Phone', 'Email', 'Tier', 'Joined', 'Total Billed', 'Total Paid', 'Outstanding Balance', 'Last Updated', 'Status'] },
-    { title: 'Bookings', headers: ['Booking ID', 'Business ID', 'Customer Name', 'Table', 'Date', 'Start Time', 'Duration (m)', 'Status', 'Session ID', 'Created At', 'Updated At'] },
+    { title: 'Members', headers: ['Member ID', 'Name', 'Phone', 'Tier', 'Total Billed', 'Outstanding Balance', 'Status'] },
+    { title: 'Bookings', headers: ['Booking ID', 'Date', 'Start Time', 'Customer Name', 'Table', 'Duration (m)', 'Status'] },
     { title: 'Food Orders', headers: ['Timestamp', 'Table No', 'Customer Name', 'Items Ordered', 'Order Total', 'Status'] }
   ];
 

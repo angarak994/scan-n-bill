@@ -40,6 +40,18 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
+                // Theme Logic
+                let theme = localStorage.getItem('theme');
+                if (!theme) {
+                  theme = 'dark';
+                  localStorage.setItem('theme', 'dark');
+                }
+                if (theme === 'dark') {
+                  document.documentElement.classList.add('dark');
+                } else {
+                  document.documentElement.classList.remove('dark');
+                }
+
                 // Hero Rotation Logic
                 const variants = ["flagship", "unified", "visibility", "time-based", "journey", "promotions", "digital", "status", "remote", "automation"];
                 let variantId = 'flagship';
