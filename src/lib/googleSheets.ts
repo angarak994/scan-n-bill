@@ -105,10 +105,10 @@ export async function getMembershipByCustomer(customerQuery: string, businessId?
 export async function syncBookingToSheet(bookingData: any, businessId?: string) {
   await appendRow('Bookings', [
     bookingData.id || 'Pending',
-    bookingData.booking_date,
-    bookingData.start_time,
-    bookingData.customer_name,
-    bookingData.table_id,
+    bookingData.booking_date || '',
+    bookingData.start_time || '',
+    bookingData.customer_name || 'Unknown',
+    bookingData.table_id || '',
     bookingData.duration_minutes || 60,
     bookingData.status || 'confirmed'
   ], businessId);
@@ -247,7 +247,7 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       .select('*')
       .eq('session_id', sessionId)
       .eq('payment_method', 'QKhata')
-      .limit(1).single();
+      .limit(1).maybeSingle();
 
     const startReadable = session.start_time ? formatTimeReadable(session.start_time) : '';
     const endReadable = session.end_time ? formatTimeReadable(session.end_time) : '';
@@ -295,7 +295,7 @@ export async function syncMemberToSheet(customerId: string, businessId?: string)
     const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).single();
     if (!customer) return;
 
-    const { data: membership } = await supabase.from('memberships').select('*').eq('id', customer.id).single();
+    const { data: membership } = await supabase.from('memberships').select('*').eq('id', customer.id).maybeSingle();
 
     const values = [
       customer.id,

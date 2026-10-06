@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
@@ -2232,23 +2232,22 @@ export async function POST(request: Request) {
     const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
 
     if (updateId && chatId) {
-        // Safe timeout wrap to prevent Vercel 504 Infinite Retries
-        try {
-            await Promise.race([
-                (async () => {
-                   const isNew = await verifyIdempotency(updateId, String(chatId));
-                   if (isNew) {
-                       await processWebhook(update);
-                   }
-                })(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('Vercel Timeout Prevention')), 8500))
-            ]);
-        } catch (err: any) {
-            console.error(`[Webhook Error] update_id: ${updateId}, msg: ${err.message}`);
+        // Idempotency check happens instantly
+        const isNew = await verifyIdempotency(updateId, String(chatId));
+        
+        if (isNew) {
+            // Instantly background the webhook processing
+            after(async () => {
+                try {
+                    await processWebhook(update);
+                } catch (err: any) {
+                    console.error(`[Webhook Background Error] update_id: ${updateId}, msg: ${err.message}`);
+                }
+            });
         }
     }
     
-    // Always return 200 OK so Telegram doesn't retry
+    // Always return 200 OK instantly so Telegram never retries and buttons feel lightning fast
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram Webhook Parse Error:', error);
