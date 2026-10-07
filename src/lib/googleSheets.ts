@@ -273,12 +273,15 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       session.notes || ''
     ];
 
+    const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Kolkata' });
+    const currentMonth = monthFormatter.format(new Date());
+
     if (session.google_sheet_row_id) {
-       await updateRowDirectly('Sessions', session.google_sheet_row_id, values, businessId || session.business_id);
+       await updateRowDirectly(currentMonth, session.google_sheet_row_id, values, businessId || session.business_id);
     } else {
-       const range = await appendAndGetRange('Sessions', values, businessId || session.business_id);
+       const range = await appendAndGetRange(currentMonth, values, businessId || session.business_id);
        if (range) {
-          // Range format typically like 'Sessions'!A15:S15
+          // Range format typically like 'October'!A15:S15
           const rowMatch = range.match(/[a-zA-Z]+(\d+)/);
           if (rowMatch && rowMatch[1]) {
              await supabase.from('sessions').update({ google_sheet_row_id: rowMatch[1] }).eq('id', sessionId);
@@ -315,9 +318,12 @@ export async function syncMemberToSheet(customerId: string, businessId?: string)
 export async function initializeGoogleSheet(spreadsheetId: string) {
   const sheets = await getGoogleSheetsClient();
   
+  const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Kolkata' });
+  const currentMonth = monthFormatter.format(new Date());
+
   // Define required sheets and their headers
   const requiredSheets = [
-    { title: 'Sessions', headers: ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Duration', 'Amount', 'Payment Status', 'QKhata Sync', 'Notes'] },
+    { title: currentMonth, headers: ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Duration', 'Amount', 'Payment Status', 'QKhata Sync', 'Notes'] },
     { title: 'Activity Logs', headers: ['Timestamp', 'Action', 'User', 'Table', 'Session', 'Details'] },
     { title: 'Members', headers: ['Member ID', 'Name', 'Phone', 'Tier', 'Total Billed', 'Outstanding Balance', 'Status'] },
     { title: 'Bookings', headers: ['Booking ID', 'Date', 'Start Time', 'Customer Name', 'Table', 'Duration (m)', 'Status'] },
@@ -328,8 +334,8 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
     const existingSheets = spreadsheet.data.sheets?.map(s => s.properties?.title) || [];
     
-    // Rename 'Sheet1' to 'Sessions' if 'Sessions' doesn't exist and 'Sheet1' does
-    if (!existingSheets.includes('Sessions') && existingSheets.includes('Sheet1')) {
+    // Rename 'Sheet1' to currentMonth if currentMonth doesn't exist and 'Sheet1' does
+    if (!existingSheets.includes(currentMonth) && existingSheets.includes('Sheet1')) {
       const sheet1Id = spreadsheet.data.sheets?.find(s => s.properties?.title === 'Sheet1')?.properties?.sheetId;
       if (sheet1Id !== undefined) {
         await sheets.spreadsheets.batchUpdate({
@@ -337,13 +343,13 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
           requestBody: {
             requests: [{
               updateSheetProperties: {
-                properties: { sheetId: sheet1Id, title: 'Sessions' },
+                properties: { sheetId: sheet1Id, title: currentMonth },
                 fields: 'title'
               }
             }]
           }
         });
-        existingSheets[existingSheets.indexOf('Sheet1')] = 'Sessions';
+        existingSheets[existingSheets.indexOf('Sheet1')] = currentMonth;
       }
     }
 

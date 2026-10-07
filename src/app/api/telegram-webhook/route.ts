@@ -59,6 +59,7 @@ async function answerCallbackQuery(callbackQueryId: string, text?: string) {
 async function editTelegramMessageText(chatId: string | number, messageId: number, text: string, replyMarkup?: any) {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
+    const finalReplyMarkup = replyMarkup === undefined ? { inline_keyboard: [] } : replyMarkup;
     await fetch(`${TELEGRAM_API}/editMessageText`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -67,7 +68,7 @@ async function editTelegramMessageText(chatId: string | number, messageId: numbe
         message_id: messageId,
         text,
         parse_mode: 'HTML',
-        reply_markup: replyMarkup
+        reply_markup: finalReplyMarkup
       })
     });
   } catch (e) {
@@ -1584,7 +1585,8 @@ You can still access other businesses associated with your Telegram account.`, {
         const sessionId = callbackData.replace('stop_select_', '');
         const session = await sessionRepository.findById(sessionId, business.id);
         if (!session || session.status !== 'ACTIVE') {
-          await sendTelegramMessage(chatId, 'Session is not active or not found.', mainMenu);
+          if (messageId) await editTelegramMessageText(chatId, messageId, '❌ Session is not active or not found.');
+          else await sendTelegramMessage(chatId, '❌ Session is not active or not found.', mainMenu);
           return NextResponse.json({ ok: true });
         }
         

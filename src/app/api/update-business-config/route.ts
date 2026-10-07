@@ -40,6 +40,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
     }
 
+    if (body.action === 'refresh_sheet_structure') {
+        if (!body.google_sheet_id) return NextResponse.json({ error: 'No sheet ID provided' }, { status: 400 });
+        const { initializeGoogleSheet } = require('@/lib/googleSheets');
+        await initializeGoogleSheet(body.google_sheet_id);
+        return NextResponse.json({ success: true });
+    }
+
     const updatePayload: any = {};
     if (pricing_rules !== undefined) updatePayload.pricing_rules = pricing_rules;
     

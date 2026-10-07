@@ -141,7 +141,7 @@ export const businessManager = {
     if (error || !businesses) return null;
     
     for (const b of businesses) {
-      const bSlug = b.business_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const bSlug = (b.business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
       // Cache all slugs proactively to save future queries
       slugCache.set(bSlug, { id: b.id, expiresAt: now + CACHE_TTL_MS });
       

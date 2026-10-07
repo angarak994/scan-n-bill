@@ -2817,9 +2817,35 @@ function DashboardContent() {
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Google Sheet ID or URL</label>
             <input type="text" name="google_sheet_id" defaultValue={data?.google_sheet_id || ''} placeholder="e.g. 1Fyz4aSQyzjvY..." className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
           </div>
-          <button type="submit" disabled={isUpdatingConfig} className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
-            {isUpdatingConfig ? 'Saving...' : 'Connect Sheet'}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 mt-2">
+            <button type="submit" disabled={isUpdatingConfig} className="flex-1 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
+              {isUpdatingConfig ? 'Saving...' : 'Connect Sheet'}
+            </button>
+            {data?.google_sheet_id && (
+              <button 
+                type="button"
+                disabled={isUpdatingConfig}
+                onClick={async () => {
+                  if(!businessId || !data?.google_sheet_id) return;
+                  const toastId = toast.loading('Refreshing sheet structure without overwriting data...');
+                  try {
+                    const res = await fetch('/api/update-business-config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ business_id: businessId, action: 'refresh_sheet_structure', google_sheet_id: data.google_sheet_id })
+                    });
+                    if(!res.ok) throw new Error('Failed to refresh structure');
+                    toast.success('Sheet structure restored successfully!', { id: toastId });
+                  } catch(e) {
+                    toast.error('Error refreshing structure.', { id: toastId });
+                  }
+                }}
+                className="flex-1 bg-bg-primary text-text-primary border border-border-light font-bold py-3 rounded-lg hover-lift smooth-transition hover:border-accent transition-colors disabled:opacity-50"
+              >
+                Refresh Sheet Structure
+              </button>
+            )}
+          </div>
           <div className="mt-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <p className="text-xs text-blue-400 font-bold mb-1">Important:</p>
             <p className="text-xs text-text-secondary">You must share your Google Sheet with <span className="font-mono text-accent">qcontrol@qr-based-billing-438407.iam.gserviceaccount.com</span> and grant it <b>Editor</b> access.</p>
@@ -5176,8 +5202,7 @@ function DashboardContent() {
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
               {data.tables?.map(t => {
-                const slug = ((data as any).businessName || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                const url = `${window.location.origin}/qr/${slug}/${encodeURIComponent(t.id)}`;
+                const url = `${window.location.origin}/qr/${businessId}/${encodeURIComponent(t.id)}`;
                 return (
                   <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">
                     <h3 className="text-xl font-bold font-mono mb-1">{t.name}</h3>
