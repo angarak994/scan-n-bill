@@ -110,41 +110,48 @@ interface DemoContextValue {
 
 const DemoContext = createContext<DemoContextValue | null>(null);
 
+const generateDemoState = (baseTime: number): DemoState => ({
+  tables: [
+    { id: 'T1', name: 'Table 01', status: 'ACTIVE', gameType: 'Pool', startedAt: baseTime - (3600000 * 1.5), pausedAt: null, accumulatedPausedMs: 0, player: 'Arjun K.', baseRate: 200, fbItems: [{name: 'Coke', price: 60}] },
+    { id: 'T2', name: 'Table 02', status: 'AVAILABLE', gameType: 'Snooker', startedAt: null, pausedAt: null, accumulatedPausedMs: 0, player: null, baseRate: 250, fbItems: [] },
+    { id: 'T3', name: 'Table 03', status: 'PAUSED', gameType: 'Pool', startedAt: baseTime - (3600000 * 2), pausedAt: baseTime - (3600000 * 0.5), accumulatedPausedMs: 0, player: 'Guest', baseRate: 200, fbItems: [] },
+  ],
+  promo: {
+    id: 'P1',
+    name: 'Happy Hour',
+    rate: 150,
+    startTime: baseTime - (3600000 * 4), // Started 4 hours ago
+    endTime: baseTime + (3600000 * 2),   // Ends in 2 hours
+  },
+  telegramLog: [
+    { id: 'm1', sender: 'user', text: '/status', time: baseTime - 60000 },
+    { id: 'm2', sender: 'bot', text: 'Live tables status loaded.', time: baseTime - 59000 }
+  ],
+  qrActiveTable: null,
+  qKhata: [
+    { name: 'Rahul M.', balance: -1250, lastUpdate: baseTime - 86400000 },
+    { name: 'Karan S.', balance: -400, lastUpdate: baseTime - 172800000 },
+    { name: 'Arjun K.', balance: 1500, lastUpdate: baseTime - 43200000 }, // Advance payment
+  ],
+});
+
 export function DemoEngineProvider({ children }: { children: ReactNode }) {
-  const [now, setNow] = useState(Date.now());
+  // Use a fixed timestamp for SSR to prevent hydration mismatch (Date.now() is impure)
+  const [now, setNow] = useState(1700000000000);
   const [isTabVisible, setIsTabVisible] = useState(true);
 
-  // Initial State seeded deterministically
-  const [state, setState] = useState<DemoState>(() => {
-    const baseTime = Date.now();
-    return {
-      tables: [
-        { id: 'T1', name: 'Table 01', status: 'ACTIVE', gameType: 'Pool', startedAt: baseTime - (3600000 * 1.5), pausedAt: null, accumulatedPausedMs: 0, player: 'Arjun K.', baseRate: 200, fbItems: [{name: 'Coke', price: 60}] },
-        { id: 'T2', name: 'Table 02', status: 'AVAILABLE', gameType: 'Snooker', startedAt: null, pausedAt: null, accumulatedPausedMs: 0, player: null, baseRate: 250, fbItems: [] },
-        { id: 'T3', name: 'Table 03', status: 'PAUSED', gameType: 'Pool', startedAt: baseTime - (3600000 * 2), pausedAt: baseTime - (3600000 * 0.5), accumulatedPausedMs: 0, player: 'Guest', baseRate: 200, fbItems: [] },
-      ],
-      promo: {
-        id: 'P1',
-        name: 'Happy Hour',
-        rate: 150,
-        startTime: baseTime - (3600000 * 4), // Started 4 hours ago
-        endTime: baseTime + (3600000 * 2),   // Ends in 2 hours
-      },
-      telegramLog: [
-        { id: 'm1', sender: 'user', text: '/status', time: baseTime - 60000 },
-        { id: 'm2', sender: 'bot', text: 'Live tables status loaded.', time: baseTime - 59000 }
-      ],
-      qrActiveTable: null,
-      qKhata: [
-        { name: 'Rahul M.', balance: -1250, lastUpdate: baseTime - 86400000 },
-        { name: 'Karan S.', balance: -400, lastUpdate: baseTime - 172800000 },
-        { name: 'Arjun K.', balance: 1500, lastUpdate: baseTime - 43200000 }, // Advance payment
-      ],
-    };
-  });
+  // Initial State seeded deterministically for SSR
+  const [state, setState] = useState<DemoState>(() => generateDemoState(1700000000000));
 
   // Ticker (1s interval) only active when tab is visible
   useEffect(() => {
+    // Immediately catch up to real time on client side
+    const realNow = Date.now();
+    setTimeout(() => {
+      setNow(realNow);
+      setState(generateDemoState(realNow));
+    }, 0);
+
     const handleVisibilityChange = () => {
       setIsTabVisible(!document.hidden);
       if (!document.hidden) {

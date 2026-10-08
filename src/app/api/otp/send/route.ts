@@ -102,8 +102,31 @@ export async function POST(request: Request) {
         console.error('Email delivery error:', err);
       }
     } else {
-      // Simulate SMS Delivery
+      // Simulate SMS Delivery for testing
       console.log(`\n=======================================\n📲 [MOCK SMS] OTP for ${normalizedContact} is: ${otp}\n=======================================\n`);
+      
+      // Attempt WhatsApp Delivery if configured, else fallback to Global QControl Bot
+      try {
+        const { data: business } = await supabase.from('businesses').select('whatsapp_config').eq('id', sessionCookie.businessId).single();
+        const { sendWhatsAppText } = require('@/lib/whatsapp');
+        
+        let overrideToken;
+        let overridePhoneId;
+        if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
+            overrideToken = business.whatsapp_config.token;
+            overridePhoneId = business.whatsapp_config.phoneId;
+        }
+
+        await sendWhatsAppText(
+            normalizedContact, 
+            `Your QControl Verification Code is: *${otp}*\n\nThis code is valid for 5 minutes. Do not share this with anyone.`, 
+            false, 
+            overrideToken, 
+            overridePhoneId
+        );
+      } catch (waErr) {
+         console.error('Failed to send WhatsApp OTP:', waErr);
+      }
     }
 
     return NextResponse.json({ success: true, message: 'OTP sent successfully' });

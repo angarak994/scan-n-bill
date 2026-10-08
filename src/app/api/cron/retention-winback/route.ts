@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, sendWhatsAppText } from '@/lib/whatsapp';
 
 export async function GET(request: Request) {
   // Check authorization (e.g. cron secret)
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
         const message = `Hi ${customer.name || 'there'}! It's been a while since we saw you at ${business.business_name}. 🎱\n\nWe miss you! Come visit us this week and show this message at the counter for a special surprise discount on your next game!`;
         
         try {
-          await sendWhatsAppMessage(customer.phone, message, business.whatsapp_config.token, business.whatsapp_config.phoneId);
+          await sendWhatsAppText(customer.phone, message, false, business.whatsapp_config.token, business.whatsapp_config.phoneId);
           messagesSent++;
           
           // Log it so we don't spam them again for another 30 days

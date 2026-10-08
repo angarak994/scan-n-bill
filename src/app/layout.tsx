@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import Script from 'next/script';
 import "./globals.css";
 import { Providers } from './Providers';
 
@@ -35,16 +36,17 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script
+        <Script
           id="pre-paint-script"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               try {
                 // Theme Logic
                 let theme = localStorage.getItem('theme');
                 if (!theme) {
-                  theme = 'dark';
-                  localStorage.setItem('theme', 'dark');
+                  theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                  localStorage.setItem('theme', theme);
                 }
                 if (theme === 'dark') {
                   document.documentElement.classList.add('dark');
@@ -52,51 +54,6 @@ export default function RootLayout({
                   document.documentElement.classList.remove('dark');
                 }
 
-                // Hero Rotation Logic
-                const variants = ["flagship", "unified", "visibility", "time-based", "journey", "promotions", "digital", "status", "remote", "automation"];
-                let variantId = 'flagship';
-                
-                const urlParams = new URLSearchParams(window.location.search);
-                const override = urlParams.get('h');
-                
-                if (override && variants.includes(override)) {
-                  variantId = override;
-                } else {
-                  const now = Date.now();
-                  const lastSeen = localStorage.getItem('qcontrol_lastSeen');
-                  const sessionVariant = sessionStorage.getItem('heroVariant');
-                  
-                  // A new visit means: a new browser session OR more than 30 mins since lastSeen
-                  const isNewVisit = !sessionVariant || (lastSeen && (now - parseInt(lastSeen, 10)) > 30 * 60 * 1000);
-                  
-                  if (!isNewVisit && sessionVariant) {
-                    variantId = sessionVariant;
-                  } else {
-                    const hasVisited = localStorage.getItem('qcontrol_visited');
-                    if (!hasVisited) {
-                      variantId = 'flagship';
-                      localStorage.setItem('qcontrol_visited', 'true');
-                    } else {
-                      let lastId = localStorage.getItem('lastVariantId');
-                      let order = JSON.parse(localStorage.getItem('variantOrder') || '[]');
-                      
-                      if (order.length === 0) {
-                        // Reshuffle but don't repeat the last one
-                        order = [...variants].sort(() => Math.random() - 0.5);
-                        if (order[0] === lastId && order.length > 1) {
-                          order.push(order.shift());
-                        }
-                      }
-                      
-                      variantId = order.shift();
-                      localStorage.setItem('variantOrder', JSON.stringify(order));
-                    }
-                    localStorage.setItem('lastVariantId', variantId);
-                    sessionStorage.setItem('heroVariant', variantId);
-                  }
-                  localStorage.setItem('qcontrol_lastSeen', now.toString());
-                }
-                document.documentElement.setAttribute('data-hero-variant', variantId);
               } catch (_) {}
             `,
           }}

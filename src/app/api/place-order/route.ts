@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     }
     
     if (!sessionCookie) {
-      const prefs = business.pricing_rules?.globalSettings?.preferences || {};
+      const prefs = (business.pricing_rules?.globalSettings as any)?.preferences || {};
       if (prefs.auto_qr_billing === false) {
           return NextResponse.json({ error: 'QR actions are disabled for this business' }, { status: 403 });
       }

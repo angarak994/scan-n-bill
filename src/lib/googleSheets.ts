@@ -242,17 +242,18 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
     const { data: session } = await supabase.from('sessions').select('*').eq('id', sessionId).single();
     if (!session) return;
 
-    // Fetch related QKhata charge if any
-    const { data: qkhata } = await supabase.from('payments')
+    // Fetch related payment record to get the method
+    const { data: paymentRecord } = await supabase.from('payments')
       .select('*')
       .eq('session_id', sessionId)
-      .eq('payment_method', 'QKhata')
       .limit(1).maybeSingle();
+      
+    const isQKhata = paymentRecord?.payment_method === 'QKhata';
 
     const startReadable = session.start_time ? formatTimeReadable(session.start_time) : '';
     const endReadable = session.end_time ? formatTimeReadable(session.end_time) : '';
-    const qkhataStatus = qkhata ? 'Charged' : (session.payment_status === 'Pending' ? 'Pending' : 'N/A');
-    const qkhataAmount = qkhata ? qkhata.amount : 0;
+    const qkhataStatus = isQKhata ? 'Charged' : (session.payment_status === 'Pending' ? 'Pending' : 'N/A');
+    const paymentMethod = paymentRecord?.payment_method || (session.payment_method ? session.payment_method : 'Cash');
 
     const shortId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
     const customerName = session.customer_name || 'Guest';
@@ -268,18 +269,16 @@ export async function syncSessionToSheet(sessionId: string, businessId?: string)
       session.game_type || '',
       session.duration || '0m',
       session.cost || 0,
+      paymentMethod,
       session.payment_status || 'Pending',
       qkhataStatus,
       session.notes || ''
     ];
 
-    const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Kolkata' });
-    const currentMonth = monthFormatter.format(new Date());
-
     if (session.google_sheet_row_id) {
-       await updateRowDirectly(currentMonth, session.google_sheet_row_id, values, businessId || session.business_id);
+       await updateRowDirectly('Sessions', session.google_sheet_row_id, values, businessId || session.business_id);
     } else {
-       const range = await appendAndGetRange(currentMonth, values, businessId || session.business_id);
+       const range = await appendAndGetRange('Sessions', values, businessId || session.business_id);
        if (range) {
           // Range format typically like 'October'!A15:S15
           const rowMatch = range.match(/[a-zA-Z]+(\d+)/);
@@ -318,12 +317,9 @@ export async function syncMemberToSheet(customerId: string, businessId?: string)
 export async function initializeGoogleSheet(spreadsheetId: string) {
   const sheets = await getGoogleSheetsClient();
   
-  const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'Asia/Kolkata' });
-  const currentMonth = monthFormatter.format(new Date());
-
   // Define required sheets and their headers
   const requiredSheets = [
-    { title: currentMonth, headers: ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Duration', 'Amount', 'Payment Status', 'QKhata Sync', 'Notes'] },
+    { title: 'Sessions', headers: ['Session ID', 'Date', 'Customer Name', 'Table No', 'Game Type', 'Duration', 'Amount', 'Payment Method', 'Payment Status', 'QKhata Sync', 'Notes'] },
     { title: 'Activity Logs', headers: ['Timestamp', 'Action', 'User', 'Table', 'Session', 'Details'] },
     { title: 'Members', headers: ['Member ID', 'Name', 'Phone', 'Tier', 'Total Billed', 'Outstanding Balance', 'Status'] },
     { title: 'Bookings', headers: ['Booking ID', 'Date', 'Start Time', 'Customer Name', 'Table', 'Duration (m)', 'Status'] },
@@ -334,8 +330,8 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
     const existingSheets = spreadsheet.data.sheets?.map(s => s.properties?.title) || [];
     
-    // Rename 'Sheet1' to currentMonth if currentMonth doesn't exist and 'Sheet1' does
-    if (!existingSheets.includes(currentMonth) && existingSheets.includes('Sheet1')) {
+    // Rename 'Sheet1' to 'Sessions' if 'Sessions' doesn't exist and 'Sheet1' does
+    if (!existingSheets.includes('Sessions') && existingSheets.includes('Sheet1')) {
       const sheet1Id = spreadsheet.data.sheets?.find(s => s.properties?.title === 'Sheet1')?.properties?.sheetId;
       if (sheet1Id !== undefined) {
         await sheets.spreadsheets.batchUpdate({
@@ -343,13 +339,13 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
           requestBody: {
             requests: [{
               updateSheetProperties: {
-                properties: { sheetId: sheet1Id, title: currentMonth },
+                properties: { sheetId: sheet1Id, title: 'Sessions' },
                 fields: 'title'
               }
             }]
           }
         });
-        existingSheets[existingSheets.indexOf('Sheet1')] = currentMonth;
+        existingSheets[existingSheets.indexOf('Sheet1')] = 'Sessions';
       }
     }
 

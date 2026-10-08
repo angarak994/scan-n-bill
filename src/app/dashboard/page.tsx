@@ -339,7 +339,7 @@ function DashboardContent() {
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, duration?: string, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string } | null>(null);
+  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, duration?: string, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string, paymentMethodOption?: string, cashTendered?: string, splitWays?: number } | null>(null);
   const [finalQRData, setFinalQRData] = useState<any>(null);
 
   // Happy Hour States
@@ -1983,7 +1983,7 @@ function DashboardContent() {
         return;
       }
       
-      const headers = ['Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Payment Method', 'Total Amount'];
+      const headers = ['Session ID', 'Date', 'Time', 'Customer', 'Service/Game', 'Duration', 'Table Cost', 'Food & Bev Cost', 'Discount', 'Total Billed', 'Payment Status', 'Completed By'];
       const csvContent = [
         headers.join(','),
         ...reportData.completedSessions.map((s: any) => {
@@ -1993,8 +1993,11 @@ function DashboardContent() {
               readableTime = new Date(readableTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             } catch (err) {}
           }
+          const shortId = s.id ? s.id.split('-')[0].toUpperCase() : '';
           return [
-            s.date, readableTime, s.customer_name, s.game_type, s.duration, (s.payment_status === 'Pending' ? 'Paid' : s.payment_status || 'Paid'), s.cost
+            shortId, s.date, readableTime, s.customer_name, s.game_type, s.duration, 
+            s.base_cost || 0, s.food_cost || 0, s.discount_amount || 0, s.cost || 0, 
+            s.payment_status || 'Paid', s.completed_by || 'System'
           ].map(field => `"${field === null || field === undefined ? '' : field}"`).join(',')
         })
       ].join('\n');
@@ -2274,7 +2277,7 @@ function DashboardContent() {
             formatINR={formatINR}
             paymentQrConfig={(data as any)?.payment_qr_config}
             onIntervention={handleIntervention}
-            onEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
+            onEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
             onRefresh={fetchData}
             onStartSession={(tableId, gameType) => {
               setManualTable(tableId);
@@ -2351,7 +2354,7 @@ function DashboardContent() {
                     toReadableIST={toReadableIST}
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
-                    onRequestEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '' })}
+                    onRequestEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
                     getDisplayName={getDisplayName}
                   />
                 ))
@@ -3729,7 +3732,7 @@ function DashboardContent() {
                 <span className="text-sm font-semibold text-text-secondary">Show Live Pricing on Active Sessions</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.auto_qr_billing !== false} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={(preferences as any).auto_qr_billing !== false} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show QR Billing Popup automatically when session ends</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
@@ -4328,7 +4331,33 @@ function DashboardContent() {
               </div>
               <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
                 <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Total Bill</span>
-                <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>
+                <div className="text-right">
+                  <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>
+                  {endSessionData.splitWays && endSessionData.splitWays > 1 && (
+                     <div className="text-xs text-text-secondary mt-1 font-semibold bg-bg-surface px-2 py-1 rounded-md border border-border-theme inline-block">
+                        {formatINR(endSessionData.cost / endSessionData.splitWays)} per person
+                     </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-border-theme/50 pb-3">
+                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Split Bill</span>
+                <div className="flex bg-bg-surface border border-border-theme rounded-lg overflow-hidden">
+                  {[1, 2, 3, 4, 5].map(ways => (
+                    <button
+                      key={ways}
+                      onClick={() => setEndSessionData({...endSessionData, splitWays: ways})}
+                      className={`px-3 py-1 text-xs font-bold transition-colors ${
+                        (endSessionData.splitWays || 1) === ways 
+                          ? 'bg-text-primary text-bg-primary' 
+                          : 'text-text-secondary hover:bg-bg-primary hover:text-text-primary'
+                      } ${ways !== 5 ? 'border-r border-border-theme/50' : ''}`}
+                    >
+                      {ways === 1 ? 'No' : `${ways} Ways`}
+                    </button>
+                  ))}
+                </div>
               </div>
               
               {/* Payment Mode Toggle (Only for Members) */}
@@ -4362,7 +4391,49 @@ function DashboardContent() {
                       placeholder={String(endSessionData.cost)}
                     />
                   </div>
-                  <p className="text-xs text-text-secondary mt-2">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
+                  <p className="text-xs text-text-secondary mt-2 mb-4">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
+                  <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Payment Method</label>
+                  <select 
+                    value={endSessionData.paymentMethodOption || 'Cash'}
+                    onChange={(e) => setEndSessionData({...endSessionData, paymentMethodOption: e.target.value})}
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary mb-2 focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Card">Card</option>
+                    <option value="Other">Other</option>
+                  </select>
+
+                  {(endSessionData.paymentMethodOption === 'Cash' || !endSessionData.paymentMethodOption) && (
+                    <div className="mt-4 p-4 bg-bg-surface border border-border-theme rounded-xl animate-in fade-in slide-in-from-top-2">
+                      <label className="block text-xs font-bold tracking-widest uppercase text-text-secondary mb-2 flex justify-between">
+                        <span>Cash Tendered (₹)</span>
+                        <span className="text-accent cursor-pointer hover:underline" onClick={() => setEndSessionData({...endSessionData, cashTendered: String(endSessionData.amountReceived)})}>Exact Amount</span>
+                      </label>
+                      <div className="relative mb-3">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
+                        <input 
+                          type="number" 
+                          value={endSessionData.cashTendered || ''}
+                          onChange={(e) => setEndSessionData({...endSessionData, cashTendered: e.target.value})}
+                          className="w-full pl-8 pr-4 py-2 bg-bg-primary border border-border-theme rounded-lg outline-none text-base font-mono tabular-nums text-text-primary"
+                          placeholder="e.g. 500"
+                        />
+                      </div>
+                      <div className="flex justify-between items-center pt-3 border-t border-border-theme/50">
+                        <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Change Due</span>
+                        <span className={`text-lg font-black font-mono ${
+                          (Number(endSessionData.cashTendered || 0) - Number(endSessionData.amountReceived)) > 0 
+                            ? 'text-success' 
+                            : 'text-text-secondary'
+                        }`}>
+                          {endSessionData.cashTendered && Number(endSessionData.cashTendered) > 0 
+                            ? formatINR(Math.max(0, Number(endSessionData.cashTendered) - Number(endSessionData.amountReceived)))
+                            : '₹0'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-4 border border-warning/30 bg-warning/5 rounded-xl space-y-3">
@@ -4406,7 +4477,7 @@ function DashboardContent() {
                   onClick={async () => {
                     const isCredit = endSessionData.paymentMode === 'credit';
                     const amountToRecord = isCredit ? 0 : (endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived));
-                    const paymentMethod = isCredit ? 'QKhata' : 'Cash';
+                    const paymentMethod = isCredit ? 'QKhata' : (endSessionData.paymentMethodOption || 'Cash');
                     const dueDate = isCredit && endSessionData.dueDate ? endSessionData.dueDate : undefined;
                     
                     const res = await handleIntervention('force_end', endSessionData.session.id, amountToRecord, undefined, paymentMethod, dueDate);
@@ -4545,7 +4616,7 @@ function DashboardContent() {
                     const startFull = overdueSession.start_time.includes('T') ? overdueSession.start_time : `${overdueSession.date}, ${overdueSession.start_time}`;
                     const res = calculateBilling(startFull, new Date().toISOString(), overdueSession.game_type, data?.pricingRules, overdueSession.num_players || 1, undefined, overdueSession.paused_duration_seconds, overdueSession.locked_rate, overdueSession.locked_rate_name);
                     
-                    setEndSessionData({ session: overdueSession, cost: res.cost, amountReceived: String(res.cost), paymentMode: 'now', dueDate: '' });
+                    setEndSessionData({ session: overdueSession, cost: res.cost, amountReceived: String(res.cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' });
                   }}
                   className="w-full py-3.5 bg-danger text-white font-extrabold text-sm uppercase rounded-xl hover:bg-red-600 transition-colors shadow-lg shadow-danger/20"
                 >
@@ -5335,7 +5406,6 @@ function DashboardContent() {
           }} 
         />
       )}
-
 
     </div>
   );

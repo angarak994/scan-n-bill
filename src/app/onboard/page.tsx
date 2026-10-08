@@ -51,33 +51,39 @@ export default function OnboardPage() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleDemoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.business_name || !formData.owner_name || !formData.contact_number || !formData.dashboard_pin) {
-      setError('Please fill out all required fields.');
-      return;
-    }
-    if (!/^\d{4}$/.test(formData.dashboard_pin)) {
-      setError('Dashboard PIN must be exactly 4 digits.');
-      return;
-    }
+  const handleDemoSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     
     setLoading(true);
     setError('');
 
     try {
+      const isInstantDemo = !formData.business_name;
       const payload = {
-        ...formData,
+        business_name: formData.business_name || 'Strike Zone (Demo)',
+        owner_name: formData.owner_name || 'Demo Admin',
+        contact_number: formData.contact_number || '9999999999',
+        dashboard_pin: formData.dashboard_pin || '1234',
+        business_type: 'Billiards / Pool',
         google_sheet_id: 'demo-sheet-' + Math.random().toString(36).substring(7),
         pricing_rules: { 
           rules: { 'pool': { type: 'fixed', rate: 200 } }, 
           globalSettings: { rounding_mode: 'nearest_5', enable_peak_rules: false } 
         },
+        is_demo: true,
         tables: [
           { id: 'T1', name: 'Table 1', type: 'pool' },
-          { id: 'T2', name: 'Table 2', type: 'pool' }
+          { id: 'T2', name: 'Table 2', type: 'pool' },
+          { id: 'T3', name: 'Table 3', type: 'pool' },
+          { id: 'T4', name: 'Table 4', type: 'pool' },
+          { id: 'T5', name: 'Table 5', type: 'snooker' },
+          { id: 'VIP1', name: 'VIP Room', type: 'pool' }
         ],
-        menu_items: []
+        menu_items: [
+          { id: 'F1', name: 'Coke', price: 50, category: 'Beverages' },
+          { id: 'F2', name: 'French Fries', price: 120, category: 'Food' },
+          { id: 'F3', name: 'Red Bull', price: 150, category: 'Beverages' }
+        ]
       };
 
       const res = await fetch('/api/onboard-business', {
@@ -91,16 +97,26 @@ export default function OnboardPage() {
         throw new Error(data.error || 'Failed to generate demo business');
       }
 
-      setQrs(data.qrs);
-      setCreatedBusinessId(data.businessId);
       if (data.pin) {
         sessionStorage.setItem('dashboard_pin', data.pin);
+      }
+      
+      if (isInstantDemo) {
+        window.location.href = '/dashboard';
+      } else {
+        setQrs(data.qrs);
+        setCreatedBusinessId(data.businessId);
       }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const launchInstantDemo = () => {
+    setOnboardMode('demo'); // Just to show the loading screen if we had one, but handleDemoSubmit does setLoading
+    handleDemoSubmit();
   };
 
   // ... (keeping existing handlers below)
@@ -271,8 +287,8 @@ export default function OnboardPage() {
             
             {/* Demo Sandbox Card */}
             <div 
-              onClick={() => setOnboardMode('demo')}
-              className="group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-accent shadow-2xl bg-bg-surface"
+              onClick={launchInstantDemo}
+              className={`group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-accent shadow-2xl bg-bg-surface ${loading && onboardMode === 'demo' ? 'opacity-50 pointer-events-none' : ''}`}
             >
               <div className="w-16 h-16 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -284,7 +300,7 @@ export default function OnboardPage() {
                 Start instantly with a pre-configured dashboard. We auto-generate tables and standard pricing so you can test QControl immediately. No Google Sheets required.
               </p>
               <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-accent group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
-                Launch Sandbox
+                {loading && onboardMode === 'demo' ? 'Launching...' : 'Launch Sandbox'}
               </div>
             </div>
 
@@ -316,43 +332,10 @@ export default function OnboardPage() {
   if (onboardMode === 'demo') {
     return (
       <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
-        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border bg-bg-surface p-8">
-          <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            </button>
-            <h1 className="text-2xl font-bold">Demo Sandbox Setup</h1>
-          </div>
-          
-          <form onSubmit={handleDemoSubmit} className="flex flex-col gap-5">
-            {error && (
-              <div className="p-4 bg-error/10 border border-error/20 text-error rounded-xl text-sm font-medium">
-                {error}
-              </div>
-            )}
-            
-            <div>
-              <label className="block text-sm font-bold text-text-secondary mb-2">Demo Club Name</label>
-              <input required type="text" name="business_name" value={formData.business_name} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., Strike Zone (Demo)" />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-text-secondary mb-2">Your Name</label>
-              <input required type="text" name="owner_name" value={formData.owner_name} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., John Doe" />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-text-secondary mb-2">Phone Number</label>
-              <input required type="text" name="contact_number" value={formData.contact_number} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary" placeholder="e.g., 9999999999" />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-text-secondary mb-2">Dashboard PIN (4 Digits)</label>
-              <input required type="password" maxLength={4} pattern="\d{4}" name="dashboard_pin" value={formData.dashboard_pin} onChange={handleBasicChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card outline-none focus:border-accent transition-all text-text-primary tracking-widest font-mono" placeholder="1234" />
-            </div>
-            
-            <button disabled={loading} type="submit" className="w-full mt-4 px-6 py-4 rounded-xl bg-accent hover:bg-accent/90 text-white font-bold text-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50">
-              {loading ? 'Generating Sandbox...' : 'Launch Demo Sandbox →'}
-            </button>
-            <p className="text-xs text-text-secondary text-center">This will instantly generate a dummy dashboard with pre-configured tables and a fixed ₹200/hr pricing rule.</p>
-          </form>
+        <div className="flex flex-col items-center justify-center gap-6 animate-pulse">
+          <div className="w-16 h-16 rounded-full bg-accent/20 border-2 border-accent border-t-transparent animate-spin"></div>
+          <h1 className="text-2xl font-bold text-accent">Generating Demo Sandbox...</h1>
+          <p className="text-text-secondary">Please wait while we seed realistic demo data.</p>
         </div>
       </main>
     );

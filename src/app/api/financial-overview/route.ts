@@ -15,11 +15,10 @@ export async function GET(request: Request) {
 
     // Fetch all QKhata entries for this business
     const { data: qkhataEntries, error: qkError } = await supabase
-        .from('qkhata')
+        .from('payments')
         .select(`
             id,
             amount,
-            type,
             status,
             payment_method,
             created_at,
@@ -39,7 +38,6 @@ export async function GET(request: Request) {
             id,
             cost,
             payment_status,
-            payment_method,
             customer_name,
             end_time,
             date
@@ -55,7 +53,7 @@ export async function GET(request: Request) {
     const normalizedPayments: any[] = (qkhataEntries || []).map((q: any) => ({
         id: q.id,
         amount: q.amount,
-        type: q.type, // 'credit' or 'payment'
+        type: 'payment', // Default for payments table
         status: q.status,
         payment_method: q.payment_method,
         created_at: q.created_at,
@@ -64,12 +62,15 @@ export async function GET(request: Request) {
 
     // Normalize Session payments and merge them
     (sessionEntries || []).forEach((s: any) => {
-        // Construct a created_at timestamp from date and end_time (approximate payment time)
-        const dateStr = s.date || new Date().toISOString().split('T')[0];
-        const timeStr = s.end_time ? (s.end_time.includes(' ') ? s.end_time.split(' ')[0] : s.end_time) : '00:00:00';
-        let dateTimeStr = `${dateStr}T${timeStr}`;
-        if (dateTimeStr.length === 16) dateTimeStr += ':00'; // Add seconds if missing
-        if (!dateTimeStr.includes('Z')) dateTimeStr += '+05:30'; // IST assumed
+        let dateTimeStr = s.end_time;
+        if (!dateTimeStr) {
+             dateTimeStr = `${s.date || new Date().toISOString().split('T')[0]}T00:00:00+05:30`;
+        }
+        try {
+             new Date(dateTimeStr).toISOString();
+        } catch(e) {
+             dateTimeStr = new Date().toISOString();
+        }
 
         normalizedPayments.push({
             id: s.id,

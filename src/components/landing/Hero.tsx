@@ -7,6 +7,63 @@ import { useDemoEngine, calculateBill, formatCurrency, formatTime } from '@/comp
 export default function Hero() {
   const { state, actions, now } = useDemoEngine();
   const [activeTab, setActiveTab] = useState<'Tables' | 'Sessions' | 'Members' | 'Settings'>('Tables');
+  
+  const [headline, setHeadline] = useState("");
+  const [isReady, setIsReady] = useState(false);
+
+  React.useEffect(() => {
+    try {
+      const variants = {
+        "flagship": { h: "Run your club. Not your spreadsheets.", s: "Tables, sessions, billing, members and promotions in one live system." },
+        "unified": { h: "Run your gaming business smarter.", s: "Every table, session and rupee in one connected system." },
+        "visibility": { h: "Every table. Every session. Every rupee.", s: "See what's running, what's billed and what's earned, live." },
+        "time-based": { h: "Your club runs by the hour. So should your software.", s: "Time-based billing and promotions built for pool, snooker and PS5 clubs." },
+        "journey": { h: "From first frame to final bill.", s: "Start sessions by QR, track time live and bill automatically." },
+        "promotions": { h: "Promotions that start and end on time.", s: "Set the window once. The price applies only while it is active." },
+        "digital": { h: "Close the notebook. Open QControl.", s: "Replace paper notes and spreadsheets with live session tracking." },
+        "status": { h: "Know your club before you walk in.", s: "Live table status on your dashboard and on Telegram." },
+        "remote": { h: "Your phone is the control room.", s: "Start, pause and stop tables from Telegram." },
+        "automation": { h: "Less paperwork. More play.", s: "Session tracking, billing and reports that handle themselves." }
+      };
+      
+      const variantKeys = Object.keys(variants);
+      let variantId = 'flagship';
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const override = urlParams.get('h');
+      const sessionVariant = sessionStorage.getItem('heroVariant');
+      
+      if (override && variants[override as keyof typeof variants]) {
+        variantId = override;
+      } else if (sessionVariant && variants[sessionVariant as keyof typeof variants]) {
+        variantId = sessionVariant;
+      } else {
+        let lastId = localStorage.getItem('lastVariantId');
+        let order = JSON.parse(localStorage.getItem('variantOrder') || '[]');
+        
+        if (order.length === 0) {
+          order = [...variantKeys].sort(() => Math.random() - 0.5);
+          if (order[0] === lastId && order.length > 1) {
+            order.push(order.shift() as string);
+          }
+        }
+        
+        variantId = order.shift() as string;
+        localStorage.setItem('variantOrder', JSON.stringify(order));
+        localStorage.setItem('lastVariantId', variantId);
+        sessionStorage.setItem('heroVariant', variantId);
+      }
+      
+      if (variants[variantId as keyof typeof variants]) {
+        setTimeout(() => {
+          setHeadline(variants[variantId as keyof typeof variants].h);
+          setIsReady(true);
+        }, 0);
+      }
+    } catch(e) {
+      setIsReady(true);
+    }
+  }, []);
 
   const tabs = [
     { id: 'Tables', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -27,10 +84,9 @@ export default function Hero() {
       <div className="min-h-[140px] sm:min-h-[180px] md:min-h-[240px] w-full flex items-center justify-center">
         <h1 
           id="hero-headline"
-          suppressHydrationWarning
-          className="text-4xl sm:text-6xl md:text-[5rem] font-black tracking-tighter leading-tight max-w-5xl [text-wrap:balance] opacity-0 animate-hero-reveal"
+          className={`text-4xl sm:text-6xl md:text-[5rem] font-black tracking-tighter leading-tight max-w-5xl [text-wrap:balance] transition-opacity duration-500 ${isReady ? 'opacity-100 animate-hero-reveal' : 'opacity-0'}`}
         >
-          Run your club. Not your spreadsheets.
+          {headline || "Run your club. Not your spreadsheets."}
         </h1>
       </div>
       
@@ -38,38 +94,11 @@ export default function Hero() {
       <div className="min-h-[80px] sm:min-h-[100px] w-full flex items-start justify-center mt-6">
         <p 
           id="hero-subline"
-          suppressHydrationWarning
           className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto [text-wrap:balance] opacity-0 animate-hero-reveal-delayed"
         >
           Tables, sessions, billing, members and promotions in one live system.
         </p>
       </div>
-
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            try {
-              const variants = {
-                "flagship": { h: "Run your club. Not your spreadsheets.", s: "Tables, sessions, billing, members and promotions in one live system." },
-                "unified": { h: "Run your gaming business smarter.", s: "Every table, session and rupee in one connected system." },
-                "visibility": { h: "Every table. Every session. Every rupee.", s: "See what's running, what's billed and what's earned, live." },
-                "time-based": { h: "Your club runs by the hour. So should your software.", s: "Time-based billing and promotions built for pool, snooker and PS5 clubs." },
-                "journey": { h: "From first frame to final bill.", s: "Start sessions by QR, track time live and bill automatically." },
-                "promotions": { h: "Promotions that start and end on time.", s: "Set the window once. The price applies only while it is active." },
-                "digital": { h: "Close the notebook. Open QControl.", s: "Replace paper notes and spreadsheets with live session tracking." },
-                "status": { h: "Know your club before you walk in.", s: "Live table status on your dashboard and on Telegram." },
-                "remote": { h: "Your phone is the control room.", s: "Start, pause and stop tables from Telegram." },
-                "automation": { h: "Less paperwork. More play.", s: "Session tracking, billing and reports that handle themselves." }
-              };
-              const variantId = document.documentElement.getAttribute('data-hero-variant') || 'flagship';
-              if (variantId !== 'flagship' && variants[variantId]) {
-                document.getElementById('hero-headline').innerText = variants[variantId].h;
-                document.getElementById('hero-subline').innerText = variants[variantId].s;
-              }
-            } catch(e) {}
-          `
-        }}
-      />
       
       <ScrollReveal animation="fade-up" delay={300} className="w-full relative z-10 group mt-8">
         <div className="w-full max-w-[1000px] mx-auto rounded-xl overflow-hidden border border-border bg-bg-surface glass-panel p-0 shadow-2xl">

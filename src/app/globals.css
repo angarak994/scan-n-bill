@@ -16,8 +16,8 @@
   --text-disabled: #94a3b8;
   
   /* Borders */
-  --border: #e2e8f0;
-  --border-light: #f1f5f9;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-light: rgba(0, 0, 0, 0.04);
   
   /* Core Colors */
   --primary: #0f172a;
@@ -49,8 +49,8 @@
   --text-disabled: #475569;
   
   /* Borders */
-  --border: #1a2e23;
-  --border-light: #0f1c15;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.04);
   
   /* Core Colors */
   --primary: #ffffff;
