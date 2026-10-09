@@ -10,6 +10,7 @@ import { handleSessionIntervention } from '@/lib/services/interventionService';
 import { startSession } from '@/lib/sessionManager';
 import { generateQpulseInsight } from '@/lib/services/qpulseService';
 import { bookingService } from '@/lib/services/bookingService';
+import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -261,7 +262,7 @@ async function processWebhook(update: any) {
         
         const businessWithToken = businesses.find(b => {
              const t = b.pricing_rules?.globalSettings?.telegram_invite_token;
-             return typeof t === 'string' && (t === token || t.includes(token));
+             return typeof t === 'string' && (t === token || token.includes(t));
         });
         
         if (businessWithToken) {
@@ -2227,6 +2228,12 @@ export async function POST(request: Request) {
     if (clientSecret !== WEBHOOK_SECRET) {
       console.warn('Unauthorized Telegram Webhook attempt.');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    // Rate Limit: Prevent brute force or spam on webhook
+    const ip = getIpAddress(request);
+    if (!checkRateLimit(`tg_webhook_${ip}`, 100, 60 * 1000)) { // 100 req per minute
+       return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
     const update = await request.json();

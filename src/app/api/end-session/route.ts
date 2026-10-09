@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import { endSession } from '@/lib/sessionManager';
 import { getSession } from '@/lib/auth';
+import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
 
 export async function POST(request: Request) {
   try {
+    const ip = getIpAddress(request);
+    if (!checkRateLimit(`end_sess_${ip}`, 30, 10 * 60 * 1000)) {
+       return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
+    }
+
     const sessionCookie = await getSession();
     const body = await request.json();
     let { table_id, business_id, amount_paid, payment_method } = body;

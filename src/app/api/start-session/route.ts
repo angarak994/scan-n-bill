@@ -2,15 +2,27 @@ import { NextResponse } from 'next/server';
 import { startSession } from '@/lib/sessionManager';
 import { GameType } from '@/lib/pricing';
 import { getSession } from '@/lib/auth';
+import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
 
 export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
+    const isOwner = sessionCookie && sessionCookie.businessId;
+
+    const ip = getIpAddress(request);
+    
+    // Strict Rate Limiting: 
+    // Unauthenticated users (QR Scans) can only start 5 sessions per 10 mins
+    // Authenticated owners get higher limit (50 per 10 mins)
+    const limit = isOwner ? 50 : 5;
+    if (!checkRateLimit(`start_sess_${ip}`, limit, 10 * 60 * 1000)) {
+       return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
+    }
+
     let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time, notes } = await request.json();
     
     // If an owner is logged in, strictly enforce their business ID to prevent cross-business IDOR attacks.
     // If no session exists, it falls back to the client-provided business_id (for unauthenticated QR code scans).
-    const isOwner = sessionCookie && sessionCookie.businessId;
     if (isOwner) {
        business_id = sessionCookie.businessId;
     }
