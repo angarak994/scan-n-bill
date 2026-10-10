@@ -20,7 +20,7 @@ export default function FinalCTA() {
 
             <ScrollReveal animation="fade-up" delay={400}>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link href="/register" className="px-8 py-4 bg-accent text-white font-bold rounded-full text-lg hover:bg-accent/90 transition-all hover:scale-[1.02] transform border border-transparent hover:border-accent">
+                <Link href="/onboard?trial=true" className="px-8 py-4 bg-accent text-white font-bold rounded-full text-lg hover:bg-accent/90 transition-all hover:scale-[1.02] transform border border-transparent hover:border-accent">
                   Start your 14-day free trial
                 </Link>
                 <Link href="/contact" className="px-8 py-4 bg-transparent text-text-primary font-bold rounded-full text-lg hover:bg-bg-base transition-all border border-border-light hover:scale-105 transform">

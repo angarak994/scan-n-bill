@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PricingRules, TableConfig, GlobalSettings } from '@/lib/pricing';
+import Navbar from '@/components/landing/Navbar';
 
 export default function OnboardPage() {
   const [step, setStep] = useState(1);
@@ -46,6 +47,28 @@ export default function OnboardPage() {
 
   const [onboardMode, setOnboardMode] = useState<'selection' | 'demo' | 'pricing' | 'payment' | 'production'>('selection');
   const [selectedPlan, setSelectedPlan] = useState<'essential' | 'growth'>('growth');
+  const [isTrial, setIsTrial] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('trial') === 'true') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setIsTrial(true);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setOnboardMode('production');
+      }
+      const plan = searchParams.get('plan');
+      if (plan === 'essential' || plan === 'growth') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSelectedPlan(plan);
+        if (!searchParams.get('trial')) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setOnboardMode('production');
+        }
+      }
+    }
+  }, []);
 
   const handleBasicChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -402,13 +425,25 @@ export default function OnboardPage() {
 
   // Production Setup Flow
   return (
-    <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
-      <div className="max-w-2xl w-full bg-bg-surface rounded-2xl shadow-2xl overflow-hidden border border-border">
+    <>
+    <Navbar />
+    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern pt-24">
+      <div className="max-w-2xl w-full bg-bg-surface rounded-2xl shadow-2xl overflow-hidden border border-border relative z-10">
         <div className="bg-bg-card border-b border-border p-8 relative">
-          <button onClick={() => setOnboardMode('selection')} className="absolute top-8 left-8 text-text-secondary hover:text-text-primary">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-          </button>
-          <h1 className="text-3xl font-extrabold text-center">Production Setup</h1>
+          {!isTrial && (
+            <button onClick={() => setOnboardMode('selection')} className="absolute top-8 left-8 text-text-secondary hover:text-text-primary">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            </button>
+          )}
+          <h1 className="text-3xl font-extrabold text-center">Business Setup</h1>
+          {isTrial && (
+            <div className="mt-4 bg-accent/10 border border-accent/20 rounded-lg p-3 text-center">
+              <p className="text-accent font-bold">14-Day Free Trial: <span className="capitalize">{selectedPlan}</span> Plan</p>
+              <p className="text-xs text-text-secondary mt-1">
+                Enjoy 14 days of full access. No payment details required today.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap justify-center gap-4 sm:gap-8 mt-6">
             <div className={`flex flex-col items-center opacity-${step >= 1 ? '100' : '50'} transition-opacity`}>
               <div className="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center font-bold mb-2 shadow">1</div>
@@ -784,5 +819,6 @@ export default function OnboardPage() {
         </div>
       </div>
     </main>
+    </>
   );
 }

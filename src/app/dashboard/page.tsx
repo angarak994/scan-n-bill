@@ -469,7 +469,9 @@ function DashboardContent() {
   // Initial load check
   useEffect(() => {
     if (!isAuthorized) {
-      fetchDashboardData(currentDay, currentDay).finally(() => setIsInitialLoading(false));
+      fetchDashboardData(currentDay, currentDay).finally(() => {
+        setTimeout(() => setIsInitialLoading(false), 0);
+      });
     } else {
       setTimeout(() => setIsInitialLoading(false), 0);
     }
