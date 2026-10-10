@@ -22,6 +22,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Contact number must be exactly 10 digits' }, { status: 400 });
     }
 
+    // --- IDEMPOTENT DEMO BUSINESS LOGIC ---
+    if (is_demo) {
+        const { data: existingDemos } = await supabase
+            .from('businesses')
+            .select('id, business_name, tables')
+            .eq('business_name', 'Strike Zone (Demo)')
+            .order('created_at', { ascending: true })
+            .limit(1);
+
+        if (existingDemos && existingDemos.length > 0) {
+            const demoBiz = existingDemos[0];
+            const businessId = demoBiz.id;
+
+            await setSession(businessId, 'owner');
+            
+            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+            const businessSlug = demoBiz.business_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+            const qrs = await Promise.all((demoBiz.tables || []).map(async (t: any) => {
+              const tableId = t.id || t.table_id;
+              const url = `${origin}/qr/${businessSlug}/${encodeURIComponent(tableId)}`;
+              const dataUrl = await QRCode.toDataURL(url);
+              return { name: t.name, dataUrl };
+            }));
+
+            const dashboardUrl = `${origin}/dashboard`;
+            const dashboardQr = await QRCode.toDataURL(dashboardUrl);
+            qrs.push({ name: 'Owner Dashboard', dataUrl: dashboardQr });
+
+            // Hardcode 1234 as it's the standard demo pin, since DB only has hashed version
+            return NextResponse.json({ success: true, businessId, qrs, pin: '1234' }, { status: 200 });
+        }
+    }
+    // ----------------------------------------
+
     let finalSheetId = google_sheet_id.trim();
     if (finalSheetId.includes('/d/')) {
       const match = finalSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
