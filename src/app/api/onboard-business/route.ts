@@ -7,6 +7,7 @@ import { initializeGoogleSheet } from '@/lib/googleSheets';
 import bcrypt from 'bcryptjs';
 import { setSession } from '@/lib/auth';
 import { supabase } from '@/lib/supabaseClient';
+import { refreshDemoTimestamps } from '@/lib/utils/refreshDemoData';
 
 export async function POST(request: Request) {
   try {
@@ -50,6 +51,10 @@ export async function POST(request: Request) {
             const dashboardUrl = `${origin}/dashboard`;
             const dashboardQr = await QRCode.toDataURL(dashboardUrl);
             qrs.push({ name: 'Owner Dashboard', dataUrl: dashboardQr });
+
+            // Dynamically refresh demo timestamps so active sessions and bookings look fresh today
+            // without resetting or deleting the user's modifications.
+            await refreshDemoTimestamps(businessId);
 
             // Hardcode 1234 as it's the standard demo pin, since DB only has hashed version
             return NextResponse.json({ success: true, businessId, qrs, pin: '1234' }, { status: 200 });
