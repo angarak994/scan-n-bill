@@ -14,44 +14,7 @@ const futureOneHour = new Date(now.getTime() + 60 * 60000).toTimeString().substr
 const futureThreeHours = new Date(now.getTime() + 180 * 60000).toTimeString().substring(0, 5);
 
 export const mockDashboardData = {
-    business: {
-        id: "demo-business-123",
-        business_name: "Strike Zone (Demo)",
-        owner_name: "Demo Admin",
-        contact_number: "9999999999",
-        business_type: "Billiards / Pool",
-        tables: [
-            { id: "T1", name: "Table 1", type: "pool" },
-            { id: "T2", name: "Table 2", type: "pool" },
-            { id: "T3", name: "Table 3", type: "pool" },
-            { id: "T4", name: "Table 4", type: "pool" },
-            { id: "T5", name: "Table 5", type: "snooker" },
-            { id: "VIP1", name: "VIP Room", type: "pool" }
-        ],
-        pricing_rules: {
-            rules: {
-                pool: { type: "fixed", rate: 200 },
-                snooker: { type: "fixed", rate: 350 }
-            },
-            globalSettings: {
-                rounding_mode: "nearest_5",
-                enable_peak_rules: false,
-                currency: "INR"
-            }
-        },
-        menu_items: [
-            { id: 'F1', name: 'Coke', price: 50, category: 'Beverages' },
-            { id: 'F2', name: 'French Fries', price: 120, category: 'Food' },
-            { id: 'F3', name: 'Red Bull', price: 150, category: 'Beverages' },
-            { id: 'F4', name: 'Club Sandwich', price: 180, category: 'Food' }
-        ],
-        settings: {
-            sms_enabled: false,
-            whatsapp_enabled: false
-        }
-    },
-    sessions: [
-        // Active Sessions
+    activeSessions: [
         {
             id: "sess-active-1",
             business_id: "demo-business-123",
@@ -79,8 +42,9 @@ export const mockDashboardData = {
             duration: null,
             cost: null,
             payment_status: null
-        },
-        // Completed Sessions
+        }
+    ],
+    completedSessions: [
         {
             id: "sess-comp-1",
             business_id: "demo-business-123",
@@ -116,6 +80,31 @@ export const mockDashboardData = {
             completed_by: "Demo Admin"
         }
     ],
+    dailyRevenue: 550,
+    kpis: { totalRevenue: 550, totalSessions: 2 },
+    todayStr: todayDate,
+    pricingRules: {
+        rules: {
+            pool: { type: "fixed", rate: 200 },
+            snooker: { type: "fixed", rate: 350 }
+        },
+        globalSettings: {
+            rounding_mode: "nearest_5",
+            enable_peak_rules: false,
+            currency: "INR"
+        }
+    },
+    tables: [
+        { id: "T1", name: "Table 1", type: "pool" },
+        { id: "T2", name: "Table 2", type: "pool" },
+        { id: "T3", name: "Table 3", type: "pool" },
+        { id: "T4", name: "Table 4", type: "pool" },
+        { id: "T5", name: "Table 5", type: "snooker" },
+        { id: "VIP1", name: "VIP Room", type: "pool" }
+    ],
+    activeDiscounts: {},
+    manualClosuresToday: 0,
+    revenueSavedToday: 0,
     bookings: [
         {
             id: "book-1",
@@ -144,7 +133,7 @@ export const mockDashboardData = {
             game_type: "snooker"
         }
     ],
-    promotions: [
+    activePromotions: [
         {
             id: "promo-1",
             name: "DIWALI50",
@@ -162,6 +151,24 @@ export const mockDashboardData = {
         { id: "mem-1", name: "Arjun Sharma", mobile: "9876543210", points: 450 },
         { id: "mem-2", name: "Priya Patel", mobile: "9123456789", points: 120 }
     ],
+    businessId: "demo-business-123",
+    businessName: "Strike Zone (Demo)",
+    ownerName: "Demo Admin",
+    has_logged_in: true,
+    goals: { daily_revenue: 1000, weekly_revenue: 7000, monthly_revenue: 30000, daily_sessions: 10 },
+    google_sheet_id: null,
+    payment_qr_config: null,
+    whatsapp_config: { enabled: false },
+    menu_items: [
+        { id: 'F1', name: 'Coke', price: 50, category: 'Beverages' },
+        { id: 'F2', name: 'French Fries', price: 120, category: 'Food' },
+        { id: 'F3', name: 'Red Bull', price: 150, category: 'Beverages' },
+        { id: 'F4', name: 'Club Sandwich', price: 180, category: 'Food' }
+    ],
+    entitlement: {
+       features: ['whatsapp_alerts', 'qkhata', 'advanced_analytics', 'food_menu', 'telegram_bot'],
+       planName: 'Growth'
+    },
     foodOrders: [],
     membership_plans: [
         { id: "plan-1", name: "Gold Tier", price: 1500, validity_days: 30, discount_percentage: 15 }
@@ -183,20 +190,7 @@ export const mockDashboardData = {
             description: "Advance payment",
             created_at: todayDate
         }
-    ],
-    revenue: {
-        totalRevenue: 550,
-        estimatedActiveRevenue: 275,
-        totalFoodSales: 0,
-        totalDiscounts: 0
-    },
-    todayStr: todayDate,
-    interventions: [],
-    waitlistCount: 0,
-    entitlements: {
-       features: ['whatsapp_alerts', 'qkhata', 'advanced_analytics', 'food_menu', 'telegram_bot'],
-       planName: 'Growth'
-    }
+    ]
 };
 
 export const mockReportsData = {
