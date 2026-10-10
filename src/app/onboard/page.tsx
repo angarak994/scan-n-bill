@@ -58,55 +58,10 @@ export default function OnboardPage() {
     setError('');
 
     try {
-      const isInstantDemo = !formData.business_name;
-      const payload = {
-        business_name: formData.business_name || 'Strike Zone (Demo)',
-        owner_name: formData.owner_name || 'Demo Admin',
-        contact_number: formData.contact_number || '9999999999',
-        dashboard_pin: formData.dashboard_pin || '1234',
-        business_type: 'Billiards / Pool',
-        google_sheet_id: 'demo-sheet-' + Math.random().toString(36).substring(7),
-        pricing_rules: { 
-          rules: { 'pool': { type: 'fixed', rate: 200 } }, 
-          globalSettings: { rounding_mode: 'nearest_5', enable_peak_rules: false } 
-        },
-        is_demo: true,
-        tables: [
-          { id: 'T1', name: 'Table 1', type: 'pool' },
-          { id: 'T2', name: 'Table 2', type: 'pool' },
-          { id: 'T3', name: 'Table 3', type: 'pool' },
-          { id: 'T4', name: 'Table 4', type: 'pool' },
-          { id: 'T5', name: 'Table 5', type: 'snooker' },
-          { id: 'VIP1', name: 'VIP Room', type: 'pool' }
-        ],
-        menu_items: [
-          { id: 'F1', name: 'Coke', price: 50, category: 'Beverages' },
-          { id: 'F2', name: 'French Fries', price: 120, category: 'Food' },
-          { id: 'F3', name: 'Red Bull', price: 150, category: 'Beverages' }
-        ]
-      };
-
-      const res = await fetch('/api/onboard-business', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate demo business');
-      }
-
-      if (data.pin) {
-        sessionStorage.setItem('dashboard_pin', data.pin);
-      }
-      
-      if (isInstantDemo) {
-        window.location.href = '/dashboard';
-      } else {
-        setQrs(data.qrs);
-        setCreatedBusinessId(data.businessId);
-      }
+      // Safely route the user to the Read-Only Static Demo without touching production databases
+      setTimeout(() => {
+         window.location.href = '/demo';
+      }, 500); // Small delay to show the loading animation for realism
     } catch (err: any) {
       setError(err.message);
     } finally {
