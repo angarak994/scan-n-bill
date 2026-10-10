@@ -250,7 +250,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchTableState, table_id]);
+  }, [fetchTableState, table_id, business_id]);
 
 
 

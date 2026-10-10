@@ -61,6 +61,7 @@ export default function Hero() {
         }, 0);
       }
     } catch(e) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsReady(true);
     }
   }, []);

@@ -40,6 +40,7 @@ export default function StaticDemoSandbox() {
             return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' }});
         };
 
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsReady(true);
 
         return () => {

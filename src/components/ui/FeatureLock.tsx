@@ -14,7 +14,8 @@ export default function FeatureLock({ featureName, requiredPlan, description }: 
   const [targetHref, setTargetHref] = React.useState('/dashboard?tab=subscription');
 
   React.useEffect(() => {
-    if (window.location.pathname.includes('/demo')) {
+    if (typeof window !== 'undefined' && window.location.pathname.includes('/demo')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTargetHref('/pricing');
     }
   }, []);
