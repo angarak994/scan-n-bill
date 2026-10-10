@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { Lock, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -9,6 +11,14 @@ interface FeatureLockProps {
 }
 
 export default function FeatureLock({ featureName, requiredPlan, description }: FeatureLockProps) {
+  const [targetHref, setTargetHref] = React.useState('/dashboard?tab=subscription');
+
+  React.useEffect(() => {
+    if (window.location.pathname.includes('/demo')) {
+      setTargetHref('/pricing');
+    }
+  }, []);
+
   return (
     <div className="w-full h-full min-h-[400px] flex items-center justify-center p-6 relative overflow-hidden bg-bg-surface border border-border-light rounded-2xl">
       {/* Background pattern */}
@@ -27,7 +37,7 @@ export default function FeatureLock({ featureName, requiredPlan, description }: 
         </p>
         
         <Link 
-          href="/dashboard?tab=subscription" 
+          href={targetHref} 
           className="w-full py-4 bg-accent text-white font-bold rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
         >
           View Plans & Upgrade

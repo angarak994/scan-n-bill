@@ -55,13 +55,15 @@ export default function Home() {
              <a href="#faq" className="hover:text-text-primary transition-colors">FAQ</a>
           </div>
 
-          {/* Actions (Right) */}
           <div className="flex justify-end gap-2 sm:gap-4 items-center">
-            <Link href="/login" className="px-4 py-2 sm:px-6 sm:py-2.5 rounded-full font-bold text-sm sm:text-base text-text-secondary hover:text-text-primary transition-colors">
-              Log In
+            <Link href="/demo" className="hidden lg:block px-4 py-2 sm:px-6 sm:py-2.5 rounded-full font-bold text-sm sm:text-base text-accent bg-accent/10 hover:bg-accent/20 transition-colors">
+              Explore Demo
+            </Link>
+            <Link href="/pricing" className="px-4 py-2 sm:px-6 sm:py-2.5 rounded-full font-bold text-sm sm:text-base text-text-secondary hover:text-text-primary transition-colors">
+              View Plans
             </Link>
             <Link href="/onboard" className="px-4 py-2 sm:px-6 sm:py-2.5 bg-accent text-white font-bold text-sm sm:text-base rounded-full hover:bg-accent/90 transition-all border border-transparent hover:border-accent">
-              Get Started
+              Register Business
             </Link>
           </div>
         </nav>

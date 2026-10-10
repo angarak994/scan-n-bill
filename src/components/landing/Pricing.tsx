@@ -77,7 +77,7 @@ export default function Pricing() {
               </ul>
               
               <Link 
-                href="/register" 
+                href="/onboard" 
                 className={`w-full py-3.5 rounded-xl font-bold text-center transition-all mt-auto relative z-20 ${tier.isRecommended ? 'bg-accent text-white hover:bg-accent/90 shadow-lg shadow-accent/20' : 'bg-bg-base text-text-primary border border-border-theme hover:bg-border-light hover:border-accent/50'}`}
               >
                 {tier.ctaText}
