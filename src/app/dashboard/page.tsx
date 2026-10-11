@@ -19,6 +19,7 @@ import BookingsTab from './BookingsTab';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
+import { LanguageProvider, useLanguage } from '@/context/LanguageContext';
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -87,6 +88,7 @@ const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentCol
 
 
 function DashboardContent() {
+  const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
   const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
@@ -2531,13 +2533,13 @@ function DashboardContent() {
                     else setSelectedBulkSmsCustomers([]);
                   }} className="w-4 h-4 rounded border-border-theme text-accent focus:ring-accent" />
                 </th>
-                <th className="p-5 font-bold">Member</th>
-                <th className="p-5 font-bold">Contact</th>
-                <th className="p-5 font-bold">Tier</th>
-                <th className="p-5 font-bold">Points</th>
-                <th className="p-5 font-bold">Spend</th>
-                <th className="p-5 font-bold">Expiry Date</th>
-                <th className="p-5 font-bold">Status</th>
+                <th className="p-5 font-bold">{t('members', 'Member')}</th>
+                <th className="p-5 font-bold">{t('phone_number', 'Contact')}</th>
+                <th className="p-5 font-bold">{t('tier', 'Tier')}</th>
+                <th className="p-5 font-bold">{t('loyalty_points', 'Points')}</th>
+                <th className="p-5 font-bold">{t('total_spend', 'Spend')}</th>
+                <th className="p-5 font-bold">{t('expiry_date', 'Expiry Date')}</th>
+                <th className="p-5 font-bold">{t('status', 'Status')}</th>
               </tr>
             </thead>
             <tbody>
@@ -4742,7 +4744,34 @@ function DashboardContent() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 lg:gap-6">
+            {/* Multi-language Selector Pill */}
+            <div className="flex items-center bg-bg-surface border border-border-theme rounded-lg p-0.5 text-xs font-semibold shadow-sm">
+              <button 
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`px-2 py-1 rounded transition-colors ${language === 'en' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
+                title="English"
+              >
+                EN
+              </button>
+              <button 
+                type="button"
+                onClick={() => setLanguage('hi')}
+                className={`px-2 py-1 rounded transition-colors ${language === 'hi' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
+                title="हिंदी (Hindi)"
+              >
+                हिं
+              </button>
+              <button 
+                type="button"
+                onClick={() => setLanguage('mr')}
+                className={`px-2 py-1 rounded transition-colors ${language === 'mr' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
+                title="मराठी (Marathi)"
+              >
+                मरा
+              </button>
+            </div>
             <div className="flex gap-4 text-text-secondary items-center">
               <Tooltip text="Open Google Sheet">
                 <button
@@ -5423,7 +5452,9 @@ export default function Dashboard() {
         </div>
       </div>
     }>
-      <DashboardContent />
+      <LanguageProvider>
+        <DashboardContent />
+      </LanguageProvider>
     </Suspense>
   );
 }

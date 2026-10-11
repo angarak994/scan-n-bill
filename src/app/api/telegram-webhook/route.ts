@@ -11,6 +11,7 @@ import { startSession } from '@/lib/sessionManager';
 import { generateQpulseInsight } from '@/lib/services/qpulseService';
 import { bookingService } from '@/lib/services/bookingService';
 import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
+import { SupportedLanguage, translations } from '@/lib/i18n';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -100,17 +101,80 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   );
 }
 
-function getMainMenuKeyboard(allActiveMembershipsCount: number = 0) {
+function getMainMenuKeyboard(allActiveMembershipsCount: number = 0, lang: SupportedLanguage = 'en') {
+  const dict = translations[lang] || translations.en;
   const keyboard = [
-    [{ text: '▶️ Start Session' }, { text: '📋 Active Sessions' }],
-    [{ text: '📒 Member QKhata' }],
-    [{ text: '🛑 Stop Session' }, { text: '📅 Book Table' }],
-    [{ text: '⏸ Paused Sessions' }, { text: '💰 Today\'s Summary' }]
+    [{ text: dict.tg_start_session }, { text: dict.tg_active_sessions }],
+    [{ text: dict.tg_member_qkhata }],
+    [{ text: dict.tg_stop_session }, { text: dict.tg_book_table }],
+    [{ text: dict.tg_paused_sessions }, { text: dict.tg_today_summary }],
+    [{ text: dict.tg_change_language }]
   ];
   if (allActiveMembershipsCount > 1) {
-    keyboard.push([{ text: '🏢 Switch Business' }]);
+    keyboard.push([{ text: dict.tg_switch_business }]);
   }
   return { keyboard, resize_keyboard: true };
+}
+
+interface AggregatedMemberCustomer {
+  primaryId: string;
+  name: string;
+  phone?: string;
+  totalOutstanding: number;
+  customerIds: string[];
+}
+
+function aggregateMemberCustomers(rawCustomers: any[], memberships: any[], includeZeroBalance = false): AggregatedMemberCustomer[] {
+  if (!memberships || memberships.length === 0) return [];
+
+  const memberMap = new Map<string, AggregatedMemberCustomer>();
+
+  // Seed with registered memberships so each registered member is represented accurately
+  for (const m of memberships) {
+    const key = (m.mobile && m.mobile.trim()) || m.id || (m.name && m.name.trim().toLowerCase());
+    if (!key) continue;
+
+    memberMap.set(key, {
+      primaryId: m.id,
+      name: m.name || 'Member',
+      phone: m.mobile,
+      totalOutstanding: 0,
+      customerIds: []
+    });
+  }
+
+  // Aggregate all matching customer records
+  if (rawCustomers && rawCustomers.length > 0) {
+    for (const c of rawCustomers) {
+      const cPhone = c.phone?.trim();
+      const cName = c.name?.trim().toLowerCase();
+
+      const matchedMembership = memberships.find((m: any) => 
+        (m.mobile && cPhone && m.mobile === cPhone) ||
+        (m.name && cName && m.name.trim().toLowerCase() === cName) ||
+        m.id === c.id
+      );
+
+      if (!matchedMembership) continue;
+
+      const key = (matchedMembership.mobile && matchedMembership.mobile.trim()) || 
+                  matchedMembership.id || 
+                  (matchedMembership.name && matchedMembership.name.trim().toLowerCase());
+
+      const entry = memberMap.get(key);
+      if (entry) {
+        entry.totalOutstanding += (Number(c.outstanding_balance) || 0);
+        entry.customerIds.push(c.id);
+        entry.primaryId = c.id; // Prefer real customer record id for ledger/payments
+      }
+    }
+  }
+
+  const results = Array.from(memberMap.values());
+  if (includeZeroBalance) {
+    return results;
+  }
+  return results.filter(m => m.totalOutstanding > 0).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 }
 
 const businessContextCache = new Map<string, { data: any, expiresAt: number }>();
@@ -134,7 +198,7 @@ async function getBusinessContext(chatId: string | number, forceRefresh = false)
   if (error) console.error("[DB Error] getBusinessContext:", error);
   if (!businesses) {
     const emptyResult = { activeMembership: null, allActiveMemberships: [], revokedContext: null };
-    businessContextCache.set(searchId, { data: emptyResult, expiresAt: now + 30000 });
+    businessContextCache.set(searchId, { data: emptyResult, expiresAt: now + 300000 });
     return emptyResult;
   }
   
@@ -150,11 +214,12 @@ async function getBusinessContext(chatId: string | number, forceRefresh = false)
       const owner = gs.authorized_telegram_owners.find((owner: any) => String(owner.chatId).trim() === searchId);
       if (owner) {
          const isPrimary = owner.role === 'PRIMARY_OWNER';
+         const userLanguage = (owner.language || 'en') as SupportedLanguage;
          if (owner.status === 'revoked') {
-            const mem = { business: b, isRevoked: true, isPrimary, isActiveContext: owner.is_active_context === true };
+            const mem = { business: b, isRevoked: true, isPrimary, isActiveContext: owner.is_active_context === true, userLanguage };
             if (mem.isActiveContext) revokedContext = mem;
          } else {
-            const mem = { business: b, isRevoked: false, isPrimary, isActiveContext: owner.is_active_context === true };
+            const mem = { business: b, isRevoked: false, isPrimary, isActiveContext: owner.is_active_context === true, userLanguage };
             allActiveMemberships.push(mem);
             if (mem.isActiveContext) activeMembership = mem;
          }
@@ -162,8 +227,23 @@ async function getBusinessContext(chatId: string | number, forceRefresh = false)
     }
   }
   const result = { activeMembership, allActiveMemberships, revokedContext };
-  businessContextCache.set(searchId, { data: result, expiresAt: now + 30000 });
+  businessContextCache.set(searchId, { data: result, expiresAt: now + 300000 });
   return result;
+}
+
+async function setUserLanguage(chatId: string | number, businessId: string, lang: SupportedLanguage) {
+  const searchId = String(chatId).trim();
+  const { data: b } = await supabase.from('businesses').select('id, pricing_rules').eq('id', businessId).single();
+  if (!b) return;
+  const gs = b.pricing_rules?.globalSettings;
+  if (!gs || !Array.isArray(gs.authorized_telegram_owners)) return;
+  
+  const ownerIndex = gs.authorized_telegram_owners.findIndex((owner: any) => String(owner.chatId).trim() === searchId);
+  if (ownerIndex > -1) {
+    gs.authorized_telegram_owners[ownerIndex].language = lang;
+    await supabase.from('businesses').update({ pricing_rules: b.pricing_rules }).eq('id', b.id);
+  }
+  businessContextCache.delete(searchId);
 }
 
 async function switchBusinessContext(chatId: string | number, targetBusinessId: string) {
@@ -322,7 +402,8 @@ async function processWebhook(update: any) {
       }
 
       const ctx = await getBusinessContext(chatId);
-      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
+      const userLang = (ctx.activeMembership?.userLanguage || 'en') as SupportedLanguage;
+      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length, userLang);
 
       if (ctx.revokedContext && !ctx.activeMembership) {
         if (text !== '🏢 Switch Business' && !text.startsWith('switch_biz_') && !(text.startsWith('/start ') && text.includes('_auth_'))) {
@@ -637,7 +718,12 @@ Time: ${timeStr}`, mainMenu);
          }
       }
 
-      if (text === '▶️ Start Session') {
+      if (
+        text === '▶️ Start Session' || 
+        text === '▶️ सत्र शुरू करें' || 
+        text === '▶️ सत्र सुरू करा' || 
+        text === '/startsession'
+      ) {
         const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
         
         if (isLazyModeEnabled) {
@@ -669,14 +755,21 @@ Time: ${timeStr}`, mainMenu);
         ];
         await sendTelegramMessage(chatId, 'Who is playing?', { inline_keyboard: buttons });
       }
-      else if (text === '📋 Active Sessions') {
+      else if (
+        text === '📋 Active Sessions' || 
+        text === '📋 सक्रिय सत्र' || 
+        text === '📋 चालू सत्रे' || 
+        text === '/activesessions'
+      ) {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No active sessions running right now.', mainMenu);
+          const noSessMsg = userLang === 'mr' ? 'कोणतेही चालू सत्र नाही.' : userLang === 'hi' ? 'कोई सक्रिय सत्र नहीं चल रहा है।' : 'No active sessions running right now.';
+          await sendTelegramMessage(chatId, noSessMsg, mainMenu);
           return NextResponse.json({ ok: true });
         }
         
-        let masterMsg = `📋 <b>Active Sessions (${activeSessions.length})</b>\n\n`;
+        const titleText = userLang === 'mr' ? `📋 <b>चालू सत्रे (${activeSessions.length})</b>\n\n` : userLang === 'hi' ? `📋 <b>सक्रिय सत्र (${activeSessions.length})</b>\n\n` : `📋 <b>Active Sessions (${activeSessions.length})</b>\n\n`;
+        let masterMsg = titleText;
         const masterButtons: any[] = [];
         
         const sessionDetails = await Promise.all(activeSessions.map(async (session) => {
@@ -692,8 +785,7 @@ Time: ${timeStr}`, mainMenu);
             billText = `₹${Math.round(res.cost)}`;
           } catch(e){}
 
-          const startedTime = formatTimeReadable(startFull);
-          const customerLabel = isMember ? 'Member' : 'Cust';
+          const customerLabel = isMember ? (userLang === 'mr' ? 'सभासद' : userLang === 'hi' ? 'सदस्य' : 'Member') : 'Cust';
           const msgFragment = `• <b>${session.table_id}</b> (${session.game_type})\n  ${customerLabel}: ${escapeHtml(session.customer_name || "Guest")}\n  Amt: ${billText} ${isPaused ? '(⏸)' : ''}\n\n`;
           
           const row = [
@@ -721,10 +813,16 @@ Time: ${timeStr}`, mainMenu);
         
         await sendTelegramMessage(chatId, masterMsg, { inline_keyboard: masterButtons });
       }
-      else if (text === '🛑 Stop Session') {
+      else if (
+        text === '🛑 Stop Session' || 
+        text === '🛑 सत्र समाप्त करें' || 
+        text === '🛑 सत्र थांबवा' || 
+        text === '/stopsession'
+      ) {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No active sessions to stop.', mainMenu);
+          const noStopMsg = userLang === 'mr' ? 'थांबवण्यासाठी कोणतेही सत्र नाही.' : userLang === 'hi' ? 'समाप्त करने के लिए कोई सक्रिय सत्र नहीं है।' : 'No active sessions to stop.';
+          await sendTelegramMessage(chatId, noStopMsg, mainMenu);
           return NextResponse.json({ ok: true });
         }
         const sessionButtons = activeSessions.map(s => {
@@ -733,10 +831,16 @@ Time: ${timeStr}`, mainMenu);
           return { text: `${icon} ${s.table_id}`, callback_data: `stop_select_${s.id}` };
         });
         const buttons = chunkArray(sessionButtons, 2);
-        await sendTelegramMessage(chatId, `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`, { inline_keyboard: buttons });
+        const promptText = userLang === 'mr' ? `🛑 <b>सत्र थांबवण्यासाठी टेबल निवडा</b>\n\nकोणते सत्र थांबवायचे आहे?` : userLang === 'hi' ? `🛑 <b>सत्र समाप्त करने के लिए टेबल चुनें</b>\n\nआप कौन सा सत्र समाप्त करना चाहते हैं?` : `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`;
+        await sendTelegramMessage(chatId, promptText, { inline_keyboard: buttons });
       }
       
-      else if (text === '⏸ Paused Sessions') {
+      else if (
+        text === '⏸ Paused Sessions' || 
+        text === '⏸ रुके हुए सत्र' || 
+        text === '⏸ थांबवलेले सत्रे' || 
+        text === '/paused'
+      ) {
         const { data: activeSessions } = await supabase.from('sessions').select('*').eq('business_id', business.id).eq('status', 'ACTIVE');
         if (!activeSessions || activeSessions.length === 0) {
           await sendTelegramMessage(chatId, 'No active sessions right now.', mainMenu);
@@ -746,18 +850,24 @@ Time: ${timeStr}`, mainMenu);
         const pausedSessions = activeSessions.filter(s => typeof s.paused_at === 'string' && s.paused_at.trim() !== '');
         
         if (pausedSessions.length === 0) {
-          await sendTelegramMessage(chatId, 'No paused sessions right now.', mainMenu);
+          const noPausedMsg = userLang === 'mr' ? 'सध्या कोणतेही सत्र थांबवलेले नाही.' : userLang === 'hi' ? 'वर्तमान में कोई रुका हुआ सत्र नहीं है।' : 'No paused sessions right now.';
+          await sendTelegramMessage(chatId, noPausedMsg, mainMenu);
           return NextResponse.json({ ok: true });
         }
         
-        let msg = '⏸ <b>Paused Sessions</b>\n\n';
+        let msg = userLang === 'mr' ? '⏸ <b>थांबवलेले सत्रे</b>\n\n' : userLang === 'hi' ? '⏸ <b>रुके हुए सत्र</b>\n\n' : '⏸ <b>Paused Sessions</b>\n\n';
         pausedSessions.forEach(session => {
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
           msg += `<b>${session.table_id}</b>\nPlayer: ${session.customer_name}\nGame: ${session.game_type}\nStarted: ${formatTimeReadable(startFull)}\nPaused At: ${formatTimeReadable(session.paused_at)}\n\n`;
         });
         await sendTelegramMessage(chatId, msg, mainMenu);
       }
-      else if (text === '💰 Today\'s Summary') {
+      else if (
+        text === '💰 Today\'s Summary' || 
+        text === '💰 आज का सारांश' || 
+        text === '💰 आजचा हिशोब' || 
+        text === '/summary'
+      ) {
         const dateStr = getCurrentISTDateStr();
         
         const [sessionsResponse, qpulseInsight] = await Promise.all([
@@ -773,7 +883,8 @@ Time: ${timeStr}`, mainMenu);
         const completedSessions = sessionsResponse.data;
           
         if (!completedSessions || completedSessions.length === 0) {
-          await sendTelegramMessage(chatId, `No completed sessions today (${dateStr}).`, mainMenu);
+          const noRevMsg = userLang === 'mr' ? `आज (${dateStr}) कोणतेही सत्र पूर्ण झालेले नाही.` : userLang === 'hi' ? `आज (${dateStr}) कोई सत्र पूरा नहीं हुआ है।` : `No completed sessions today (${dateStr}).`;
+          await sendTelegramMessage(chatId, noRevMsg, mainMenu);
         } else {
           let totalRevenue = 0;
           
@@ -781,7 +892,11 @@ Time: ${timeStr}`, mainMenu);
             totalRevenue += Number(s.cost) || 0;
           });
           
-          let msg = `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
+          let msg = userLang === 'mr' 
+            ? `💰 <b>आजचा हिशोब</b> (${dateStr})\n\nएकूण सत्रे: ${completedSessions.length}\nएकूण कमाई: ₹${Math.round(totalRevenue)}`
+            : userLang === 'hi'
+            ? `💰 <b>आज का सारांश</b> (${dateStr})\n\nकुल सत्र: ${completedSessions.length}\nकुल राजस्व: ₹${Math.round(totalRevenue)}`
+            : `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
           
           if (qpulseInsight && qpulseInsight.telegram) {
             msg += `\n\n<b>Qpulse Insight</b>\n${qpulseInsight.telegram}`;
@@ -791,7 +906,12 @@ Time: ${timeStr}`, mainMenu);
         }
         return NextResponse.json({ ok: true });
       }
-      else if (text === '📅 Book Table') {
+      else if (
+        text === '📅 Book Table' || 
+        text === '📅 टेबल बुक करें' || 
+        text === '📅 टेबल बुक करा' || 
+        text === '/book'
+      ) {
         const buttons = [
           [{ text: '📋 View Today\'s Bookings', callback_data: 'bk_view_today' }],
           [{ text: '➕ Create Booking', callback_data: 'bk_create_new' }]
@@ -799,7 +919,12 @@ Time: ${timeStr}`, mainMenu);
         await sendTelegramMessage(chatId, `📅 <b>Booking Management</b>\n\nChoose an action:`, { inline_keyboard: buttons });
         return NextResponse.json({ ok: true });
       }
-      else if (text === '📒 Member QKhata') {
+      else if (
+        text === '📒 Member QKhata' || 
+        text === '📒 सदस्य खाता' || 
+        text === '📒 सदस्य खाते' || 
+        text === '/qkhata'
+      ) {
         const [customersResponse, membershipsResponse] = await Promise.all([
           supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false }),
           supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
@@ -808,25 +933,48 @@ Time: ${timeStr}`, mainMenu);
         const rawCustomers = customersResponse.data;
         const memberships = membershipsResponse.data;
         
-        const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id)) || [];
+        // Deduplicate and aggregate members so each person appears exactly once with combined balance
+        const aggregated = aggregateMemberCustomers(rawCustomers || [], memberships || []);
         
-        if (!customers || customers.length === 0) {
-           await sendTelegramMessage(chatId, `🎉 No outstanding QKhata balances found for registered members!`, mainMenu);
+        if (!aggregated || aggregated.length === 0) {
+           const emptyMsg = userLang === 'mr' 
+             ? `🎉 नोंदणीकृत सभासदांची कोणतीही बाकी रक्कम नाही!` 
+             : userLang === 'hi' 
+             ? `🎉 पंजीकृत सदस्यों का कोई बकाया नहीं है!` 
+             : `🎉 No outstanding QKhata balances found for registered members!`;
+           await sendTelegramMessage(chatId, emptyMsg, mainMenu);
            return NextResponse.json({ ok: true });
         }
         
-        const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstanding_balance), 0);
-        let msg = `📒 <b>Member QKhata Collections</b>\n\n`;
-        msg += `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\n`;
-        msg += `Members Pending: <b>${customers.length}</b>\n\n`;
+        const totalOutstanding = aggregated.reduce((sum, c) => sum + c.totalOutstanding, 0);
+        let msg = userLang === 'mr'
+          ? `📒 <b>सभासद खाते वसुली</b>\n\nएकूण बाकी: <b>₹${Math.round(totalOutstanding)}</b>\nबाकी असलेले सभासद: <b>${aggregated.length}</b>\n\nसभासद निवडा:`
+          : userLang === 'hi'
+          ? `📒 <b>सदस्य खाता संग्रह</b>\n\nकुल बकाया: <b>₹${Math.round(totalOutstanding)}</b>\nलंबित सदस्य: <b>${aggregated.length}</b>\n\nसदस्य चुनें:`
+          : `📒 <b>Member QKhata Collections</b>\n\nTotal Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\nMembers Pending: <b>${aggregated.length}</b>\n\nSelect a member to view details or collect payment:`;
         
-        const topCustomers = customers.slice(0, 15);
-        const memberButtons = topCustomers.map(c => [{
-            text: `👤 ${c.name} — ₹${Math.round(c.outstanding_balance)}`,
-            callback_data: `qkhatamem_${c.id}`
+        const topMembers = aggregated.slice(0, 15);
+        const memberButtons = topMembers.map(c => [{
+            text: `👤 ${c.name} — ₹${Math.round(c.totalOutstanding)}`,
+            callback_data: `qkhatamem_${c.primaryId}`
         }]);
         
-        await sendTelegramMessage(chatId, msg + `Select a member to view details or collect payment:`, { inline_keyboard: memberButtons });
+        await sendTelegramMessage(chatId, msg, { inline_keyboard: memberButtons });
+        return NextResponse.json({ ok: true });
+      }
+      else if (
+        text === '🌐 Language' || 
+        text === '🌐 Language / भाषा' || 
+        text === '🌐 भाषा बदलें' || 
+        text === '🌐 भाषा बदला' || 
+        text === '/language'
+      ) {
+        const langButtons = [
+          [{ text: '🇬🇧 English', callback_data: 'set_lang_en' }],
+          [{ text: '🇮🇳 हिंदी (Hindi)', callback_data: 'set_lang_hi' }],
+          [{ text: '🚩 मराठी (Marathi)', callback_data: 'set_lang_mr' }]
+        ];
+        await sendTelegramMessage(chatId, `🌐 <b>Select Bot Language / भाषा निवडा / भाषा चुनें</b>\n\nChoose your preferred language for menus and notifications:`, { inline_keyboard: langButtons });
         return NextResponse.json({ ok: true });
       }
       else {
@@ -867,7 +1015,27 @@ Time: ${timeStr}`, mainMenu);
       }
 
       const ctx = await getBusinessContext(chatId);
-      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length);
+      const userLang = (ctx.activeMembership?.userLanguage || 'en') as SupportedLanguage;
+      const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length, userLang);
+
+      if (callbackData.startsWith('set_lang_')) {
+        const selectedLang = callbackData.replace('set_lang_', '') as SupportedLanguage;
+        if (business) {
+          await setUserLanguage(chatId, business.id, selectedLang);
+        }
+        const newMainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length, selectedLang);
+        const confirmationMsg = selectedLang === 'mr' 
+          ? `✅ <b>भाषा मराठी म्हणून निवडली गेली आहे!</b>\nसर्व मेन्यू आणि संदेश आता मराठीत दिसतील.`
+          : selectedLang === 'hi'
+          ? `✅ <b>भाषा हिंदी चुनी गई है!</b>\nसभी मेन्यू और संदेश अब हिंदी में दिखाई देंगे।`
+          : `✅ <b>Language set to English!</b>\nAll menus and notifications will be in English.`;
+        if (messageId) {
+          await editTelegramMessageText(chatId, messageId, confirmationMsg);
+        }
+        const actionPrompt = translations[selectedLang]?.tg_choose_action || 'Please choose an action:';
+        await sendTelegramMessage(chatId, `<b>QControl</b>\n\n${actionPrompt}`, newMainMenu);
+        return NextResponse.json({ ok: true });
+      }
       
       if (callbackData.startsWith('order_accept_')) {
         const notifId = callbackData.replace('order_accept_', '');
@@ -1053,11 +1221,27 @@ You can still access other businesses associated with your Telegram account.`, {
              return NextResponse.json({ ok: true });
           }
           
+          // Find all sibling rows for this member to display accurate combined balance
+          let allCustomerRows = [customer];
+          if (customer.phone || customer.name) {
+             const { data: siblings } = await supabase
+               .from('customers')
+               .select('*')
+               .eq('business_id', business.id)
+               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
+             if (siblings && siblings.length > 0) {
+               allCustomerRows = siblings;
+             }
+          }
+
+          const consolidatedBalance = allCustomerRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+          
           // Get recent transactions
-          const { data: payments } = await supabase.from('payments').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(3);
+          const customerIds = allCustomerRows.map(c => c.id);
+          const { data: payments } = await supabase.from('payments').select('*').in('customer_id', customerIds).order('created_at', { ascending: false }).limit(3);
           
           let msg = `👤 <b>QKhata: ${customer.name}</b>\n\n`;
-          msg += `Outstanding Balance: <b>₹${Math.round(customer.outstanding_balance)}</b>\n\n`;
+          msg += `Outstanding Balance: <b>₹${Math.round(consolidatedBalance)}</b>\n\n`;
           
           if (payments && payments.length > 0) {
              msg += `<b>Recent Transactions:</b>\n`;
@@ -1069,7 +1253,7 @@ You can still access other businesses associated with your Telegram account.`, {
           
           const buttons = [
              [
-                 { text: `💸 Settle Full (₹${Math.round(customer.outstanding_balance)})`, callback_data: `qkhatasettlefull_${customer.id}` }
+                 { text: `💸 Settle Full (₹${Math.round(consolidatedBalance)})`, callback_data: `qkhatasettlefull_${customer.id}` }
              ],
              [
                  { text: `💰 Partial Payment`, callback_data: `qkhatacollect_${customer.id}` },
@@ -1087,30 +1271,43 @@ You can still access other businesses associated with your Telegram account.`, {
       }
 
       if (callbackData === 'qkhata_back') {
-        const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false });
-        const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
-        
-        const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id)) || [];
+        const [customersResponse, membershipsResponse] = await Promise.all([
+          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false }),
+          supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
+        ]);
 
-        let msg = `📒 <b>Member QKhata Collections</b>\n\n`;
+        const aggregated = aggregateMemberCustomers(customersResponse.data || [], membershipsResponse.data || []);
+
+        let msg = userLang === 'mr'
+          ? `📒 <b>सभासद खाते वसुली</b>\n\n`
+          : userLang === 'hi'
+          ? `📒 <b>सदस्य खाता संग्रह</b>\n\n`
+          : `📒 <b>Member QKhata Collections</b>\n\n`;
         let memberButtons: any[] = [];
         
-        if (!customers || customers.length === 0) {
-           msg += `🎉 No outstanding QKhata balances found for registered members!\n\n`;
+        if (!aggregated || aggregated.length === 0) {
+           msg += userLang === 'mr'
+             ? `🎉 नोंदणीकृत सभासदांची कोणतीही बाकी रक्कम नाही!\n\n`
+             : userLang === 'hi'
+             ? `🎉 पंजीकृत सदस्यों का कोई बकाया नहीं है!\n\n`
+             : `🎉 No outstanding QKhata balances found for registered members!\n\n`;
         } else {
-           const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstanding_balance), 0);
-           msg += `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\n`;
-           msg += `Members Pending: <b>${customers.length}</b>\n\n`;
+           const totalOutstanding = aggregated.reduce((sum, c) => sum + c.totalOutstanding, 0);
+           msg += userLang === 'mr'
+             ? `एकूण बाकी: <b>₹${Math.round(totalOutstanding)}</b>\nबाकी असलेले सभासद: <b>${aggregated.length}</b>\n\nसभासद निवडा:\n`
+             : userLang === 'hi'
+             ? `कुल बकाया: <b>₹${Math.round(totalOutstanding)}</b>\nलंबित सदस्य: <b>${aggregated.length}</b>\n\nसदस्य चुनें:\n`
+             : `Total Outstanding: <b>₹${Math.round(totalOutstanding)}</b>\nMembers Pending: <b>${aggregated.length}</b>\n\nSelect a member to view details or collect payment:\n`;
            
-           const topCustomers = customers.slice(0, 15);
-           memberButtons = topCustomers.map(c => [{
-               text: `👤 ${c.name} — ₹${Math.round(c.outstanding_balance)}`,
-               callback_data: `qkhatamem_${c.id}`
+           const topMembers = aggregated.slice(0, 15);
+           memberButtons = topMembers.map(c => [{
+               text: `👤 ${c.name} — ₹${Math.round(c.totalOutstanding)}`,
+               callback_data: `qkhatamem_${c.primaryId}`
            }]);
-           msg += `Select a member to view details or collect payment:\n`;
         }
         
-        memberButtons.push([{ text: `➕ Add Manual Charge`, callback_data: `qkhata_addcharge_menu` }]);
+        const addChargeText = userLang === 'mr' ? `➕ हिशोब जोडा` : userLang === 'hi' ? `➕ शुल्क जोड़ें` : `➕ Add Manual Charge`;
+        memberButtons.push([{ text: addChargeText, callback_data: `qkhata_addcharge_menu` }]);
         
         if (messageId) {
            await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: memberButtons });
@@ -1126,7 +1323,19 @@ You can still access other businesses associated with your Telegram account.`, {
           
           if (!customer) return NextResponse.json({ ok: true });
           
-          const msg = `💰 <b>Enter payment amount for ${customer.name}</b>\n\nOutstanding: ₹${Math.round(customer.outstanding_balance)}\nRef: #${customer.id.split('-')[0].toUpperCase()}\n\n(Reply to this message with the amount received, e.g. "500")`;
+          let totalBalance = Number(customer.outstanding_balance) || 0;
+          if (customer.phone || customer.name) {
+             const { data: siblings } = await supabase
+               .from('customers')
+               .select('outstanding_balance')
+               .eq('business_id', business.id)
+               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
+             if (siblings) {
+               totalBalance = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+             }
+          }
+
+          const msg = `💰 <b>Enter payment amount for ${customer.name}</b>\n\nOutstanding: ₹${Math.round(totalBalance)}\nRef: #${customer.id.split('-')[0].toUpperCase()}\n\n(Reply to this message with the amount received, e.g. "500")`;
           await sendTelegramMessage(chatId, msg, { force_reply: true });
           return NextResponse.json({ ok: true });
       }
@@ -1137,7 +1346,19 @@ You can still access other businesses associated with your Telegram account.`, {
           
           if (!customer) return NextResponse.json({ ok: true });
           
-          const amount = Math.round(customer.outstanding_balance);
+          let totalBalance = Number(customer.outstanding_balance) || 0;
+          if (customer.phone || customer.name) {
+             const { data: siblings } = await supabase
+               .from('customers')
+               .select('outstanding_balance')
+               .eq('business_id', business.id)
+               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
+             if (siblings) {
+               totalBalance = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+             }
+          }
+
+          const amount = Math.round(totalBalance);
           
           const msg = `⚠️ <b>Confirm Full Settlement</b>\n\nAre you sure you want to settle the full amount of <b>₹${amount}</b> for ${customer.name}?`;
           
@@ -1160,21 +1381,40 @@ You can still access other businesses associated with your Telegram account.`, {
           
           if (!customer) return NextResponse.json({ ok: true });
           
-          const amount = customer.outstanding_balance;
+          let totalToSettle = Number(customer.outstanding_balance) || 0;
+          let customerIds = [customer.id];
+          if (customer.phone || customer.name) {
+             const { data: siblings } = await supabase
+               .from('customers')
+               .select('id, outstanding_balance')
+               .eq('business_id', business.id)
+               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
+             if (siblings) {
+               totalToSettle = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+               customerIds = siblings.map(s => s.id);
+             }
+          }
           
           try {
              const { createLedgerEntryAndPayment } = require('@/lib/services/paymentService');
              await createLedgerEntryAndPayment({
                  businessId: business.id,
                  customerName: customer.name,
+                 customerId: customer.id,
                  totalBilled: 0,
-                 amountPaid: amount,
+                 amountPaid: totalToSettle,
                  paymentMethod: 'Cash',
                  paymentStatus: 'Paid',
                  source: 'Telegram Settle Full'
              });
+
+             // Ensure all matching sibling customer records have balance set to 0
+             await supabase
+               .from('customers')
+               .update({ outstanding_balance: 0 })
+               .in('id', customerIds);
              
-             const successMsg = `🎉 <b>Payment Successfully Settled!</b>\n\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Member:</b> ${customer.name}\n💰 <b>Amount Paid:</b> ₹${Math.round(amount)}\n💳 <b>Method:</b> Cash\n🧾 <b>Balance:</b> ₹0\n━━━━━━━━━━━━━━━━━━━━\n\n<i>Payment recorded successfully. The member's QKhata has been cleared!</i>`;
+             const successMsg = `🎉 <b>Payment Successfully Settled!</b>\n\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Member:</b> ${customer.name}\n💰 <b>Amount Paid:</b> ₹${Math.round(totalToSettle)}\n💳 <b>Method:</b> Cash\n🧾 <b>Balance:</b> ₹0\n━━━━━━━━━━━━━━━━━━━━\n\n<i>Payment recorded successfully. The member's QKhata has been cleared!</i>`;
              
              if (messageId) {
                 await editTelegramMessageText(chatId, messageId, successMsg, mainMenu);
@@ -1190,12 +1430,14 @@ You can still access other businesses associated with your Telegram account.`, {
       }
 
       if (callbackData === 'qkhata_addcharge_menu') {
-          const { data: rawCustomers } = await supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).order('created_at', { ascending: false });
-          const { data: memberships } = await supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id);
+          const [customersResponse, membershipsResponse] = await Promise.all([
+            supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).order('created_at', { ascending: false }),
+            supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
+          ]);
           
-          const customers = rawCustomers?.filter(c => memberships?.some(m => (m.mobile && c.phone && m.mobile === c.phone) || (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) || m.id === c.id))?.slice(0, 20) || [];
+          const aggregated = aggregateMemberCustomers(customersResponse.data || [], membershipsResponse.data || [], true).slice(0, 20);
 
-          if (!customers || customers.length === 0) {
+          if (!aggregated || aggregated.length === 0) {
              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No registered members found.`);
              else await sendTelegramMessage(chatId, `❌ No registered members found.`);
              return NextResponse.json({ ok: true });
@@ -1203,9 +1445,9 @@ You can still access other businesses associated with your Telegram account.`, {
           
           let msg = `➕ <b>Add Manual Charge</b>\n\nSelect a member to add a charge to:\n`;
           
-          const memberButtons = customers.map(c => [{
-              text: `👤 ${c.name} — Bal: ₹${Math.round(c.outstanding_balance)}`,
-              callback_data: `qkhata_addcharge_init_${c.id}`
+          const memberButtons = aggregated.map(c => [{
+              text: `👤 ${c.name} — Bal: ₹${Math.round(c.totalOutstanding)}`,
+              callback_data: `qkhata_addcharge_init_${c.primaryId}`
           }]);
           
           memberButtons.push([{ text: `↩️ Back`, callback_data: `qkhata_back` }]);

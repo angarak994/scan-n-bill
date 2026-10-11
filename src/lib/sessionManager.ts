@@ -212,18 +212,23 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
          }
       }
         
-      if (member && member.status === 'Active') {
-        let memberDiscountPercent = 0;
-        if (member.tier === 'Elite') memberDiscountPercent = 30;
-        else if (member.tier === 'VIP') memberDiscountPercent = 20;
-        else if (member.tier === 'Pro') memberDiscountPercent = 10;
-        else if (member.tier === 'Standard') memberDiscountPercent = 5;
-        
-        if (!discount || memberDiscountPercent > discount.percent) {
-           discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
-           (session as any)._appliedPromoId = undefined; // Promo didn't win
-        }
+      if (member) {
         (session as any)._matchedMemberId = member.id;
+        (session as any)._isRegisteredCustomer = true;
+
+        const isStatusActive = !member.status || member.status.toLowerCase() === 'active';
+        if (isStatusActive) {
+          let memberDiscountPercent = 0;
+          if (member.tier === 'Elite') memberDiscountPercent = 30;
+          else if (member.tier === 'VIP') memberDiscountPercent = 20;
+          else if (member.tier === 'Pro') memberDiscountPercent = 10;
+          else if (member.tier === 'Standard') memberDiscountPercent = 5;
+          
+          if (!discount || memberDiscountPercent > discount.percent) {
+             discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+             (session as any)._appliedPromoId = undefined; // Promo didn't win
+          }
+        }
       }
 
       if (session.member_id && member) {
@@ -340,6 +345,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
     completed_by: finalSource,
     paused_at: null,
     paused_duration_seconds: totalPausedSecs,
+    member_id: (session as any)._matchedMemberId || session.member_id || null,
   } as any, businessId, true);
 
   // QKhata / Payment logic integration (Synchronous to prevent financial data loss)
@@ -398,7 +404,6 @@ export async function endSession(table_id: string, businessId?: string, source: 
   }
 
   if ((session as any)._matchedMemberId) {
-    Promise.resolve().then(async () => {
     try {
       // 1 point per 100 spent (example logic)
       const earnedPoints = Math.floor(totalCost / 100);
@@ -413,11 +418,9 @@ export async function endSession(table_id: string, businessId?: string, source: 
     } catch (e) {
       console.error('Failed to update member points', e);
     }
-    }).catch(e => console.error(e));
   }
 
   if ((session as any)._usedPromos && (session as any)._usedPromos.length > 0) {
-    Promise.resolve().then(async () => {
     try {
       for (const usedPromo of (session as any)._usedPromos) {
         const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', usedPromo.id).single();
@@ -430,7 +433,6 @@ export async function endSession(table_id: string, businessId?: string, source: 
     } catch (e) {
       console.error('Failed to increment promotion usage', e);
     }
-    }).catch(e => console.error(e));
   }
 
   // Sync booking status if this session was started from a booking (Non-blocking)

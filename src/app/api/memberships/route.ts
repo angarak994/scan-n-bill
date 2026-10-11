@@ -11,15 +11,45 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data, error } = await supabase
+    const businessId = sessionCookie.businessId;
+    const { data: rawMembers, error } = await supabase
       .from('memberships')
       .select('*')
-      .eq('business_id', sessionCookie.businessId)
+      .eq('business_id', businessId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, memberships: data });
+    // Aggregate spend from completed sessions for maximum accuracy & recovery
+    const { data: completedSessions } = await supabase
+      .from('sessions')
+      .select('member_id, customer_name, cost')
+      .eq('business_id', businessId)
+      .eq('status', 'COMPLETED');
+
+    const memberships = (rawMembers || []).map((m: any) => {
+      let sessionSpend = 0;
+      if (completedSessions && completedSessions.length > 0) {
+        const normName = m.name?.trim().toLowerCase();
+        const normMobile = m.mobile?.trim();
+        for (const s of completedSessions) {
+          const sName = s.customer_name?.trim().toLowerCase();
+          const isMatch = s.member_id === m.id || 
+            (normName && sName === normName) || 
+            (normMobile && (s.customer_name?.trim() === normMobile || sName === normMobile));
+          if (isMatch) {
+            sessionSpend += Number(s.cost) || 0;
+          }
+        }
+      }
+      const finalSpend = Math.max(Number(m.total_spend) || 0, sessionSpend);
+      return {
+        ...m,
+        total_spend: finalSpend
+      };
+    });
+
+    return NextResponse.json({ success: true, memberships });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to load memberships' }, { status: 500 });
   }
