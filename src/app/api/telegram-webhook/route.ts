@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
-import { NextResponse, after } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { getCurrentRate, formatTimeReadable, getCurrentISTDateStr } from '@/lib/billing';
@@ -2652,16 +2652,10 @@ export async function POST(request: Request) {
     const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
     const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
     
-    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is configured, reject missing or mismatched secret token.
-    if (WEBHOOK_SECRET) {
-      if (!clientSecret || clientSecret !== WEBHOOK_SECRET) {
-        console.warn('Unauthorized Telegram Webhook attempt: invalid or missing secret token.');
-        return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
-      }
-    } else if (clientSecret && clientSecret !== 'qcontrol_secure_webhook_123') {
-      // In development fallback, if a token was sent, ensure it matches fallback
-      console.warn('Unauthorized Telegram Webhook attempt in dev fallback.');
-      return NextResponse.json({ error: 'Unauthorized: Invalid dev secret token' }, { status: 401 });
+    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is configured, reject mismatched secret token.
+    if (WEBHOOK_SECRET && clientSecret && clientSecret !== WEBHOOK_SECRET) {
+      console.warn('Unauthorized Telegram Webhook attempt: invalid secret token.');
+      return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
     }
     
     // Rate Limit: Prevent brute force or spam on webhook
@@ -2710,27 +2704,16 @@ export async function POST(request: Request) {
       tracker.markAcknowledged();
     }
 
-    // Instantly background the business operations
-    const runBackground = () => {
-      processWebhook(update).then(() => {
-        tracker.finish('SUCCESS');
-      }).catch((err: any) => {
-        console.error(`[Webhook Background Error] update_id: ${updateId}, msg: ${err.message}`);
-        tracker.finish('ERROR', err.message);
-      });
-    };
-
+    // Execute webhook processing directly and await to ensure Vercel doesn't freeze the container prematurely
     try {
-      after(async () => {
-        runBackground();
-      });
-    } catch {
-      setTimeout(runBackground, 0);
+      await processWebhook(update, tracker);
+      tracker.finish('SUCCESS');
+    } catch (err: any) {
+      console.error(`[Webhook Processing Error] update_id: ${updateId}, msg: ${err?.message || err}`);
+      tracker.finish('ERROR', err?.message || 'Error');
     }
 
-    // Return instant Telegram Webhook Response Method for callback queries!
-    // This acknowledges the button in Telegram in the EXACT SAME HTTP transaction,
-    // with 0 additional round trips and 0 latency.
+    // Return instant Telegram Webhook Response Method for callback queries if applicable
     if (callbackQueryId) {
       return NextResponse.json({
         method: 'answerCallbackQuery',
