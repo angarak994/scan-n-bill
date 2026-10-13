@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { calculateBilling, formatTimeReadable, parseDateString } from '@/lib/billing';
+import { calculateBilling, formatTimeReadable, parseDateString, applySessionDiscounts } from '@/lib/billing';
+import { useLanguage } from '@/context/LanguageContext';
 
 // --- Global Timer Store to prevent massive React interval re-renders ---
 let globalNow = new Date();
@@ -197,7 +198,7 @@ export function NotificationBell({ businessId }: { businessId: string }) {
                 <div key={n.id} className={`p-4 border-b border-border-light/50 text-sm ${n.is_read ? 'opacity-70' : 'bg-primary/5'}`}>
                   <div className="flex justify-between items-start mb-1">
                     <p className={`font-bold ${n.type === 'success' ? 'text-success' : n.type === 'warning' ? 'text-warning' : n.type === 'error' ? 'text-error' : n.type?.startsWith('order_') ? 'text-accent' : 'text-info'}`}>{n.title}</p>
-                    <span className="text-[10px] text-text-disabled">{new Date(n.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    <span suppressHydrationWarning className="text-[10px] text-text-disabled">{new Date(n.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
                   {(() => {
                     if (n.type?.startsWith('order_')) {
@@ -236,10 +237,12 @@ export function LiveTotalOpenCounter({ activeSessions, pricingRules, currentDisc
   const totalOpenBill = activeSessions.reduce((acc: number, session: any) => {
     const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
     try {
-      let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
+      let tableDiscount = currentDiscounts?.[session.table_id] || currentDiscounts?.['all'] || undefined;
       const endFull = session.paused_at ? session.paused_at : now.toISOString();
-      const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
-      return acc + res.cost;
+      const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
+      const rawFoodCost = session.food_cost || 0;
+      const disc = applySessionDiscounts(res.cost, rawFoodCost, tableDiscount);
+      return acc + disc.finalTotalCost;
     } catch { return acc; }
   }, 0);
 
@@ -274,7 +277,8 @@ export const PrivacyText = ({ value, isPrivacyMode, type = 'currency', formatINR
   return <>{value}</>;
 };
 
-export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activePromotions, pricingRules, preferences, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, activePromotions: any, pricingRules: any, preferences?: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
+export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activePromotions, pricingRules, preferences, handleIntervention, toReadableIST, formatINR, onRequestEndSession, getDisplayName }: { session: any, currentDiscounts: any, isPrivacyMode: boolean, activePromotions: any, pricingRules: any, preferences?: any, handleIntervention: any, toReadableIST: any, formatINR: any, onRequestEndSession?: (session: any, liveCost: number, liveDuration: string, breakdown?: { baseTableCost: number; foodCost: number; discountAmount: number; discountLabel?: string }) => void, getDisplayName?: (name: string, memberId?: string) => string }) {
+  const { t } = useLanguage();
   const globalNowDate = useSyncExternalStore(subscribeToTimer, getGlobalNow, getGlobalNow);
   const isRunning = session.status === 'ACTIVE' && !session.paused_at;
   
@@ -286,22 +290,37 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activ
   
   let liveDuration = '0m';
   let liveCost = 0;
+  let liveBaseCost = 0;
+  let liveDiscount = 0;
+  let liveDiscountLabel = '';
+  let rawFoodCost = session.food_cost || 0;
   let liveSlab = 'None';
   let tableDiscount: any = undefined;
   
   try {
-    tableDiscount = currentDiscounts?.[session.table_id] || undefined;
-    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
-    liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
-    
-    let finalFoodCost = session.food_cost || 0;
-    if (tableDiscount && tableDiscount.percent > 0 && tableDiscount.applyToFood) {
-      finalFoodCost = finalFoodCost * (1 - (tableDiscount.percent / 100));
-      finalFoodCost = Math.round(finalFoodCost);
+    tableDiscount = currentDiscounts?.[session.table_id] || currentDiscounts?.['all'] || undefined;
+    if (tableDiscount && tableDiscount.isActive === false) {
+      tableDiscount = undefined;
     }
-    liveCost = res.cost + finalFoodCost;
+    const res = calculateBilling(startFull, endFull, session.game_type, pricingRules, session.num_players || 1, undefined, session.paused_duration_seconds, session.locked_rate, session.locked_rate_name, activePromotions);
+    liveDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
+    liveBaseCost = res.baseCost;
     
-    liveSlab = res.slabs_applied;
+    rawFoodCost = session.food_cost || 0;
+    const disc = applySessionDiscounts(res.cost, rawFoodCost, tableDiscount);
+    liveCost = disc.finalTotalCost;
+    liveDiscount = (res.discountAmount || 0) + disc.totalDiscountAmount;
+    let effectiveLabel = '';
+    if (disc.totalDiscountAmount > 0 && disc.discountAppliedLabel && disc.discountAppliedLabel !== 'None') {
+      effectiveLabel = disc.discountAppliedLabel;
+    }
+    if ((res.discountAmount || 0) > 0) {
+      const promoName = res.slabs_applied && res.slabs_applied !== 'None' ? res.slabs_applied : 'Promotional Rate';
+      effectiveLabel = effectiveLabel ? `${effectiveLabel} + ${promoName}` : promoName;
+    }
+    liveDiscountLabel = effectiveLabel || (liveDiscount > 0 ? 'Discount' : 'None');
+    
+    liveSlab = res.slabs_applied + (disc.totalDiscountAmount > 0 ? ` + ${disc.discountAppliedLabel}` : '');
   } catch (e) {}
 
   const intervalVal = pricingRules?.globalSettings?.smart_reminder_interval_minutes;
@@ -316,14 +335,14 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activ
   const isCriticallyOverdue = reminderIntervalMinutes > 0 && minutesSinceLastCheck >= (reminderIntervalMinutes + 15);
 
   let statusUI = (
-    <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">Active</span>
+    <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">{t('live', 'Active')}</span>
   );
   if (session.paused_at) {
-    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Paused</span>;
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">{t('paused', 'Paused')}</span>;
   } else if (isCriticallyOverdue) {
-    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-error/50 text-error bg-error/10 uppercase shadow-sm animate-pulse">Confirmation Overdue</span>;
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-error/50 text-error bg-error/10 uppercase shadow-sm animate-pulse">{t('overdue', 'Overdue')}</span>;
   } else if (isOverdue) {
-    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">Needs Confirmation</span>;
+    statusUI = <span className="px-3 py-1.5 rounded-md text-xs font-bold tracking-widest border border-warning/50 text-warning bg-warning/10 uppercase shadow-sm">{t('pending', 'Needs Confirmation')}</span>;
   }
 
   return (
@@ -353,7 +372,7 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activ
           </p>
           {tableDiscount && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-widest border border-accent/50 text-accent bg-accent/10 shadow-sm animate-pulse">
-              -{tableDiscount.percent}%
+              -{tableDiscount.type === 'fixed' || (tableDiscount.amount && !tableDiscount.percent) ? `₹${tableDiscount.amount}` : `${tableDiscount.percent}%`}
             </span>
           )}
         </div>
@@ -362,23 +381,23 @@ export function LiveSessionRow({ session, currentDiscounts, isPrivacyMode, activ
       <td className="p-4 md:p-5 text-right">
          <div className="flex justify-end gap-3 opacity-90 group-hover:opacity-100 transition-opacity">
           {session.paused_at ? (
-            <button onClick={() => { if (preferences?.simple_mode || confirm('Resume session?')) handleIntervention('resume', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-warning text-black shadow-lg' : 'text-sm font-bold text-warning border border-warning/30'} rounded-lg hover:bg-warning hover:text-black shadow-sm`}>Resume</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Resume session?')) handleIntervention('resume', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-warning text-black shadow-lg' : 'text-sm font-bold text-warning border border-warning/30'} rounded-lg hover:bg-warning hover:text-black shadow-sm`}>{t('resume_session', 'Resume')}</button>
           ) : (
-            <button onClick={() => { if (preferences?.simple_mode || confirm('Pause session?')) handleIntervention('pause', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-bg-surface text-text-primary shadow-lg' : 'text-sm font-bold text-text-primary border border-border-theme'} rounded-lg hover:bg-bg-surface shadow-sm`}>Pause</button>
+            <button onClick={() => { if (preferences?.simple_mode || confirm('Pause session?')) handleIntervention('pause', session.id); }} className={`px-4 py-2 btn-premium ${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full bg-bg-surface text-text-primary shadow-lg' : 'text-sm font-bold text-text-primary border border-border-theme'} rounded-lg hover:bg-bg-surface shadow-sm`}>{t('pause_session', 'Pause')}</button>
           )}
           <button onClick={() => {
             const tid = prompt('Enter table number to transfer to:');
             if (tid) handleIntervention('transfer', session.id, undefined, tid);
-          }} className="px-4 py-2 text-sm font-bold btn-premium text-secondary border border-secondary/30 rounded-lg hover:bg-secondary hover:text-black shadow-sm">Transfer</button>
+          }} className="px-4 py-2 text-sm font-bold btn-premium text-secondary border border-secondary/30 rounded-lg hover:bg-secondary hover:text-black shadow-sm">{t('transfer', 'Transfer')}</button>
           <button onClick={() => {
             if (onRequestEndSession) {
-              onRequestEndSession(session, liveCost, liveDuration);
+              onRequestEndSession(session, liveCost, liveDuration, { baseTableCost: liveBaseCost, foodCost: rawFoodCost, discountAmount: liveDiscount, discountLabel: liveDiscountLabel });
             } else {
               if (confirm(`End session for ${getDisplayName ? getDisplayName(session.customer_name) : session.customer_name}? Current bill: ${isPrivacyMode ? '••••••' : formatINR(liveCost)}`)) {
-                handleIntervention('force_end', session.id, liveCost);
+                handleIntervention('force_end', session.id);
               }
             }
-          }} className={`${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full shadow-lg' : 'px-4 py-2 text-sm'} font-bold btn-premium text-white bg-danger rounded-lg hover:bg-red-600 shadow-md shadow-danger/20 border border-transparent`}>End</button>
+          }} className={`${preferences?.simple_mode ? 'px-8 py-3 text-lg w-full shadow-lg' : 'px-4 py-2 text-sm'} font-bold btn-premium text-white bg-danger rounded-lg hover:bg-red-600 shadow-md shadow-danger/20 border border-transparent`}>{t('end_session', 'End')}</button>
          </div>
       </td>
     </tr>

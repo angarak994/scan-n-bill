@@ -106,6 +106,16 @@ interface DemoContextValue {
   addTelegramMsg: (sender: 'user' | 'bot', text: ReactNode) => void;
   setQrActiveTable: (id: string | null) => void;
   settleKhata: (name: string, amount: number) => void;
+  actions: {
+    startTable: (id: string, player?: string) => void;
+    pauseTable: (id: string) => void;
+    resumeTable: (id: string) => void;
+    stopTable: (id: string) => void;
+    addFbItem: (id: string, item: { name: string; price: number }) => void;
+    addTelegramMsg: (sender: 'user' | 'bot', text: ReactNode) => void;
+    setQrActiveTable: (id: string | null) => void;
+    settleKhata: (name: string, amount: number) => void;
+  };
 }
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -244,9 +254,13 @@ export function DemoEngineProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const actions = {
+    startTable, pauseTable, resumeTable, stopTable, addFbItem, addTelegramMsg, setQrActiveTable, settleKhata
+  };
+
   return (
     <DemoContext.Provider value={{
-      state, now, startTable, pauseTable, resumeTable, stopTable, addFbItem, addTelegramMsg, setQrActiveTable, settleKhata
+      state, now, startTable, pauseTable, resumeTable, stopTable, addFbItem, addTelegramMsg, setQrActiveTable, settleKhata, actions
     }}>
       {children}
     </DemoContext.Provider>

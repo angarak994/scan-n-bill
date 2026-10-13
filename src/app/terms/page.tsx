@@ -13,7 +13,7 @@ export default function TermsConditions() {
       <main className="min-h-screen bg-bg-primary text-text-primary pt-12 pb-24 px-4 bg-grid-pattern">
         <div className="max-w-4xl mx-auto glass-panel p-8 sm:p-12 rounded-3xl border border-border bg-bg-surface relative z-10">
           <h1 className="text-3xl sm:text-4xl font-black mb-8">Terms and Conditions</h1>
-          <p className="text-text-secondary mb-8">Last updated: {new Date().toLocaleDateString()}</p>
+          <p suppressHydrationWarning className="text-text-secondary mb-8">Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
 
           <div className="space-y-8 text-text-secondary leading-relaxed">
             <section>

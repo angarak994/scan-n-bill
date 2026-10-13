@@ -164,18 +164,9 @@ export async function startSession(table_id: string, game_type: GameType, custom
   await sessionRepository.create(session, businessId);
   Promise.resolve().then(async () => {
     try {
-      const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
-      // Fire and forget to prevent blocking the UI and webhooks
-      Promise.all([
-        syncSessionToSheet(session.id, businessId),
-        logActivityToSheet('START_SESSION', {
-          user: 'System',
-          table: session.table_id,
-          session: session.id,
-          details: `Session started for ${session.customer_name}`
-        }, businessId)
-      ]).catch(e => console.error('Failed to sync session to sheet', e));
-    } catch(e) { console.error('Failed to sync session to sheet', e); }
+      const { enqueueSheetsSync } = require('./sheetsSyncQueue');
+      enqueueSheetsSync('SESSION', session.id, businessId);
+    } catch(e) { console.error('Failed to enqueue session sync to sheet', e); }
   }).catch(e => console.error(e));
   return session;
   } finally {
@@ -184,7 +175,10 @@ export async function startSession(table_id: string, game_type: GameType, custom
 }
 
 export async function resolveSessionDiscount(session: any, businessId: string, business: any) {
-  let discount = business?.active_discounts?.[session.table_id];
+  let discount = business?.active_discounts?.[session.table_id] || business?.active_discounts?.['all'];
+  if (discount && discount.isActive === false) {
+    discount = undefined;
+  }
   const now = new Date();
   
   // Use parseDateString from billing.ts to fix timezone bugs
@@ -224,8 +218,9 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
           else if (member.tier === 'Pro') memberDiscountPercent = 10;
           else if (member.tier === 'Standard') memberDiscountPercent = 5;
           
-          if (!discount || memberDiscountPercent > discount.percent) {
-             discount = { percent: memberDiscountPercent, applyToFood: true, message: `${member.tier} Member Discount` } as any;
+          const currentPercent = discount?.percent || 0;
+          if (!discount || memberDiscountPercent > currentPercent) {
+             discount = { type: 'percentage', percent: memberDiscountPercent, applyToFood: true, label: `${member.tier} Member Discount` } as any;
              (session as any)._appliedPromoId = undefined; // Promo didn't win
           }
         }
@@ -254,235 +249,283 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
   return discount;
 }
 
-export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash', dueDate?: string) {
-  const session = await sessionRepository.findActiveByTable(table_id, businessId);
-  if (!session || !session.id) {
-    throw new ApiError(404, 'No active session found for this table');
+export async function endSession(table_id: string, businessId?: string, source: string = 'System', amountPaid?: number, paymentMethod: string = 'Cash', dueDate?: string, splitPayments?: Array<{ method: string; amount: number }>) {
+  const lockKey = `${businessId || 'global'}_${table_id}`;
+  if (activeTableLocks.has(lockKey)) {
+    throw new ApiError(409, 'Action in progress for this table, please wait.');
   }
 
-  const now = new Date();
-  const timeStr = now.toISOString();
-  const end_time = timeStr;
-  
-  const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
-  const endFull = end_time;
-  
-  const business = businessId ? await businessManager.getBusiness(businessId) : null;
-  let pricingRules = business ? business.pricing_rules : undefined;
-  
-  let discount;
-  if (business && businessId) {
-    discount = await resolveSessionDiscount(session, businessId, business);
-  }
-  
-  let totalPausedSecs = session.paused_duration_seconds || 0;
-  if (session.paused_at) {
-    const ongoingPausedSecs = Math.max(0, Math.floor((now.getTime() - new Date(session.paused_at).getTime()) / 1000));
-    totalPausedSecs += ongoingPausedSecs;
-  }
-
-  const activePromotions = businessId ? await getCachedActivePromos(businessId) : [];
-  
-  const { duration, cost: timeCost, baseCost, discountAmount, slabs_applied } = calculateBilling(
-    startFull, 
-    endFull, 
-    session.game_type, 
-    pricingRules, 
-    session.num_players || 1, 
-    discount, 
-    totalPausedSecs, 
-    session.locked_rate, 
-    session.locked_rate_name,
-    activePromotions
-  );
-  
-  // Track applied promos
-  const usedPromos = activePromotions.filter((p: any) => slabs_applied.includes(p.name));
-  if (usedPromos.length > 0) {
-    (session as any)._usedPromos = usedPromos;
-  }
-  
-  let finalFoodCost = session.food_cost || 0;
-  let foodDiscountAmount = 0;
-  if (discount && discount.percent > 0 && discount.applyToFood) {
-    const originalFoodCost = finalFoodCost;
-    finalFoodCost = finalFoodCost * (1 - (discount.percent / 100));
-    finalFoodCost = Math.round(finalFoodCost);
-    foodDiscountAmount = originalFoodCost - finalFoodCost;
-  }
-
-  const totalCost = timeCost + finalFoodCost;
-  const totalBaseCost = baseCost + (session.food_cost || 0);
-  const totalDiscountAmount = discountAmount + foodDiscountAmount;
-  
-  const actualAmountPaid = amountPaid !== undefined ? amountPaid : totalCost;
-  
-  if (actualAmountPaid < totalCost && !(session as any)._matchedMemberId && !(session as any)._isRegisteredCustomer) {
-    throw new ApiError(400, 'Customer must be registered to use QKhata.');
-  }
-
-  let payment_status = 'Paid';
-  if (actualAmountPaid === 0 && totalCost > 0) payment_status = 'Pending';
-  else if (actualAmountPaid > 0 && actualAmountPaid < totalCost) payment_status = 'Partially Paid';
-
-  let finalSource = source;
-  // Check if session is linked to a booking to override source
-  const { data: linkedBooking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
-  if (linkedBooking) {
-    finalSource = 'Manual Booking';
-  }
-
-  await sessionRepository.update(session.id, {
-    end_time,
-    status: 'COMPLETED',
-    duration,
-    applied_pricing: slabs_applied,
-    cost: totalCost,
-    base_cost: totalBaseCost,
-    discount_amount: totalDiscountAmount,
-    payment_status: payment_status,
-    amount_paid: actualAmountPaid,
-    completed_by: finalSource,
-    paused_at: null,
-    paused_duration_seconds: totalPausedSecs,
-    member_id: (session as any)._matchedMemberId || session.member_id || null,
-  } as any, businessId, true);
-
-  // QKhata / Payment logic integration (Synchronous to prevent financial data loss)
-  if (businessId) {
-    try {
-        const { createLedgerEntryAndPayment } = require('./services/paymentService');
-        await createLedgerEntryAndPayment({
-            businessId,
-            sessionId: session.id,
-            customerName: session.customer_name,
-            customerId: (session as any)._matchedCustomerId || (session as any)._matchedMemberId,
-            totalBilled: totalCost,
-            amountPaid: actualAmountPaid,
-            paymentMethod: paymentMethod,
-            paymentStatus: actualAmountPaid === 0 ? 'Pending' : 'Paid',
-            dueDate: dueDate,
-            source: finalSource
-        });
-    } catch (e) {
-        console.error("QKhata/Payment Service Error", e);
-    }
-        
-    // --- Notifications (Non-blocking) ---
-    Promise.resolve().then(async () => {
-        try {
-            if ((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer) {
-                const { data: customer } = await supabase
-                  .from('customers')
-                  .select('phone, outstanding_balance')
-                  .eq('business_id', businessId)
-                  .or(`name.ilike.${session.customer_name},phone.eq.${session.customer_name}`)
-                  .limit(1)
-                  .single();
-                  
-                if (customer && customer.phone) {
-                   const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
-                   const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
-                   
-                   const cleanPhone = normalizePhone(customer.phone) || '';
-                   if (cleanPhone.length >= 10) {
-                      const { sendWhatsAppText } = require('./whatsapp');
-                      let overrideToken;
-                      let overridePhoneId;
-                      if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
-                          overrideToken = business.whatsapp_config.token;
-                          overridePhoneId = business.whatsapp_config.phoneId;
-                      }
-                      await sendWhatsAppText(cleanPhone, msg, false, overrideToken, overridePhoneId);
-                   }
-                }
-            }
-        } catch (e) {
-            console.error("WhatsApp Notification Error", e);
-        }
-    }).catch(e => console.error(e));
-  }
-
-  if ((session as any)._matchedMemberId) {
-    try {
-      // 1 point per 100 spent (example logic)
-      const earnedPoints = Math.floor(totalCost / 100);
-      
-      const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', (session as any)._matchedMemberId).single();
-      if (member) {
-         await supabase.from('memberships').update({
-            total_spend: (member.total_spend || 0) + totalCost,
-            loyalty_points: (member.loyalty_points || 0) + earnedPoints
-         }).eq('id', (session as any)._matchedMemberId);
-      }
-    } catch (e) {
-      console.error('Failed to update member points', e);
-    }
-  }
-
-  if ((session as any)._usedPromos && (session as any)._usedPromos.length > 0) {
-    try {
-      for (const usedPromo of (session as any)._usedPromos) {
-        const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', usedPromo.id).single();
-        if (promo) {
-           await supabase.from('promotions').update({
-              usage_count: (promo.usage_count || 0) + 1
-           }).eq('id', usedPromo.id);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to increment promotion usage', e);
-    }
-  }
-
-  // Sync booking status if this session was started from a booking (Non-blocking)
-  Promise.resolve().then(async () => {
   try {
-    if (linkedBooking) {
-      await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', linkedBooking.id);
-      const { logActivityToSheet } = require('./googleSheets');
-      logActivityToSheet('BOOKING_COMPLETED', {
-        user: finalSource,
-        table: linkedBooking.table_id,
-        details: `Booking ${linkedBooking.id} completed via Session ${session.id}`
-      }, businessId).catch((e: Error) => console.error(e));
+    activeTableLocks.add(lockKey);
+
+    const session = await sessionRepository.findActiveByTable(table_id, businessId);
+    if (!session || !session.id) {
+      throw new ApiError(404, 'No active session found for this table');
     }
-  } catch (e) {
-    console.error('Failed to sync booking completion', e);
-  }
-  }).catch(e => console.error(e));
 
-  Promise.resolve().then(async () => {
+    const now = new Date();
+    const timeStr = now.toISOString();
+    const end_time = timeStr;
+    
+    const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
+    const endFull = end_time;
+    
+    const business = businessId ? await businessManager.getBusiness(businessId) : null;
+    let pricingRules = business ? business.pricing_rules : undefined;
+    
+    let discount;
+    if (business && businessId) {
+      discount = await resolveSessionDiscount(session, businessId, business);
+    }
+    
+    let totalPausedSecs = session.paused_duration_seconds || 0;
+    if (session.paused_at) {
+      const ongoingPausedSecs = Math.max(0, Math.floor((now.getTime() - new Date(session.paused_at).getTime()) / 1000));
+      totalPausedSecs += ongoingPausedSecs;
+    }
+
+    const activePromotions = businessId ? await getCachedActivePromos(businessId) : [];
+    
+    const { calculateBilling, applySessionDiscounts } = require('./billing');
+
+    const tableResult = calculateBilling(
+      startFull, 
+      endFull, 
+      session.game_type, 
+      pricingRules, 
+      session.num_players || 1, 
+      undefined, 
+      totalPausedSecs, 
+      session.locked_rate, 
+      session.locked_rate_name,
+      activePromotions
+    );
+    
+    const rawFoodCost = session.food_cost || 0;
+    const discResult = applySessionDiscounts(tableResult.cost, rawFoodCost, discount);
+
+    const timeCost = discResult.finalTableCost;
+    const finalFoodCost = discResult.finalFoodCost;
+    const duration = tableResult.duration;
+    const baseCost = tableResult.baseCost;
+    const slabs_applied = tableResult.slabs_applied + 
+      (discResult.totalDiscountAmount > 0 ? ` + Manual Discount (${discResult.discountAppliedLabel})` : '');
+
+    // Track applied promos
+    const usedPromos = activePromotions.filter((p: any) => tableResult.slabs_applied.includes(p.name));
+    if (usedPromos.length > 0) {
+      (session as any)._usedPromos = usedPromos;
+    }
+
+    const totalCost = discResult.finalTotalCost;
+    const totalBaseCost = tableResult.baseCost + rawFoodCost;
+    const promoDiscountAmount = tableResult.discountAmount || 0;
+    const totalDiscountAmount = promoDiscountAmount + discResult.totalDiscountAmount;
+    
+    const validSplits = (splitPayments || []).filter(sp => Number(sp.amount) > 0);
+    const isRegistered = !!((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer);
+    const isExplicitCredit = paymentMethod === 'QKhata' || !!dueDate;
+
+    let actualAmountPaid: number;
+    let payment_status = 'Paid';
+
+    if (isExplicitCredit) {
+      if (!isRegistered) {
+        throw new ApiError(400, 'Walk-in customers must pay full bill amount. Register as member to use QKhata.');
+      }
+      actualAmountPaid = 0;
+      payment_status = 'Pending';
+    } else if (validSplits.length > 0) {
+      const splitSum = validSplits.reduce((sum, sp) => sum + Number(sp.amount), 0);
+      // If split sum is within timing tolerance (<= 50 rupees) of totalCost, treat as full payment
+      if (splitSum >= totalCost || Math.abs(totalCost - splitSum) <= 50) {
+        actualAmountPaid = totalCost;
+        payment_status = 'Paid';
+      } else {
+        // Partial split
+        if (!isRegistered) {
+          throw new ApiError(400, 'Walk-in customers must pay full bill amount. Register as member to use QKhata.');
+        }
+        actualAmountPaid = splitSum;
+        payment_status = actualAmountPaid === 0 ? 'Pending' : 'Partially Paid';
+      }
+    } else if (amountPaid === undefined || amountPaid === null) {
+      // Authoritative full payment
+      actualAmountPaid = totalCost;
+      payment_status = 'Paid';
+    } else {
+      // amountPaid was explicitly passed
+      if (amountPaid >= totalCost || Math.abs(totalCost - amountPaid) <= 50) {
+        // Full payment (absorbing any slight time drift between UI snapshot and server execution)
+        actualAmountPaid = totalCost;
+        payment_status = 'Paid';
+      } else {
+        // Intentional underpayment
+        if (!isRegistered) {
+          throw new ApiError(400, 'Walk-in customers must pay full bill amount. Register as member to use QKhata.');
+        }
+        actualAmountPaid = Math.max(0, amountPaid);
+        payment_status = actualAmountPaid === 0 ? 'Pending' : 'Partially Paid';
+      }
+    }
+
+    let effectivePaymentMethod = paymentMethod;
+    if (validSplits.length > 1) {
+      effectivePaymentMethod = 'Split (' + validSplits.map(s => `${s.method}: ₹${s.amount}`).join(', ') + ')';
+    } else if (validSplits.length === 1) {
+      effectivePaymentMethod = validSplits[0].method;
+    }
+
+    let finalSource = source;
+    // Check if session is linked to a booking to override source
+    const { data: linkedBooking } = await supabase.from('bookings').select('id, customer_name, table_id').eq('session_id', session.id).single();
+    if (linkedBooking) {
+      finalSource = 'Manual Booking';
+    }
+
+    await sessionRepository.update(session.id, {
+      end_time,
+      status: 'COMPLETED',
+      duration,
+      applied_pricing: slabs_applied,
+      cost: totalCost,
+      base_cost: totalBaseCost,
+      discount_amount: totalDiscountAmount,
+      payment_status: payment_status,
+      amount_paid: actualAmountPaid,
+      payment_method: effectivePaymentMethod,
+      completed_by: finalSource,
+      paused_at: null,
+      paused_duration_seconds: totalPausedSecs,
+      member_id: (session as any)._matchedMemberId || session.member_id || null,
+    } as any, businessId, true);
+
+    // QKhata / Payment logic integration (Synchronous to prevent financial data loss)
+    if (businessId) {
+      try {
+          const { createLedgerEntryAndPayment } = require('./services/paymentService');
+          await createLedgerEntryAndPayment({
+              businessId,
+              sessionId: session.id,
+              customerName: session.customer_name,
+              customerId: (session as any)._matchedCustomerId || (session as any)._matchedMemberId,
+              totalBilled: totalCost,
+              amountPaid: actualAmountPaid,
+              paymentMethod: effectivePaymentMethod,
+              paymentStatus: payment_status,
+              dueDate: dueDate,
+              source: finalSource,
+              splitPayments: validSplits.length > 0 ? validSplits : undefined
+          });
+      } catch (e) {
+          console.error("QKhata/Payment Service Error", e);
+      }
+          
+      // --- Notifications (Non-blocking) ---
+      Promise.resolve().then(async () => {
+          try {
+              if ((session as any)._matchedMemberId || (session as any)._isRegisteredCustomer) {
+                  const { data: customer } = await supabase
+                    .from('customers')
+                    .select('phone, outstanding_balance')
+                    .eq('business_id', businessId)
+                    .or(`name.ilike.${session.customer_name},phone.eq.${session.customer_name}`)
+                    .limit(1)
+                    .single();
+                    
+                  if (customer && customer.phone) {
+                     const qkhataAmount = Math.max(0, totalCost - actualAmountPaid);
+                     const msg = `Thank you for playing with us!\n\nToday's bill: ₹${totalCost}\nToday's QKhata amount: ₹${qkhataAmount}\nTotal outstanding QKhata balance: ₹${Math.round(customer.outstanding_balance)}\n\nThank you for visiting!`;
+                     
+                     const cleanPhone = normalizePhone(customer.phone) || '';
+                     if (cleanPhone.length >= 10) {
+                        const { sendWhatsAppText } = require('./whatsapp');
+                        let overrideToken;
+                        let overridePhoneId;
+                        if (business && business.whatsapp_config && business.whatsapp_config.enabled) {
+                            overrideToken = business.whatsapp_config.token;
+                            overridePhoneId = business.whatsapp_config.phoneId;
+                        }
+                        await sendWhatsAppText(cleanPhone, msg, false, overrideToken, overridePhoneId);
+                     }
+                  }
+              }
+          } catch (e) {
+              console.error("WhatsApp Notification Error", e);
+          }
+      }).catch(e => console.error(e));
+    }
+
+    if ((session as any)._matchedMemberId) {
+      try {
+        // 1 point per 100 spent (example logic)
+        const earnedPoints = Math.floor(totalCost / 100);
+        
+        const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', (session as any)._matchedMemberId).single();
+        if (member) {
+           await supabase.from('memberships').update({
+              total_spend: (member.total_spend || 0) + totalCost,
+              loyalty_points: (member.loyalty_points || 0) + earnedPoints
+           }).eq('id', (session as any)._matchedMemberId);
+        }
+      } catch (e) {
+        console.error('Failed to update member points', e);
+      }
+    }
+
+    if ((session as any)._usedPromos && (session as any)._usedPromos.length > 0) {
+      try {
+        for (const usedPromo of (session as any)._usedPromos) {
+          const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', usedPromo.id).single();
+          if (promo) {
+             await supabase.from('promotions').update({
+                usage_count: (promo.usage_count || 0) + 1
+             }).eq('id', usedPromo.id);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to increment promotion usage', e);
+      }
+    }
+
+    // Sync booking status if this session was started from a booking (Non-blocking)
+    Promise.resolve().then(async () => {
     try {
-      const { syncSessionToSheet, logActivityToSheet } = require('./googleSheets');
-      Promise.all([
-        syncSessionToSheet(session.id, businessId),
-        logActivityToSheet('END_SESSION', {
+      if (linkedBooking) {
+        await supabase.from('bookings').update({ status: 'completed', end_time: end_time.split('T')[1]?.substring(0, 8) }).eq('id', linkedBooking.id);
+        const { logActivityToSheet } = require('./googleSheets');
+        logActivityToSheet('BOOKING_COMPLETED', {
           user: finalSource,
-          table: session.table_id,
-          session: session.id,
-          details: `Session ended. Revenue: ₹${Math.round(totalCost)}`
-        }, businessId)
-      ]).catch(e => console.error('Failed to sync session to sheet', e));
-    } catch (e) { console.error('Failed to sync session to sheet', e); }
-  }).catch(e => console.error(e));
+          table: linkedBooking.table_id,
+          details: `Booking ${linkedBooking.id} completed via Session ${session.id}`
+        }, businessId).catch((e: Error) => console.error(e));
+      }
+    } catch (e) {
+      console.error('Failed to sync booking completion', e);
+    }
+    }).catch(e => console.error(e));
 
-  return { 
-    session_id: session.id, 
-    customer_name: session.customer_name, 
-    table_id: session.table_id, 
-    start_time: session.start_time, 
-    duration, 
-    cost: totalCost, 
-    discounts: discount ? discount.percent : 0, 
-    paused_duration_seconds: totalPausedSecs,
-    end_time,
-    date: session.date,
-    game_type: session.game_type,
-    num_players: session.num_players || 1,
-    applied_pricing: slabs_applied,
-    completed_by: finalSource
-  };
+    // Note: sessionRepository.update above already enqueues sheets sync via enqueueSheetsSync
+
+    return { 
+      session_id: session.id, 
+      customer_name: session.customer_name, 
+      table_id: session.table_id, 
+      start_time: session.start_time, 
+      duration, 
+      cost: totalCost, 
+      discounts: discount ? discount.percent : 0, 
+      paused_duration_seconds: totalPausedSecs,
+      end_time,
+      date: session.date,
+      game_type: session.game_type,
+      num_players: session.num_players || 1,
+      applied_pricing: slabs_applied,
+      completed_by: finalSource
+    };
+  } finally {
+    activeTableLocks.delete(lockKey);
+  }
 }
 
 export async function getTableStatus(table_id: string, businessId?: string) {
@@ -616,35 +659,42 @@ export async function calculateServerBillingForSession(session: any, businessId:
   
   const activePromotions = businessId ? await getCachedActivePromos(businessId) : [];
   
-  const { calculateBilling } = require('./billing');
-  const result = calculateBilling(
+  const { calculateBilling, applySessionDiscounts } = require('./billing');
+  const tableResult = calculateBilling(
     startFull,
     endFull,
     session.game_type,
     business?.pricing_rules,
     session.num_players || 1,
-    discount,
+    undefined,
     session.paused_duration_seconds,
     session.locked_rate,
     session.locked_rate_name,
     activePromotions
   );
   
-  let finalFoodCost = session.food_cost || 0;
-  let foodDiscountAmount = 0;
-  if (discount && discount.percent > 0 && discount.applyToFood) {
-    const originalFoodCost = finalFoodCost;
-    finalFoodCost = finalFoodCost * (1 - (discount.percent / 100));
-    finalFoodCost = Math.round(finalFoodCost);
-    foodDiscountAmount = originalFoodCost - finalFoodCost;
-  }
+  const rawFoodCost = session.food_cost || 0;
+  const discResult = applySessionDiscounts(tableResult.cost, rawFoodCost, discount);
+
+  const promoDiscountOnTable = tableResult.discountAmount || 0;
+  const totalDiscountAmount = promoDiscountOnTable + discResult.totalDiscountAmount;
+  const totalBaseCost = tableResult.baseCost + rawFoodCost;
 
   return {
-    ...result,
-    tableCost: result.cost,
-    foodCost: finalFoodCost,
-    cost: result.cost + finalFoodCost,
-    totalBaseCost: result.baseCost + (session.food_cost || 0),
-    totalDiscountAmount: result.discountAmount + foodDiscountAmount
+    ...tableResult,
+    slabs_applied: tableResult.slabs_applied + (discResult.totalDiscountAmount > 0 ? ` + Manual Discount (${discResult.discountAppliedLabel})` : ''),
+    tableCost: discResult.finalTableCost,
+    baseTableCost: tableResult.baseCost,
+    foodCost: discResult.finalFoodCost,
+    baseFoodCost: rawFoodCost,
+    cost: discResult.finalTotalCost,
+    baseCost: tableResult.baseCost,
+    totalBaseCost,
+    tableDiscountAmount: discResult.tableDiscountAmount,
+    foodDiscountAmount: discResult.foodDiscountAmount,
+    manualDiscountAmount: discResult.totalDiscountAmount,
+    totalDiscountAmount,
+    discountConfig: discount,
+    discountAppliedLabel: discResult.discountAppliedLabel,
   };
 }

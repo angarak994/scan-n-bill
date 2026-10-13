@@ -11,11 +11,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Query notifications to reconstruct order history
+    // Query notifications with database-level session filtering to avoid full table scans
     const { data: notifs, error } = await supabase
       .from('notifications')
       .select('message, created_at, type')
       .eq('business_id', business_id)
+      .like('message', `%|${session_id}`)
       .in('type', ['order_pending', 'order_accepted', 'order_served', 'order_rejected'])
       .order('created_at', { ascending: true });
 

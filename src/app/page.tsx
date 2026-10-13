@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { DemoEngineProvider } from '@/components/landing/store/DemoEngine';
-import Hero from '@/components/landing/Hero';
-import MouseGlow from '@/components/landing/MouseGlow';
 import dynamic from 'next/dynamic';
+import Hero from '@/components/landing/Hero';
+const MouseGlow = dynamic(() => import('@/components/landing/MouseGlow'));
 import WhyQcontrol from '@/components/landing/WhyQcontrol';
 import HowItWorks from '@/components/landing/HowItWorks';
 import AIBusinessAssistant from '@/components/landing/AIBusinessAssistant';

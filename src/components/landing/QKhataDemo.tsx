@@ -3,6 +3,12 @@ import React from 'react';
 import ScrollReveal from '@/components/ui/ScrollReveal';
 import { useDemoEngine, formatCurrency } from '@/components/landing/store/DemoEngine';
 
+const formatDateDeterministic = (timestamp: number | string | Date) => {
+  const d = new Date(timestamp);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+
 export default function QKhataDemo() {
   const { state, settleKhata } = useDemoEngine();
 
@@ -51,7 +57,7 @@ export default function QKhataDemo() {
                         </div>
                         <div>
                           <div className="font-bold text-text-primary">{account.name}</div>
-                          <div className="text-xs text-text-secondary">Last updated: {new Date(account.lastUpdate).toLocaleDateString()}</div>
+                          <div suppressHydrationWarning className="text-xs text-text-secondary">Last updated: {formatDateDeterministic(account.lastUpdate)}</div>
                         </div>
                       </div>
                       <div className="text-right">

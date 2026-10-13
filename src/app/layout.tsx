@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
-import Script from 'next/script';
 import "./globals.css";
 import { Providers } from './Providers';
 
@@ -36,14 +35,13 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <Script
+        <script
           id="pre-paint-script"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               try {
                 // Theme Logic
-                let theme = localStorage.getItem('theme');
+                var theme = localStorage.getItem('theme');
                 if (!theme) {
                   theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                   localStorage.setItem('theme', theme);
@@ -53,15 +51,16 @@ export default function RootLayout({
                 } else {
                   document.documentElement.classList.remove('dark');
                 }
-
               } catch (_) {}
             `,
           }}
+          suppressHydrationWarning
         />
       </head>
       <body className="min-h-full flex flex-col bg-bg-primary text-text-primary transition-colors duration-200">
-        <Providers />
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

@@ -23,6 +23,10 @@ async function sendTelegramMessage(chatId: string | number, text: string, replyM
   }
 }
 
+export async function GET(request: Request) {
+  return POST(request);
+}
+
 export async function POST(request: Request) {
   // Can be triggered by Vercel Cron or manual ping
   // In a real app, require a CRON_SECRET for security, but for now we let it run

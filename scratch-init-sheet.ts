@@ -1,3 +1,5 @@
+import { getGoogleSheetsClient } from './src/lib/googleSheets';
+
 export async function initializeGoogleSheet(spreadsheetId: string) {
   const sheets = await getGoogleSheetsClient();
   
@@ -12,11 +14,11 @@ export async function initializeGoogleSheet(spreadsheetId: string) {
 
   try {
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-    const existingSheets = spreadsheet.data.sheets?.map(s => s.properties?.title) || [];
+    const existingSheets = spreadsheet.data.sheets?.map((s: any) => s.properties?.title) || [];
     
     // Rename 'Sheet1' to 'Sessions' if 'Sessions' doesn't exist and 'Sheet1' does
     if (!existingSheets.includes('Sessions') && existingSheets.includes('Sheet1')) {
-      const sheet1Id = spreadsheet.data.sheets?.find(s => s.properties?.title === 'Sheet1')?.properties?.sheetId;
+      const sheet1Id = spreadsheet.data.sheets?.find((s: any) => s.properties?.title === 'Sheet1')?.properties?.sheetId;
       if (sheet1Id !== undefined) {
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,

@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
+import { useLanguage } from '@/context/LanguageContext';
+import { t } from '@/lib/i18n';
 
 export default function QKhataTab({ businessId, dbCustomers = [], memberships = [], membershipPlans = [] }: { businessId: string, dbCustomers?: any[], memberships?: any[], membershipPlans?: any[] }) {
+    const { language } = useLanguage();
     const [customers, setCustomers] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -22,13 +25,47 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             const membersData = memberships;
 
             if (membersData) {
+                // Pre-index customersData into HashMaps for instant O(1) lookups
+                const customerByPhone = new Map<string, any[]>();
+                const customerByName = new Map<string, any[]>();
+                const customerById = new Map<string, any>();
+
+                if (customersData && customersData.length > 0) {
+                    for (const c of customersData) {
+                        if (c.id) customerById.set(c.id, c);
+                        if (c.phone) {
+                            const p = c.phone.trim();
+                            const list = customerByPhone.get(p) || [];
+                            list.push(c);
+                            customerByPhone.set(p, list);
+                        }
+                        if (c.name) {
+                            const n = c.name.trim().toLowerCase();
+                            const list = customerByName.get(n) || [];
+                            list.push(c);
+                            customerByName.set(n, list);
+                        }
+                    }
+                }
+
                 const membersList = membersData.map((m: any) => {
-                    // Find all matching customers to sum their balances
-                    const matchedCustomers = customersData?.filter((c: any) => 
-                        (c.phone && m.mobile && c.phone === m.mobile) || 
-                        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase()) ||
-                        m.id === c.id
-                    ) || [];
+                    const matchedSet = new Set<any>();
+                    if (m.mobile) {
+                        const byPhone = customerByPhone.get(m.mobile.trim());
+                        if (byPhone) {
+                            for (const c of byPhone) matchedSet.add(c);
+                        }
+                    }
+                    if (m.name) {
+                        const byName = customerByName.get(m.name.trim().toLowerCase());
+                        if (byName) {
+                            for (const c of byName) matchedSet.add(c);
+                        }
+                    }
+                    if (m.id && customerById.has(m.id)) {
+                        matchedSet.add(customerById.get(m.id));
+                    }
+                    const matchedCustomers = Array.from(matchedSet);
                     
                     const outstanding_balance = matchedCustomers.reduce((acc, c) => acc + (c.outstanding_balance || 0), 0);
                     const total_billed = matchedCustomers.reduce((acc, c) => acc + (c.total_billed || 0), 0);
@@ -217,7 +254,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 shrink-0">
                 <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
                     <div className="flex justify-between items-start mb-2 sm:mb-4">
-                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Total Outstanding</h3>
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t(language, 'total_outstanding')}</h3>
                         <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" /></svg>
                     </div>
                     <div className="flex items-end gap-2 sm:gap-3 mb-2">
@@ -227,18 +264,18 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
 
                 <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
                     <div className="flex justify-between items-start mb-2 sm:mb-4">
-                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Debtors</h3>
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t(language, 'active_debtors')}</h3>
                         <svg className="w-4 h-4 sm:w-5 sm:h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     </div>
                     <div className="flex items-end gap-2 sm:gap-3 mb-2">
                         <span className="text-2xl sm:text-4xl font-bold text-warning/90 tracking-tight font-mono tabular-nums">{activeDebtorsCount}</span>
-                        <span className="text-xs text-text-secondary mb-1">Members</span>
+                        <span className="text-xs text-text-secondary mb-1">{t(language, 'members')}</span>
                     </div>
                 </div>
 
                 <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift transition-all duration-300">
                     <div className="flex justify-between items-start mb-2 sm:mb-4">
-                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Overdue Accounts</h3>
+                        <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t(language, 'overdue_accounts')}</h3>
                         <svg className="w-4 h-4 sm:w-5 sm:h-5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
                     <div className="flex items-end gap-2 sm:gap-3 mb-2">
@@ -249,20 +286,19 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             </div>
 
             {/* Main Content Area */}
-            {/* Main Content Area */}
             <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden shadow-sm flex flex-col lg:flex-row h-[calc(100vh-240px)] min-h-[600px]">
                 
                 {/* Left Panel: Customer List */}
                 <div className={`w-full lg:w-[350px] shrink-0 h-full ${selectedCustomer ? 'hidden lg:flex' : 'flex'} flex-col border-r border-border-theme bg-bg-primary/20`}>
                     <div className="p-5 border-b border-border-theme shrink-0">
                         <div className="mb-4">
-                            <h3 className="text-lg font-bold text-text-primary tracking-tight">Members</h3>
-                            <p className="text-xs text-text-secondary mt-0.5">Select a member to view ledger</p>
+                            <h3 className="text-lg font-bold text-text-primary tracking-tight">{t(language, 'members')}</h3>
+                            <p className="text-xs text-text-secondary mt-0.5">{t(language, 'select_member_ledger')}</p>
                         </div>
                         <div className="relative">
                             <input 
                                 type="text" 
-                                placeholder="Search name or phone..." 
+                                placeholder={t(language, 'search')} 
                                 className="w-full px-4 py-2 pl-9 bg-bg-card border border-border-theme rounded-md outline-none text-sm text-text-primary placeholder-text-secondary input-premium"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -277,7 +313,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                 <div className="w-16 h-16 rounded-full bg-bg-surface border border-border-theme flex items-center justify-center mb-4">
                                     <svg className="w-8 h-8 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                                 </div>
-                                <p className="text-text-secondary text-sm font-medium">No registered members found.</p>
+                                <p className="text-text-secondary text-sm font-medium">{t(language, 'no_members_found')}</p>
                             </div>
                         ) : (
                             <ul className="divide-y divide-border-theme/30 p-2">
@@ -314,7 +350,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                             {Number(c.outstanding_balance) > 0 && c.phone && (
                                                 <button onClick={(e) => handleSendReminder(e, c)} className="text-[10px] btn-premium text-[#25D366] hover:bg-[#25D366] hover:text-white border border-[#25D366]/30 px-2 py-0.5 rounded font-medium flex items-center gap-1 shadow-sm">
                                                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824zm-3.423-14.416c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm.029 18.88c-1.161 0-2.305-.292-3.318-.844l-3.677.964.984-3.595c-.607-1.052-.927-2.246-.926-3.468.001-3.825 3.113-6.937 6.937-6.937 3.825 0 6.938 3.112 6.938 6.937 0 3.825-3.113 6.938-6.938 6.938z"/></svg>
-                                                    Remind
+                                                    {t(language, 'remind')}
                                                 </button>
                                             )}
                                         </div>
@@ -335,13 +371,13 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                     <div>
                                         <button onClick={() => setSelectedCustomer(null)} className="lg:hidden text-text-secondary hover:text-text-primary text-sm font-semibold mb-4 flex items-center gap-1 transition-colors">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
-                                            Back to Members
+                                            {t(language, 'back')}
                                         </button>
                                         <h2 className="text-2xl font-bold text-text-primary tracking-tight">{selectedCustomer.name}</h2>
                                         <p className="text-sm text-text-secondary font-mono mt-1">{selectedCustomer.phone}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-widest mb-1">Current Balance</p>
+                                        <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-widest mb-1">{t(language, 'current_balance')}</p>
                                         <p className={`text-3xl font-bold font-mono tabular-nums tracking-tight ${Number(selectedCustomer.outstanding_balance) > 0 ? 'text-red-500/90' : 'text-text-primary'}`}>
                                             ₹{Number(selectedCustomer.outstanding_balance).toFixed(2)}
                                         </p>
@@ -357,14 +393,14 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         <div className="flex items-center justify-between mb-2">
                                             <label className="text-[10px] font-bold text-accent uppercase tracking-widest flex items-center gap-1.5">
                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                                Record Payment
+                                                {t(language, 'record_payment')}
                                             </label>
                                             {Number(selectedCustomer.outstanding_balance) > 0 && (
                                                 <button 
                                                     onClick={() => setSettlementAmount(Number(selectedCustomer.outstanding_balance).toFixed(0))}
                                                     className="text-[10px] text-text-secondary hover:text-accent font-bold uppercase tracking-wider transition-colors"
                                                 >
-                                                    Settle Full
+                                                    {t(language, 'settle_full')}
                                                 </button>
                                             )}
                                         </div>
@@ -380,13 +416,13 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         </div>
                                     </div>
                                     <div className="relative z-10">
-                                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Method</label>
+                                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">{t(language, 'payment_method')}</label>
                                         <select 
                                             className="w-32 px-4 py-2.5 bg-bg-card/50 backdrop-blur-md border border-border-theme rounded-xl outline-none text-sm font-semibold appearance-none cursor-pointer input-premium"
                                             value={settlementMethod}
                                             onChange={(e) => setSettlementMethod(e.target.value)}
                                         >
-                                            <option>Cash</option><option>UPI</option><option>Card</option>
+                                            <option>{t(language, 'cash')}</option><option>{t(language, 'upi')}</option><option>{t(language, 'card')}</option>
                                         </select>
                                     </div>
                                     <button 
@@ -394,7 +430,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         disabled={!settlementAmount || isSubmitting}
                                         className="relative z-10 bg-accent text-white px-8 py-2.5 rounded-xl font-bold text-sm btn-premium disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)]"
                                     >
-                                        {isSubmitting ? 'Processing...' : 'Settle Balance'}
+                                        {isSubmitting ? t(language, 'loading') : t(language, 'settle_balance')}
                                     </button>
                                 </div>
                             </div>
@@ -412,18 +448,18 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         <div className="w-12 h-12 rounded-full bg-bg-surface flex items-center justify-center border border-border-theme mb-3">
                                             <svg className="w-5 h-5 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                         </div>
-                                        <p className="text-sm font-semibold text-text-primary">No transactions found</p>
+                                        <p className="text-sm font-semibold text-text-primary">{t(language, 'no_transactions_found')}</p>
                                     </div>
                                 ) : (
                                     <table className="w-full text-left border-collapse min-w-[600px]">
                                         <thead className="sticky top-0 bg-bg-card/95 backdrop-blur z-10 shadow-sm">
                                             <tr className="text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme bg-bg-surface/50">
-                                                <th className="p-4 pl-6 lg:pl-8 whitespace-nowrap">Date / Time</th>
+                                                <th className="p-4 pl-6 lg:pl-8 whitespace-nowrap">{t(language, 'booking_date')} / {t(language, 'booking_time')}</th>
                                                 <th className="p-4">Details</th>
                                                 <th className="p-4">Session Info</th>
-                                                <th className="p-4 text-right text-red-500/80">Credit (Billed)</th>
-                                                <th className="p-4 text-right text-[#25D366]/80">Debit (Paid)</th>
-                                                <th className="p-4 pr-6 lg:pr-8 text-right">Balance</th>
+                                                <th className="p-4 text-right text-red-500/80">{t(language, 'credit_billed')}</th>
+                                                <th className="p-4 text-right text-[#25D366]/80">{t(language, 'debit_paid')}</th>
+                                                <th className="p-4 pr-6 lg:pr-8 text-right">{t(language, 'balance')}</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-border-theme/30">
@@ -474,9 +510,9 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                 <div className="absolute inset-0 bg-gradient-to-br from-accent/20 to-transparent rounded-3xl opacity-50"></div>
                                 <svg className="w-10 h-10 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                             </div>
-                            <h3 className="relative z-10 text-2xl font-bold text-text-primary tracking-tight mb-3">QKhata Ledger</h3>
+                            <h3 className="relative z-10 text-2xl font-bold text-text-primary tracking-tight mb-3">{t(language, 'qkhata')} Ledger</h3>
                             <p className="relative z-10 text-sm text-text-secondary max-w-sm leading-relaxed">
-                                Select a registered member from the list to view their complete transaction history, outstanding balances, and record payments instantly.
+                                {t(language, 'select_member_ledger')}
                             </p>
                         </div>
                     )}

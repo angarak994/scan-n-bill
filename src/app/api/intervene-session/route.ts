@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id } = body;
+    const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id, split_payments } = body;
 
     if (sessionCookie.businessId !== business_id) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
@@ -24,18 +24,23 @@ export async function POST(request: Request) {
       payment_method,
       due_date,
       transfer_table_id,
+      split_payments,
       performed_by: 'dashboard_user'
     });
 
     return NextResponse.json({ success: true, sessionResult: result.sessionResult });
   } catch (error: any) {
     console.error('Intervention Error:', error);
-    // Determine status code based on error message
-    let status = 500;
-    if (error.message.includes('Missing') || error.message.includes('Invalid') || error.message.includes('is not')) {
-      status = 400;
-    } else if (error.message.includes('not found')) {
-      status = 404;
+    // Determine status code based on error
+    let status = error.statusCode || 500;
+    if (status === 500) {
+      if (error.message.includes('Missing') || error.message.includes('Invalid') || error.message.includes('is not') || error.message.includes('must be registered') || error.message.includes('must pay full')) {
+        status = 400;
+      } else if (error.message.includes('not found')) {
+        status = 404;
+      } else if (error.message.includes('in progress') || error.message.includes('already closed')) {
+        status = 409;
+      }
     }
     return NextResponse.json({ error: error.message }, { status });
   }

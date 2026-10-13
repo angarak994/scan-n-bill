@@ -1,6 +1,7 @@
 import Pricing from '@/components/landing/Pricing';
 import Link from 'next/link';
-import MouseGlow from '@/components/landing/MouseGlow';
+import dynamic from 'next/dynamic';
+const MouseGlow = dynamic(() => import('@/components/landing/MouseGlow'));
 import Navbar from '@/components/landing/Navbar';
 
 export const metadata = {

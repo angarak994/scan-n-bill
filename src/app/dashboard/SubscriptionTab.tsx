@@ -226,7 +226,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
             </h2>
             {statusBadge}
           </div>
-          <p className="text-text-secondary flex items-center gap-2">
+          <p suppressHydrationWarning className="text-text-secondary flex items-center gap-2">
             <Calendar className="w-4 h-4" />
             {currentPlan ? (
               isCancelling ? (
@@ -387,7 +387,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
                   <tbody>
                     {history.map((log) => (
                       <tr key={log.id} className="border-b border-border-theme/50 hover:bg-bg-base/50 transition-colors">
-                        <td className="p-4 text-sm font-medium">{new Date(log.created_at).toLocaleDateString()}</td>
+                        <td suppressHydrationWarning className="p-4 text-sm font-medium">{new Date(log.created_at).toLocaleDateString()}</td>
                         <td className="p-4 text-sm font-bold">₹{log.amount}</td>
                         <td className="p-4 text-sm">
                           <span className="bg-accent/10 text-accent text-xs px-2 py-1 rounded font-bold">{log.status}</span>

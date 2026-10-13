@@ -1,24 +1,8 @@
 import { NextResponse } from 'next/server';
-import { google } from 'googleapis';
 import { businessManager } from '@/lib/businessManager';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { supabase } from '@/lib/supabaseClient';
-
 import { getSession } from '@/lib/auth';
-
-const getSheetsClient = () => {
-  let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
-  privateKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
-
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: privateKey,
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  return google.sheets({ version: 'v4', auth });
-};
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -125,73 +109,13 @@ export async function POST(request: Request) {
       console.error('Failed to create order notification:', e);
     }
 
-    // Append to Google Sheets (Non-blocking)
-    Promise.resolve().then(async () => {
-      try {
-        const sheets = getSheetsClient();
-        let spreadsheetId = business.google_sheet_id;
-        
-        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      
-      let foodSheet = spreadsheet.data.sheets?.find(s => s.properties?.title === 'Food Orders');
-      
-      if (!foodSheet) {
-        // Create the sheet
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId,
-          requestBody: {
-            requests: [{
-              addSheet: {
-                properties: {
-                  title: 'Food Orders'
-                }
-              }
-            }]
-          }
-        });
-        
-        // Add headers
-        await sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: "'Food Orders'!A1:F1",
-          valueInputOption: 'USER_ENTERED',
-          requestBody: {
-            values: [['Timestamp', 'Table No', 'Customer Name', 'Items Ordered', 'Order Total', 'Status']]
-          }
-        });
-      }
-      
-      const sheetTitle = 'Food Orders';
-      
-      const now = new Date();
-      const formatter = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Kolkata',
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: true
-      });
-      const timestamp = formatter.format(now).replace(' am', ' AM').replace(' pm', ' PM');
-      
-      // Format: Timestamp, Table ID, Customer Name, Items Ordered, Order Total, Status
-      const row = [
-        `'${timestamp}`,
-        session.table_id,
-        session.customer_name,
-        itemsOrdered.join(', '),
-        orderTotal.toString(),
-        'Pending'
-      ];
-      
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `'${sheetTitle}'!A:F`,
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [row] },
-      });
+    // Sync order to Google Sheets via unified session and monthly orders sync (Non-blocking queue)
+    try {
+      const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
+      enqueueSheetsSync('SESSION', session_id, business_id);
     } catch (sheetError) {
-      console.error("Google Sheets Init Error:", sheetError);
+      console.error("Google Sheets Sync Queue Error on Order Placement:", sheetError);
     }
-  }).catch(e => console.error(e));
 
     // Telegram Dispatch
     if (orderId && process.env.TELEGRAM_BOT_TOKEN) {
@@ -203,6 +127,9 @@ export async function POST(request: Request) {
              [
                { text: '✅ Accept Order', callback_data: `order_accept_${orderId}` },
                { text: '🍽️ Mark Served', callback_data: `order_serve_${orderId}` }
+             ],
+             [
+               { text: '❌ Cancel Order', callback_data: `order_cancel_${orderId}` }
              ]
            ];
            

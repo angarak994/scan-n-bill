@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { getSession } from '@/lib/auth';
 import { getBusinessEntitlement } from '@/lib/entitlements';
+import { invalidateBusinessCache } from '@/lib/businessManager';
 
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -85,6 +86,8 @@ export async function POST(request: Request) {
       throw error;
     }
     
+    // Invalidate business cache across all subsystems (Telegram bot, Dashboard, etc.)
+    invalidateBusinessCache(business_id);
 
     return NextResponse.json({ success: true, pricing_rules, tables });
   } catch (error: any) {

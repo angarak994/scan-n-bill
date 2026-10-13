@@ -12,6 +12,8 @@ import { generateQpulseInsight } from '@/lib/services/qpulseService';
 import { bookingService } from '@/lib/services/bookingService';
 import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
 import { SupportedLanguage, translations } from '@/lib/i18n';
+import { PerformanceTracker, getBotMetrics } from '@/lib/telegram/metrics';
+import { invalidateBusinessCache as invalidateGlobalBusinessCache, registerCacheInvalidationListener } from '@/lib/businessManager';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -136,8 +138,8 @@ function aggregateMemberCustomers(rawCustomers: any[], memberships: any[], inclu
 
     memberMap.set(key, {
       primaryId: m.id,
-      name: m.name || 'Member',
-      phone: m.mobile,
+      name: m.name ? m.name.trim() : 'Member',
+      phone: m.mobile ? m.mobile.trim() : undefined,
       totalOutstanding: 0,
       customerIds: []
     });
@@ -150,7 +152,7 @@ function aggregateMemberCustomers(rawCustomers: any[], memberships: any[], inclu
       const cName = c.name?.trim().toLowerCase();
 
       const matchedMembership = memberships.find((m: any) => 
-        (m.mobile && cPhone && m.mobile === cPhone) ||
+        (m.mobile && cPhone && m.mobile.trim() === cPhone) ||
         (m.name && cName && m.name.trim().toLowerCase() === cName) ||
         m.id === c.id
       );
@@ -165,7 +167,10 @@ function aggregateMemberCustomers(rawCustomers: any[], memberships: any[], inclu
       if (entry) {
         entry.totalOutstanding += (Number(c.outstanding_balance) || 0);
         entry.customerIds.push(c.id);
-        entry.primaryId = c.id; // Prefer real customer record id for ledger/payments
+        // Prioritize a customer record that matches membership id or has a valid phone
+        if (c.id === matchedMembership.id || !entry.primaryId || (c.phone && !entry.phone)) {
+          entry.primaryId = c.id;
+        }
       }
     }
   }
@@ -177,7 +182,91 @@ function aggregateMemberCustomers(rawCustomers: any[], memberships: any[], inclu
   return results.filter(m => m.totalOutstanding > 0).sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 }
 
+async function getMemberSiblingCustomerRows(businessId: string, customerRefOrId: string): Promise<{ customer: any; siblingRows: any[]; membership?: any }> {
+  const [customersRes, membershipsRes] = await Promise.all([
+    supabase.from('customers').select('*').eq('business_id', businessId),
+    supabase.from('memberships').select('*').eq('business_id', businessId)
+  ]);
+
+  const allCustomers = customersRes.data || [];
+  const allMemberships = membershipsRes.data || [];
+
+  const searchId = (customerRefOrId || '').trim().toLowerCase();
+
+  // Find target customer row by full ID or prefix (Ref: #...)
+  const targetCust = allCustomers.find(c => 
+    c.id.toLowerCase() === searchId || 
+    c.id.toLowerCase().startsWith(searchId)
+  );
+
+  // Find linked membership
+  const targetMem = allMemberships.find(m => 
+    m.id.toLowerCase() === searchId || 
+    m.id.toLowerCase().startsWith(searchId) ||
+    (targetCust && (
+      (m.mobile && targetCust.phone && m.mobile.trim() === targetCust.phone.trim()) ||
+      (m.name && targetCust.name && m.name.trim().toLowerCase() === targetCust.name.trim().toLowerCase()) ||
+      m.id === targetCust.id
+    ))
+  );
+
+  // Match all customer rows for this member/person across phone, name, and ID
+  const siblingRows = allCustomers.filter(c => {
+    if (targetCust && c.id === targetCust.id) return true;
+    if (targetMem) {
+      if (c.id === targetMem.id) return true;
+      if (targetMem.mobile && c.phone && targetMem.mobile.trim() === c.phone.trim()) return true;
+      if (targetMem.name && c.name && targetMem.name.trim().toLowerCase() === c.name.trim().toLowerCase()) return true;
+    }
+    if (targetCust) {
+      if (targetCust.phone && c.phone && targetCust.phone.trim() === c.phone.trim()) return true;
+      if (targetCust.name && c.name && targetCust.name.trim().toLowerCase() === c.name.trim().toLowerCase()) return true;
+    }
+    return false;
+  });
+
+  const primaryCustomer = (targetMem && siblingRows.find(c => c.id === targetMem.id)) || 
+                          siblingRows.find(c => c.phone) || 
+                          targetCust || 
+                          siblingRows[0] || 
+                          null;
+
+  return { customer: primaryCustomer, siblingRows, membership: targetMem };
+}
+
 const businessContextCache = new Map<string, { data: any, expiresAt: number }>();
+let globalBusinessesCache: { data: any[]; expiresAt: number } | null = null;
+const TELEGRAM_CACHE_TTL_MS = 3000; // 3 seconds TTL ensures near real-time state synchronization
+
+function invalidateTelegramCache(): void {
+  globalBusinessesCache = null;
+  businessContextCache.clear();
+}
+
+function invalidateBusinessCache(): void {
+  invalidateTelegramCache();
+}
+
+// Invalidate Telegram cache whenever business settings change across the application
+registerCacheInvalidationListener(() => {
+  invalidateTelegramCache();
+});
+
+async function getAllBusinesses(forceRefresh = false): Promise<any[]> {
+  const now = Date.now();
+  if (!forceRefresh && globalBusinessesCache && globalBusinessesCache.expiresAt > now) {
+    return globalBusinessesCache.data;
+  }
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('id, pricing_rules, tables, business_name');
+
+  if (error || !data) {
+    return globalBusinessesCache?.data || [];
+  }
+  globalBusinessesCache = { data, expiresAt: now + TELEGRAM_CACHE_TTL_MS };
+  return data;
+}
 
 async function getBusinessContext(chatId: string | number, forceRefresh = false) {
   const searchId = String(chatId).trim();
@@ -190,15 +279,11 @@ async function getBusinessContext(chatId: string | number, forceRefresh = false)
     }
   }
 
-  const { data: businesses, error } = await supabase
-    .from('businesses')
-    .select('id, pricing_rules, tables, business_name')
-    .contains('pricing_rules', { globalSettings: { authorized_telegram_owners: [{ chatId: searchId }] } });
+  const businesses = await getAllBusinesses(forceRefresh);
 
-  if (error) console.error("[DB Error] getBusinessContext:", error);
-  if (!businesses) {
+  if (!businesses || businesses.length === 0) {
     const emptyResult = { activeMembership: null, allActiveMemberships: [], revokedContext: null };
-    businessContextCache.set(searchId, { data: emptyResult, expiresAt: now + 300000 });
+    businessContextCache.set(searchId, { data: emptyResult, expiresAt: now + TELEGRAM_CACHE_TTL_MS });
     return emptyResult;
   }
   
@@ -227,7 +312,7 @@ async function getBusinessContext(chatId: string | number, forceRefresh = false)
     }
   }
   const result = { activeMembership, allActiveMemberships, revokedContext };
-  businessContextCache.set(searchId, { data: result, expiresAt: now + 300000 });
+  businessContextCache.set(searchId, { data: result, expiresAt: now + TELEGRAM_CACHE_TTL_MS });
   return result;
 }
 
@@ -243,15 +328,12 @@ async function setUserLanguage(chatId: string | number, businessId: string, lang
     gs.authorized_telegram_owners[ownerIndex].language = lang;
     await supabase.from('businesses').update({ pricing_rules: b.pricing_rules }).eq('id', b.id);
   }
-  businessContextCache.delete(searchId);
+  invalidateBusinessCache();
 }
 
 async function switchBusinessContext(chatId: string | number, targetBusinessId: string) {
   const searchId = String(chatId).trim();
-  const { data: businesses } = await supabase
-    .from('businesses')
-    .select('id, pricing_rules')
-    .contains('pricing_rules', { globalSettings: { authorized_telegram_owners: [{ chatId: searchId }] } });
+  const businesses = await getAllBusinesses(false);
   
   if (!businesses) return;
   
@@ -276,7 +358,7 @@ async function switchBusinessContext(chatId: string | number, targetBusinessId: 
        await supabase.from('businesses').update({ pricing_rules: b.pricing_rules }).eq('id', b.id);
     }
   }
-  businessContextCache.delete(searchId); // Invalidate cache so next fetch reflects new context
+  invalidateBusinessCache();
 }
 
 const getOwnerName = (business: any, chatId: string | number, fallbackName: string) => {
@@ -293,6 +375,13 @@ const getOwnerName = (business: any, chatId: string | number, fallbackName: stri
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    if (url.searchParams.get('metrics') === 'true') {
+      return NextResponse.json(getBotMetrics());
+    }
+    if (url.searchParams.get('ping') === 'true') {
+      return NextResponse.json({ ok: true, status: 'warm', timestamp: Date.now() });
+    }
+
     const host = request.headers.get('x-forwarded-host') || url.host;
     const protocol = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
     const webhookUrl = `${protocol}://${host}/api/telegram-webhook`;
@@ -320,7 +409,21 @@ export async function GET(request: Request) {
   }
 }
 
-async function processWebhook(update: any) {
+const qpulseCache = new Map<string, { data: any; expiresAt: number }>();
+async function getCachedQpulseInsight(bizId: string) {
+  const now = Date.now();
+  const cached = qpulseCache.get(bizId);
+  if (cached && cached.expiresAt > now) return cached.data;
+  try {
+    const data = await generateQpulseInsight(bizId);
+    qpulseCache.set(bizId, { data, expiresAt: now + 30 * 60 * 1000 });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function processWebhook(update: any, tracker?: PerformanceTracker) {
   if (!TELEGRAM_BOT_TOKEN) {
     return;
   }
@@ -426,7 +529,7 @@ async function processWebhook(update: any) {
 
       if (text === '🏢 Switch Business' || (text === '/menu' && ctx.allActiveMemberships.length > 1)) {
          if (ctx.allActiveMemberships.length > 1) {
-            const bizButtons = ctx.allActiveMemberships.map(m => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
+            const bizButtons = ctx.allActiveMemberships.map((m: any) => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
             await sendTelegramMessage(chatId, `🏢 <b>Select Business</b>\n\nWhich business would you like to manage?`, { inline_keyboard: bizButtons });
             return NextResponse.json({ ok: true });
          } else if (ctx.allActiveMemberships.length === 1) {
@@ -470,7 +573,7 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
       if (text === '/start' || text === '/menu') {
         if (!business) {
           if (ctx.allActiveMemberships.length > 0) {
-            const bizButtons = ctx.allActiveMemberships.map(m => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
+            const bizButtons = ctx.allActiveMemberships.map((m: any) => [{ text: `🏢 ${m.business.business_name}`, callback_data: `switch_biz_${m.business.id}` }]);
             await sendTelegramMessage(chatId, `🏢 <b>Select Business</b>\n\nWhich business would you like to manage?`, { inline_keyboard: bizButtons });
           } else {
             await sendTelegramMessage(chatId, `👋 <b>Welcome to Qcontrol.</b>\n\nPlease use a valid business connection link to connect your Telegram account.`);
@@ -481,33 +584,66 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
         return NextResponse.json({ ok: true });
       }
 
-      if (text === '/lazy' || text === '/notlazy') {
-         await sendTelegramMessage(chatId, `DEBUG: Reached /lazy block. Business is: ${business ? business.business_name : 'NULL'}`);
-         if (!business) return NextResponse.json({ ok: true });
-         
-         const isLazy = text === '/lazy';
-         
-         try {
-           const updatedPricingRules = {
-               ...business.pricing_rules,
-               globalSettings: {
-                   ...(business.pricing_rules?.globalSettings || {}),
-                   lazy_mode_enabled: isLazy
-               }
-           };
-           
-           const { error } = await supabase.from('businesses').update({ pricing_rules: updatedPricingRules }).eq('id', business.id);
-           if (error) throw error;
-           
-           if (isLazy) {
-               await sendTelegramMessage(chatId, `⚡ <b>Lazy Mode is ON!</b>\n\nYou can now start sessions instantly without entering customer names.\nJust select a table and the session will start for "Guest". You can also just type a table name (e.g. "T1") to start it immediately.`, mainMenu);
-           } else {
-               await sendTelegramMessage(chatId, `🛑 <b>Lazy Mode is OFF.</b>\n\nThe standard flow is restored. You will be prompted for customer details when starting a session.`, mainMenu);
-           }
-         } catch (e: any) {
-           await sendTelegramMessage(chatId, `❌ Error enabling lazy mode: ${e.message}`, mainMenu);
-         }
-         return NextResponse.json({ ok: true });
+      const normalizedCmd = (text || '').trim().toLowerCase().split('@')[0];
+      if (normalizedCmd === '/lazy' || normalizedCmd === '/notlazy' || normalizedCmd === '/lazymode') {
+        if (!business) {
+          await sendTelegramMessage(chatId, `⚠️ Unauthorized.\n\nYour Chat ID is <code>${chatId}</code>. Please link it in your QControl Dashboard Settings.`);
+          return NextResponse.json({ ok: true });
+        }
+
+        if (normalizedCmd === '/lazymode') {
+          const { data: freshBiz } = await supabase.from('businesses').select('pricing_rules').eq('id', business.id).single();
+          const currentRules = freshBiz?.pricing_rules || business.pricing_rules;
+          const isCurrentlyLazy = !!currentRules?.globalSettings?.lazy_mode_enabled;
+          if (isCurrentlyLazy) {
+            await sendTelegramMessage(chatId, `⚡ <b>Lazy Mode is currently ON.</b>\n\nSessions start instantly for "Guest" without prompting for names.\nTo disable it, send /notlazy.`, mainMenu);
+          } else {
+            await sendTelegramMessage(chatId, `🛑 <b>Lazy Mode is currently OFF.</b>\n\nStandard flow is active (prompts for customer/member details).\nTo enable it, send /lazy.`, mainMenu);
+          }
+          return NextResponse.json({ ok: true });
+        }
+
+        const isLazy = normalizedCmd === '/lazy';
+
+        try {
+          const { data: freshBiz, error: fetchErr } = await supabase
+            .from('businesses')
+            .select('pricing_rules')
+            .eq('id', business.id)
+            .single();
+
+          if (fetchErr) throw fetchErr;
+
+          const currentPricingRules = freshBiz?.pricing_rules || business.pricing_rules || {};
+          const updatedPricingRules = {
+            ...currentPricingRules,
+            globalSettings: {
+              ...(currentPricingRules.globalSettings || {}),
+              lazy_mode_enabled: isLazy
+            }
+          };
+
+          const { error: updateErr } = await supabase
+            .from('businesses')
+            .update({ pricing_rules: updatedPricingRules })
+            .eq('id', business.id);
+
+          if (updateErr) throw updateErr;
+
+          business.pricing_rules = updatedPricingRules;
+          invalidateTelegramCache();
+          invalidateGlobalBusinessCache(business.id);
+
+          if (isLazy) {
+            await sendTelegramMessage(chatId, `⚡ <b>Lazy Mode is ON!</b>\n\nYou can now start sessions instantly without entering customer names.\nJust select a table and the session will start for "Guest". You can also type a table name (e.g. "T1") to start it immediately.`, mainMenu);
+          } else {
+            await sendTelegramMessage(chatId, `🛑 <b>Lazy Mode is OFF.</b>\n\nThe standard flow is restored. You will be prompted for customer details when starting a session.`, mainMenu);
+          }
+        } catch (e: any) {
+          console.error('Error updating Lazy Mode via Telegram:', e);
+          await sendTelegramMessage(chatId, `❌ Error updating Lazy Mode: ${e.message}`, mainMenu);
+        }
+        return NextResponse.json({ ok: true });
       }
 
       if (!business) {
@@ -601,36 +737,34 @@ Time: ${timeStr}`, mainMenu);
           }
           
           const lines = replyText.split('\n');
-          
-          let customer = null;
+          let customerRefOrId = '';
           const refLine = lines.find((l: string) => l.startsWith('Ref: #'));
-          
           if (refLine) {
-             const shortId = refLine.replace('Ref: #', '').trim().toLowerCase();
-             const { data: customers } = await supabase.from('customers').select('*').eq('business_id', business.id);
-             customer = customers?.find((c: any) => c.id.toLowerCase().startsWith(shortId));
+             customerRefOrId = refLine.replace('Ref: #', '').trim().toLowerCase();
           } else {
              const idLine = lines.find((l: string) => l.startsWith('ID:'));
              if (idLine) {
-                 const customerId = idLine.replace('ID:', '').trim();
-                 const { data: cust } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
-                 customer = cust;
+                 customerRefOrId = idLine.replace('ID:', '').trim();
              }
           }
           
-          if (!customer) {
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerRefOrId);
+          
+          if (!customer && siblingRows.length === 0) {
              await sendTelegramMessage(chatId, `❌ Member not found.`, mainMenu);
              return NextResponse.json({ ok: true });
           }
           
-          // Verify we don't accidentally overpay (or allow overpay?) 
-          // Qcontrol allows overpay (negative outstanding), but let's just record it.
-          
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const previousTotalBalance = siblingRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+          const newRemainingBalance = previousTotalBalance - amount;
+
           try {
              const { createLedgerEntryAndPayment } = require('@/lib/services/paymentService');
              await createLedgerEntryAndPayment({
                  businessId: business.id,
-                 customerName: customer.name, // will resolve by name matching or phone
+                 customerName: primaryCustomer.name.trim(),
+                 customerId: primaryCustomer.id,
                  totalBilled: 0,
                  amountPaid: amount,
                  paymentMethod: 'Cash',
@@ -638,7 +772,19 @@ Time: ${timeStr}`, mainMenu);
                  source: 'Telegram Bot'
              });
              
-             await sendTelegramMessage(chatId, `✅ <b>Payment Recorded</b>\n\nCollected: ₹${amount}\nFrom: ${customer.name}\nRemaining Balance: ₹${Math.round(customer.outstanding_balance - amount)}`, mainMenu);
+             // Consolidate balances across all sibling records:
+             // Primary customer row holds the true newRemainingBalance, other sibling rows set to 0
+             const otherSiblingIds = siblingRows.filter(c => c.id !== primaryCustomer.id).map(c => c.id);
+             if (otherSiblingIds.length > 0) {
+                await supabase.from('customers').update({ outstanding_balance: 0 }).in('id', otherSiblingIds);
+             }
+             await supabase.from('customers').update({ outstanding_balance: newRemainingBalance }).eq('id', primaryCustomer.id);
+
+             const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
+             const remainingDisplay = Math.max(0, Math.round(newRemainingBalance));
+             const overpaidStr = newRemainingBalance < 0 ? ` (Overpaid: ₹${Math.abs(Math.round(newRemainingBalance))})` : '';
+
+             await sendTelegramMessage(chatId, `✅ <b>Payment Recorded</b>\n\nCollected: ₹${amount}\nFrom: ${displayName}\nRemaining Balance: ₹${remainingDisplay}${overpaidStr}`, mainMenu);
           } catch(e: any) {
              await sendTelegramMessage(chatId, `❌ Failed to record payment: ${e.message}`, mainMenu);
           }
@@ -663,17 +809,21 @@ Time: ${timeStr}`, mainMenu);
             if (!idLine) return NextResponse.json({ ok: true });
             
             const customerId = idLine.replace('ID: addcharge_', '').trim();
+            const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
             
-            const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
-            if (!customer) {
+            if (!customer && siblingRows.length === 0) {
                 await sendTelegramMessage(chatId, `❌ Member not found.`, mainMenu);
                 return NextResponse.json({ ok: true });
             }
             
-            const msg = `Please confirm:\n\nMember: <b>${customer.name}</b>\nAmount to Add: <b>₹${amount}</b>\nReason: <b>${reason}</b>\nCurrent Outstanding: <b>₹${Math.round(customer.outstanding_balance)}</b>\nNew Outstanding: <b>₹${Math.round(customer.outstanding_balance) + amount}</b>`;
+            const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+            const currentTotalBalance = siblingRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+            const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
+            
+            const msg = `Please confirm:\n\nMember: <b>${displayName}</b>\nAmount to Add: <b>₹${amount}</b>\nReason: <b>${reason}</b>\nCurrent Outstanding: <b>₹${Math.round(currentTotalBalance)}</b>\nNew Outstanding: <b>₹${Math.round(currentTotalBalance + amount)}</b>`;
             
             const buttons = [
-                [{ text: `✅ Confirm Charge`, callback_data: `qkhata_addcharge_confirm_${customer.id}_${amount}_${reasonB64}` }],
+                [{ text: `✅ Confirm Charge`, callback_data: `qkhata_addcharge_confirm_${primaryCustomer.id}_${amount}_${reasonB64}` }],
                 [{ text: `❌ Cancel`, callback_data: `qkhata_back` }]
             ];
             
@@ -724,7 +874,17 @@ Time: ${timeStr}`, mainMenu);
         text === '▶️ सत्र सुरू करा' || 
         text === '/startsession'
       ) {
-        const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+        // Authoritative pricing_rules check to guarantee real-time synchronization with dashboard toggles
+        const { data: freshBiz } = await supabase
+          .from('businesses')
+          .select('pricing_rules')
+          .eq('id', business.id)
+          .single();
+        if (freshBiz?.pricing_rules) {
+          business.pricing_rules = freshBiz.pricing_rules;
+        }
+
+        const isLazyModeEnabled = !!business.pricing_rules?.globalSettings?.lazy_mode_enabled;
         
         if (isLazyModeEnabled) {
           const tables = business.tables || [];
@@ -754,6 +914,7 @@ Time: ${timeStr}`, mainMenu);
           [{ text: '👤 Member Session', callback_data: 'start_member_init' }]
         ];
         await sendTelegramMessage(chatId, 'Who is playing?', { inline_keyboard: buttons });
+        return NextResponse.json({ ok: true });
       }
       else if (
         text === '📋 Active Sessions' || 
@@ -877,7 +1038,7 @@ Time: ${timeStr}`, mainMenu);
             .eq('business_id', business.id)
             .eq('status', 'COMPLETED')
             .eq('date', dateStr),
-          generateQpulseInsight(business.id)
+          getCachedQpulseInsight(business.id)
         ]);
         
         const completedSessions = sessionsResponse.data;
@@ -926,7 +1087,7 @@ Time: ${timeStr}`, mainMenu);
         text === '/qkhata'
       ) {
         const [customersResponse, membershipsResponse] = await Promise.all([
-          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false }),
+          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).order('created_at', { ascending: false }),
           supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
         ]);
         
@@ -987,25 +1148,17 @@ Time: ${timeStr}`, mainMenu);
     // 2. Handle Callback Queries (Button Clicks)
     if (update.callback_query) {
       const callbackData = update.callback_query.data;
-      const chatId = update.callback_query.message.chat.id;
-      const messageId = update.callback_query.message.message_id;
+      const chatId = update.callback_query.message?.chat?.id || update.callback_query.from?.id;
+      const messageId = update.callback_query.message?.message_id;
       const callbackQueryId = update.callback_query.id;
 
-      
-      
-      
+      // Always answer the callback query promptly to dismiss Telegram's loading spinner
+      if (callbackQueryId) {
+        answerCallbackQuery(callbackQueryId).catch(console.error);
+      }
 
-      // Immediately acknowledge the callback to remove the loading state in Telegram
-      answerCallbackQuery(callbackQueryId).catch(console.error);
-      
-      // Optimistically update the button to Processing... to prevent duplicate clicks and provide instant feedback
-      const slowActions = ['start_table_', 'start_game_', 'ps5_players_', 'ps5_start_', 'stop_select_', 'switch_biz_', 'delbiz_', 'delusr_'];
-      if (slowActions.some(prefix => callbackData.startsWith(prefix))) {
-         if (messageId) {
-             editTelegramMessageReplyMarkup(chatId, messageId, {
-                inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'ignore' }]]
-             }).catch(console.error);
-         }
+      if (callbackData === 'ignore') {
+        return NextResponse.json({ ok: true });
       }
 
       if (callbackData === 'cancel_auth') {
@@ -1020,8 +1173,9 @@ Time: ${timeStr}`, mainMenu);
 
       if (callbackData.startsWith('set_lang_')) {
         const selectedLang = callbackData.replace('set_lang_', '') as SupportedLanguage;
-        if (business) {
-          await setUserLanguage(chatId, business.id, selectedLang);
+        const targetBiz = ctx.activeMembership?.business;
+        if (targetBiz) {
+          await setUserLanguage(chatId, targetBiz.id, selectedLang);
         }
         const newMainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length, selectedLang);
         const confirmationMsg = selectedLang === 'mr' 
@@ -1055,6 +1209,34 @@ Time: ${timeStr}`, mainMenu);
         
         if (messageId && update.callback_query.message.text) {
            let newMsg = `✅ <b>Order Served</b>\n\n` + update.callback_query.message.text.replace('✅ Order Accepted', '').replace('🔔 New Order Placed', '').trim();
+           await editTelegramMessageText(chatId, messageId, newMsg, { inline_keyboard: [] });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      if (callbackData.startsWith('order_cancel_')) {
+        const notifId = callbackData.replace('order_cancel_', '');
+        const { data: order } = await supabase.from('notifications').select('*').eq('id', notifId).single();
+        if (order && !['order_cancelled', 'order_voided'].includes(order.type)) {
+          const parts = order.message ? order.message.split('|') : [];
+          const sessionId = parts.length >= 3 ? parts[parts.length - 1] : null;
+          const orderTotal = parts.length >= 2 ? (parseFloat(parts[parts.length - 2]) || 0) : 0;
+          if (sessionId) {
+            const { data: sess } = await supabase.from('sessions').select('*').eq('id', sessionId).single();
+            if (sess && sess.status === 'ACTIVE') {
+              const newFood = Math.max(0, (sess.food_cost || 0) - orderTotal);
+              await supabase.from('sessions').update({ food_cost: newFood }).eq('id', sessionId);
+              try {
+                const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
+                enqueueSheetsSync('SESSION', sessionId, order.business_id);
+              } catch(e) {}
+            }
+          }
+          await supabase.from('notifications').update({ type: 'order_cancelled', is_read: true }).eq('id', notifId);
+        }
+        
+        if (messageId && update.callback_query.message.text) {
+           let newMsg = `❌ <b>Order Cancelled</b>\n\n` + update.callback_query.message.text.replace('✅ Order Accepted', '').replace('🔔 New Order Placed', '').trim();
            await editTelegramMessageText(chatId, messageId, newMsg, { inline_keyboard: [] });
         }
         return NextResponse.json({ ok: true });
@@ -1213,34 +1395,28 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhatamem_')) {
           const customerId = callbackData.replace('qkhatamem_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
           
-          if (!customer) {
+          if (!customer && siblingRows.length === 0) {
              if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Member not found.`);
              else await sendTelegramMessage(chatId, `❌ Member not found.`);
              return NextResponse.json({ ok: true });
           }
           
-          // Find all sibling rows for this member to display accurate combined balance
-          let allCustomerRows = [customer];
-          if (customer.phone || customer.name) {
-             const { data: siblings } = await supabase
-               .from('customers')
-               .select('*')
-               .eq('business_id', business.id)
-               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
-             if (siblings && siblings.length > 0) {
-               allCustomerRows = siblings;
-             }
-          }
-
-          const consolidatedBalance = allCustomerRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const consolidatedBalance = siblingRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+          const customerIds = siblingRows.map(c => c.id);
           
-          // Get recent transactions
-          const customerIds = allCustomerRows.map(c => c.id);
-          const { data: payments } = await supabase.from('payments').select('*').in('customer_id', customerIds).order('created_at', { ascending: false }).limit(3);
+          // Get recent transactions across all sibling customer records
+          const { data: payments } = await supabase
+            .from('payments')
+            .select('*')
+            .in('customer_id', customerIds)
+            .order('created_at', { ascending: false })
+            .limit(3);
           
-          let msg = `👤 <b>QKhata: ${customer.name}</b>\n\n`;
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
+          let msg = `👤 <b>QKhata: ${displayName}</b>\n\n`;
           msg += `Outstanding Balance: <b>₹${Math.round(consolidatedBalance)}</b>\n\n`;
           
           if (payments && payments.length > 0) {
@@ -1253,11 +1429,11 @@ You can still access other businesses associated with your Telegram account.`, {
           
           const buttons = [
              [
-                 { text: `💸 Settle Full (₹${Math.round(consolidatedBalance)})`, callback_data: `qkhatasettlefull_${customer.id}` }
+                 { text: `💸 Settle Full (₹${Math.round(consolidatedBalance)})`, callback_data: `qkhatasettlefull_${primaryCustomer.id}` }
              ],
              [
-                 { text: `💰 Partial Payment`, callback_data: `qkhatacollect_${customer.id}` },
-                 { text: `➕ Add Charge`, callback_data: `qkhata_addcharge_init_${customer.id}` }
+                 { text: `💰 Partial Payment`, callback_data: `qkhatacollect_${primaryCustomer.id}` },
+                 { text: `➕ Add Charge`, callback_data: `qkhata_addcharge_init_${primaryCustomer.id}` }
              ],
              [{ text: `↩️ Back`, callback_data: `qkhata_back` }]
           ];
@@ -1272,7 +1448,7 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData === 'qkhata_back') {
         const [customersResponse, membershipsResponse] = await Promise.all([
-          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).gt('outstanding_balance', 0).order('outstanding_balance', { ascending: false }),
+          supabase.from('customers').select('id, name, outstanding_balance, phone').eq('business_id', business.id).order('created_at', { ascending: false }),
           supabase.from('memberships').select('id, name, mobile').eq('business_id', business.id)
         ]);
 
@@ -1319,52 +1495,35 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhatacollect_')) {
           const customerId = callbackData.replace('qkhatacollect_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
           
-          if (!customer) return NextResponse.json({ ok: true });
+          if (!customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
           
-          let totalBalance = Number(customer.outstanding_balance) || 0;
-          if (customer.phone || customer.name) {
-             const { data: siblings } = await supabase
-               .from('customers')
-               .select('outstanding_balance')
-               .eq('business_id', business.id)
-               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
-             if (siblings) {
-               totalBalance = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
-             }
-          }
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const totalBalance = siblingRows.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
 
-          const msg = `💰 <b>Enter payment amount for ${customer.name}</b>\n\nOutstanding: ₹${Math.round(totalBalance)}\nRef: #${customer.id.split('-')[0].toUpperCase()}\n\n(Reply to this message with the amount received, e.g. "500")`;
+          const msg = `💰 <b>Enter payment amount for ${displayName}</b>\n\nOutstanding: ₹${Math.round(totalBalance)}\nRef: #${primaryCustomer.id.split('-')[0].toUpperCase()}\n\n(Reply to this message with the amount received, e.g. "500")`;
           await sendTelegramMessage(chatId, msg, { force_reply: true });
           return NextResponse.json({ ok: true });
       }
 
       if (callbackData.startsWith('qkhatasettlefull_')) {
           const customerId = callbackData.replace('qkhatasettlefull_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
           
-          if (!customer) return NextResponse.json({ ok: true });
+          if (!customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
           
-          let totalBalance = Number(customer.outstanding_balance) || 0;
-          if (customer.phone || customer.name) {
-             const { data: siblings } = await supabase
-               .from('customers')
-               .select('outstanding_balance')
-               .eq('business_id', business.id)
-               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
-             if (siblings) {
-               totalBalance = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
-             }
-          }
-
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const totalBalance = siblingRows.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
           const amount = Math.round(totalBalance);
           
-          const msg = `⚠️ <b>Confirm Full Settlement</b>\n\nAre you sure you want to settle the full amount of <b>₹${amount}</b> for ${customer.name}?`;
+          const msg = `⚠️ <b>Confirm Full Settlement</b>\n\nAre you sure you want to settle the full amount of <b>₹${amount}</b> for ${displayName}?`;
           
           const buttons = [
-              [{ text: `✅ Yes, Settle ₹${amount}`, callback_data: `qkhataconfirm_${customer.id}` }],
-              [{ text: `❌ Cancel`, callback_data: `qkhatamem_${customer.id}` }]
+              [{ text: `✅ Yes, Settle ₹${amount}`, callback_data: `qkhataconfirm_${primaryCustomer.id}` }],
+              [{ text: `❌ Cancel`, callback_data: `qkhatamem_${primaryCustomer.id}` }]
           ];
           
           if (messageId) {
@@ -1377,30 +1536,21 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhataconfirm_')) {
           const customerId = callbackData.replace('qkhataconfirm_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
           
-          if (!customer) return NextResponse.json({ ok: true });
+          if (!customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
           
-          let totalToSettle = Number(customer.outstanding_balance) || 0;
-          let customerIds = [customer.id];
-          if (customer.phone || customer.name) {
-             const { data: siblings } = await supabase
-               .from('customers')
-               .select('id, outstanding_balance')
-               .eq('business_id', business.id)
-               .or(`phone.eq.${customer.phone || 'none'},name.ilike.${customer.name}`);
-             if (siblings) {
-               totalToSettle = siblings.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
-               customerIds = siblings.map(s => s.id);
-             }
-          }
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const totalToSettle = siblingRows.reduce((s, c) => s + (Number(c.outstanding_balance) || 0), 0);
+          const customerIds = siblingRows.map(c => c.id);
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
           
           try {
              const { createLedgerEntryAndPayment } = require('@/lib/services/paymentService');
              await createLedgerEntryAndPayment({
                  businessId: business.id,
-                 customerName: customer.name,
-                 customerId: customer.id,
+                 customerName: displayName,
+                 customerId: primaryCustomer.id,
                  totalBilled: 0,
                  amountPaid: totalToSettle,
                  paymentMethod: 'Cash',
@@ -1414,7 +1564,7 @@ You can still access other businesses associated with your Telegram account.`, {
                .update({ outstanding_balance: 0 })
                .in('id', customerIds);
              
-             const successMsg = `🎉 <b>Payment Successfully Settled!</b>\n\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Member:</b> ${customer.name}\n💰 <b>Amount Paid:</b> ₹${Math.round(totalToSettle)}\n💳 <b>Method:</b> Cash\n🧾 <b>Balance:</b> ₹0\n━━━━━━━━━━━━━━━━━━━━\n\n<i>Payment recorded successfully. The member's QKhata has been cleared!</i>`;
+             const successMsg = `🎉 <b>Payment Successfully Settled!</b>\n\n━━━━━━━━━━━━━━━━━━━━\n👤 <b>Member:</b> ${displayName}\n💰 <b>Amount Paid:</b> ₹${Math.round(totalToSettle)}\n💳 <b>Method:</b> Cash\n🧾 <b>Balance:</b> ₹0\n━━━━━━━━━━━━━━━━━━━━\n\n<i>Payment recorded successfully. The member's QKhata has been cleared!</i>`;
              
              if (messageId) {
                 await editTelegramMessageText(chatId, messageId, successMsg, mainMenu);
@@ -1462,11 +1612,14 @@ You can still access other businesses associated with your Telegram account.`, {
 
       if (callbackData.startsWith('qkhata_addcharge_init_')) {
           const customerId = callbackData.replace('qkhata_addcharge_init_', '');
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
           
-          if (!customer) return NextResponse.json({ ok: true });
+          if (!customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
           
-          const msg = `💰 <b>Enter charge amount for ${customer.name}</b>\n\nID: addcharge_${customer.id}\n\n(Reply with Amount and Reason, e.g. "500 Food" or just "500")`;
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
+          
+          const msg = `💰 <b>Enter charge amount for ${displayName}</b>\n\nID: addcharge_${primaryCustomer.id}\n\n(Reply with Amount and Reason, e.g. "500 Food" or just "500")`;
           await sendTelegramMessage(chatId, msg, { force_reply: true });
           return NextResponse.json({ ok: true });
       }
@@ -1479,16 +1632,21 @@ You can still access other businesses associated with your Telegram account.`, {
           
           const reason = reasonB64 && reasonB64 !== 'none' ? Buffer.from(reasonB64, 'base64').toString('utf-8') : 'Manual Charge';
           
-          const { data: customer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
-          if (!customer) return NextResponse.json({ ok: true });
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, customerId);
+          if (!customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
+          
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const displayName = (membership?.name || primaryCustomer.name || 'Member').trim();
+          const currentTotalBalance = siblingRows.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
+          const newTotalBalance = currentTotalBalance + amount;
           
           try {
-             // We update balance safely by fetching latest inside paymentService.
-             const { createLedgerEntryAndPayment } = require('../../../lib/services/paymentService');
+             const { createLedgerEntryAndPayment } = require('@/lib/services/paymentService');
              
              await createLedgerEntryAndPayment({
                 businessId: business.id,
-                customerName: customer.name, 
+                customerName: displayName,
+                customerId: primaryCustomer.id,
                 totalBilled: amount,
                 amountPaid: 0,
                 paymentMethod: 'QKhata',
@@ -1496,10 +1654,14 @@ You can still access other businesses associated with your Telegram account.`, {
                 source: `Telegram Bot - ${reason}`
              });
              
-             const { data: updatedCustomer } = await supabase.from('customers').select('*').eq('id', customerId).eq('business_id', business.id).single();
-             const newTotal = updatedCustomer ? Math.round(updatedCustomer.outstanding_balance) : (Math.round(customer.outstanding_balance) + amount);
+             // Consolidate sibling rows: set other sibling rows to 0, primary customer to newTotalBalance
+             const otherSiblingIds = siblingRows.filter(c => c.id !== primaryCustomer.id).map(c => c.id);
+             if (otherSiblingIds.length > 0) {
+                await supabase.from('customers').update({ outstanding_balance: 0 }).in('id', otherSiblingIds);
+             }
+             await supabase.from('customers').update({ outstanding_balance: newTotalBalance }).eq('id', primaryCustomer.id);
              
-             const msg = `✅ <b>QKhata Added Successfully</b>\n\nMember: ${customer.name}\nAdded: ₹${amount}\nReason: ${reason}\nPrevious Outstanding: ₹${Math.round(customer.outstanding_balance)}\nNew Outstanding: ₹${newTotal}`;
+             const msg = `✅ <b>QKhata Added Successfully</b>\n\nMember: ${displayName}\nAdded: ₹${amount}\nReason: ${reason}\nPrevious Outstanding: ₹${Math.round(currentTotalBalance)}\nNew Outstanding: ₹${Math.round(newTotalBalance)}`;
              
              if (messageId) await editTelegramMessageText(chatId, messageId, msg);
              else await sendTelegramMessage(chatId, msg, mainMenu);
@@ -1660,12 +1822,13 @@ You can still access other businesses associated with your Telegram account.`, {
         if (gameTypes.length === 1) {
             // Only one game type available, skip selection
             const gameType = gameTypes[0];
-            if (gameType.toLowerCase() === 'ps5') {
+            const isConsole = gameType.toLowerCase() === 'ps5' || gameType.toLowerCase() === 'ps' || gameType.toLowerCase() === 'playstation';
+            if (isConsole) {
               const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `ps5_players_${tableId}_${num}` }));
               if (messageId) {
-                await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+                await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players for ${tableId}?</b>`, { inline_keyboard: [buttons] });
               } else {
-                await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+                await sendTelegramMessage(chatId, `🎮 <b>How many players for ${tableId}?</b>`, { inline_keyboard: [buttons] });
               }
             } else {
               const preferences = business.pricing_rules?.globalSettings?.preferences || {};
@@ -1709,12 +1872,13 @@ You can still access other businesses associated with your Telegram account.`, {
         const tableId = parts[0];
         const gameType = parts[1];
         
-        if (gameType.toLowerCase() === 'ps5') {
+        const isConsole = gameType.toLowerCase() === 'ps5' || gameType.toLowerCase() === 'ps' || gameType.toLowerCase() === 'playstation';
+        if (isConsole) {
           const buttons = [1, 2, 3, 4].map(num => ({ text: `${num} Player${num > 1 ? 's' : ''}`, callback_data: `ps5_players_${tableId}_${num}` }));
           if (messageId) {
-            await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+            await editTelegramMessageText(chatId, messageId, `🎮 <b>How many players for ${tableId}?</b>`, { inline_keyboard: [buttons] });
           } else {
-            await sendTelegramMessage(chatId, `🎮 <b>How many players?</b>`, { inline_keyboard: [buttons] });
+            await sendTelegramMessage(chatId, `🎮 <b>How many players for ${tableId}?</b>`, { inline_keyboard: [buttons] });
           }
         } else {
           const preferences = business.pricing_rules?.globalSettings?.preferences || {};
@@ -1743,14 +1907,35 @@ You can still access other businesses associated with your Telegram account.`, {
       else if (callbackData.startsWith('ps5_players_')) {
         const parts = callbackData.replace('ps5_players_', '').split('_');
         const tableId = parts[0];
-        const numPlayers = parseInt(parts[1], 10);
+        const numPlayers = parseInt(parts[1], 10) || 1;
         
-        if (!business.pricing_rules || !business.pricing_rules.rules || !business.pricing_rules.rules['ps5']) {
+        const preferences = business.pricing_rules?.globalSettings?.preferences || {};
+        const isLazyModeEnabled = business.pricing_rules?.globalSettings?.lazy_mode_enabled;
+
+        // In Lazy Mode (or when customer name is not required), immediately start the session for Guest!
+        if (preferences.require_customer_name === false || isLazyModeEnabled) {
+          try {
+            const table = (business.tables || []).find((t: any) => t.id === tableId);
+            const gameType = table?.type || 'ps5';
+            const session = await startSession(tableId, gameType as any, 'Guest', business.id, numPlayers);
+            const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType.toUpperCase()}\nPlayers: ${numPlayers}\nStart Time: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+            if (messageId) await editTelegramMessageText(chatId, messageId, msg);
+            else await sendTelegramMessage(chatId, msg, getMainMenuKeyboard(0));
+          } catch (error: any) {
+            if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Error starting session: ${error.message}`);
+            else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, getMainMenuKeyboard(0));
+          }
+          return NextResponse.json({ ok: true });
+        }
+
+        const hasRule = business.pricing_rules?.rules && (business.pricing_rules.rules['ps5'] || business.pricing_rules.rules['ps']);
+        if (!hasRule) {
           await sendTelegramMessage(chatId, `❌ No pricing configured for PS5. Please configure it in the dashboard first.`);
           return NextResponse.json({ ok: true });
         }
         
-        const currentRate = getCurrentRate('ps5', Date.now(), business.pricing_rules, numPlayers);
+        const ruleKey = business.pricing_rules.rules['ps5'] ? 'ps5' : 'ps';
+        const currentRate = getCurrentRate(ruleKey, Date.now(), business.pricing_rules, numPlayers);
         
         const msg = `🎮 <b>PS5 Session</b>\nPlayers: ${numPlayers}\nRate: ₹${currentRate.rate}/hour\n(${currentRate.slabName})`;
         const buttons = [
@@ -1765,6 +1950,7 @@ You can still access other businesses associated with your Telegram account.`, {
         } else {
           await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
         }
+        return NextResponse.json({ ok: true });
       }
       else if (callbackData.startsWith('ps5_start_')) {
         const parts = callbackData.replace('ps5_start_', '').split('_');
@@ -1839,8 +2025,10 @@ You can still access other businesses associated with your Telegram account.`, {
         
         let billText = '₹0';
         let billableDuration = '0m';
+        let serverBillingRes: any = null;
         try {
           const res = await calculateServerBillingForSession(session, business.id, endFull);
+          serverBillingRes = res;
           billText = `₹${Math.round(res.cost)}`;
           billableDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
         } catch(e){}
@@ -1853,7 +2041,11 @@ You can still access other businesses associated with your Telegram account.`, {
         
         let msg = `🎱 <b>Session Details</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Player:</b> ${session.customer_name}\n<b>Game:</b> ${session.game_type}\n<b>Started:</b> ${formatTimeReadable(startFull)}\n<b>Current Time:</b> ${formatTimeReadable(endFull)}\n<b>Duration:</b> ${totalText}\n`;
         if (pausedDurationMins > 0) msg += `<b>Paused Time:</b> ${pausedText}\n`;
-        msg += `<b>Billable Time:</b> ${billableDuration}\n<b>Current Bill:</b> ${billText}`;
+        msg += `<b>Billable Time:</b> ${billableDuration}\n`;
+        if (serverBillingRes && serverBillingRes.totalDiscountAmount > 0) {
+          msg += `<b>Subtotal:</b> ₹${serverBillingRes.totalBaseCost}\n<b>Discount:</b> -₹${serverBillingRes.totalDiscountAmount} (${serverBillingRes.discountAppliedLabel})\n`;
+        }
+        msg += `<b>Current Bill:</b> ${billText}`;
         
         let buttons: any[] = [];
         buttons.push([
@@ -1991,8 +2183,10 @@ You can still access other businesses associated with your Telegram account.`, {
                 let finalCost = 0;
                 let breakdownStr = '';
                 let rateText = '₹0/hour';
+                let stoppedBillingRes: any = null;
                 try {
                   const res = await calculateServerBillingForSession(updatedSession, business.id, endFull);
+                  stoppedBillingRes = res;
                   finalCost = Math.round(res.cost);
                   
                   if ((res as any).breakdown && (res as any).breakdown.length > 1) {
@@ -2021,6 +2215,10 @@ You can still access other businesses associated with your Telegram account.`, {
                 
                 let msg = `✅ <b>Session Stopped</b>\n\n<b>Table:</b> ${updatedSession.table_id}\n<b>Game:</b> ${updatedSession.game_type}\n<b>Player:</b> ${updatedSession.customer_name}\n\n🕐 <b>Start:</b> ${formattedStart}\n🕐 <b>End:</b> ${formattedEnd}\n⏱️ <b>Total Time:</b> ${totalText}\n⏸️ <b>Paused:</b> ${pausedText}\n🎯 <b>Billable Time:</b> ${billableDurationText}\n\n`;
                 
+                if (stoppedBillingRes && stoppedBillingRes.totalDiscountAmount > 0) {
+                  msg += `<b>Subtotal:</b> ₹${stoppedBillingRes.totalBaseCost}\n<b>Discount:</b> -₹${stoppedBillingRes.totalDiscountAmount} (${stoppedBillingRes.discountAppliedLabel})\n`;
+                }
+
                 if (breakdownStr) {
                   msg += `<b>Final Bill:</b> ${billText}${breakdownStr}\n\n`;
                 } else {
@@ -2122,22 +2320,15 @@ You can still access other businesses associated with your Telegram account.`, {
               return NextResponse.json({ ok: true });
           }
 
-          const { data: membership } = await supabase.from('memberships').select('name, mobile').eq('id', session.member_id).single();
-          if (!membership) {
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, session.member_id);
+          if (!membership && !customer && siblingRows.length === 0) {
               if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Member not found.`);
               else await sendTelegramMessage(chatId, `❌ Member not found.`);
               return NextResponse.json({ ok: true });
           }
 
-          // Also fetch their current outstanding balance if they have a ledger entry
-          const { data: customerData } = await supabase.from('customers')
-              .select('*')
-              .eq('business_id', business.id)
-              .or(`name.ilike.${membership.name},phone.eq.${membership.mobile}`)
-              .limit(1)
-              .single();
-              
-          const member = customerData || { name: membership.name, outstanding_balance: 0 };
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const memberName = (membership?.name || primaryCustomer?.name || session.customer_name || 'Member').trim();
           
           const isPaused = typeof session.paused_at === 'string' && session.paused_at.trim() !== '';
           const startFull = typeof session.start_time === 'string' && session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
@@ -2156,7 +2347,7 @@ You can still access other businesses associated with your Telegram account.`, {
               ]
           ];
           
-          const msg = `Are you sure you want to close this session and add ₹${billText} to QKhata for ${member.name}?`;
+          const msg = `Are you sure you want to close this session and add ₹${billText} to QKhata for ${memberName}?`;
           
           if (messageId) {
              await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
@@ -2175,9 +2366,12 @@ You can still access other businesses associated with your Telegram account.`, {
           }
           
           if (!session.member_id) return NextResponse.json({ ok: true });
-          
-          const { data: membership } = await supabase.from('memberships').select('name, mobile').eq('id', session.member_id).single();
-          if (!membership) return NextResponse.json({ ok: true });
+
+          const { customer, siblingRows, membership } = await getMemberSiblingCustomerRows(business.id, session.member_id);
+          if (!membership && !customer && siblingRows.length === 0) return NextResponse.json({ ok: true });
+
+          const primaryCustomer = siblingRows.find(c => c.phone) || customer || siblingRows[0];
+          const memberName = (membership?.name || primaryCustomer?.name || session.customer_name || 'Member').trim();
 
           try {
              // Use handleSessionIntervention with payment_method = 'QKhata' which calculates correctly and updates balance
@@ -2190,19 +2384,13 @@ You can still access other businesses associated with your Telegram account.`, {
                 performed_by: 'Qbot'
              });
              
-             // Fetch the freshly updated customer balance (auto-created if it didn't exist)
-             const { data: updatedMember } = await supabase.from('customers')
-                .select('*')
-                .eq('business_id', business.id)
-                .or(`name.ilike.${membership.name},phone.eq.${membership.mobile}`)
-                .limit(1)
-                .single();
-             const newTotal = updatedMember ? Math.round(updatedMember.outstanding_balance) : 'Unknown';
-             const member = { name: membership.name };
+             // Refresh sibling rows to get the accurate new consolidated balance
+             const { siblingRows: updatedSiblings } = await getMemberSiblingCustomerRows(business.id, session.member_id);
+             const newTotal = updatedSiblings.reduce((sum, c) => sum + (Number(c.outstanding_balance) || 0), 0);
              
              const addedAmount = dbUpdates && (dbUpdates as any).cost ? Math.round((dbUpdates as any).cost) : 'Unknown';
              
-             const msg = `✅ <b>QKhata Added</b>\n\nMember: ${member.name}\nSession: #${(session.id || sessionId).split('-')[0].toUpperCase()}\nOutstanding Added: ₹${addedAmount}\nTotal Outstanding: ₹${newTotal}`;
+             const msg = `✅ <b>QKhata Added</b>\n\nMember: ${memberName}\nSession: #${(session.id || sessionId).split('-')[0].toUpperCase()}\nOutstanding Added: ₹${addedAmount}\nTotal Outstanding: ₹${Math.round(newTotal)}`;
              
              if (messageId) {
                 await editTelegramMessageText(chatId, messageId, msg);
@@ -2273,10 +2461,12 @@ You can still access other businesses associated with your Telegram account.`, {
           return NextResponse.json({ ok: true });
         }
         
-        if (action === 'start') {
+          if (action === 'start') {
           try {
-            const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1);
-            await supabase.from('bookings').update({ status: 'active' }).eq('id', bookingId);
+            const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1, (booking as any).member_id);
+            await supabase.from('bookings').update({ status: 'active', session_id: session.id }).eq('id', bookingId);
+            const { syncUnifiedSessionToSheet } = require('@/lib/googleSheets');
+            syncUnifiedSessionToSheet(session.id, business.id).catch(() => {});
             const msg = `✅ <b>Booking Started</b>
 
 Player: ${booking.customer_name}
@@ -2436,69 +2626,119 @@ Table: ${tableId}
   }
 }
 
-const recentUpdates = new Set<number>();
+const recentUpdateTimes = new Map<string, number>();
 
-async function verifyIdempotency(updateId: number, chatId: string): Promise<boolean> {
-  if (recentUpdates.has(updateId)) {
-    console.log(`[Idempotency] Memory cache duplicate update ignored: ${updateId}`);
-    return false;
-  }
-  recentUpdates.add(updateId);
-  // Optional cleanup
-  if (recentUpdates.size > 1000) {
-     const iter = recentUpdates.values();
-     for (let i = 0; i < 500; i++) recentUpdates.delete(iter.next().value);
+function isDuplicateUpdate(updateId?: number, callbackQueryId?: string): boolean {
+  const now = Date.now();
+  if (recentUpdateTimes.size > 2000) {
+    for (const [key, timestamp] of recentUpdateTimes.entries()) {
+      if (now - timestamp > 300000) recentUpdateTimes.delete(key);
+    }
   }
 
-  const { error } = await supabase.from('telegram_updates').insert({
-    update_id: updateId,
-    chat_id: chatId
-  });
-  if (error && error.code === '23505') { // Unique constraint violation
-    console.log(`[Idempotency] DB duplicate update ignored: ${updateId}`);
-    return false;
+  const key = callbackQueryId ? `cb_${callbackQueryId}` : updateId ? `up_${updateId}` : null;
+  if (!key) return false;
+
+  if (recentUpdateTimes.has(key)) {
+    return true;
   }
-  return true;
+  recentUpdateTimes.set(key, now);
+  return false;
 }
 
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
-    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
     const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
     
-    if (clientSecret !== WEBHOOK_SECRET) {
-      console.warn('Unauthorized Telegram Webhook attempt.');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is configured, reject missing or mismatched secret token.
+    if (WEBHOOK_SECRET) {
+      if (!clientSecret || clientSecret !== WEBHOOK_SECRET) {
+        console.warn('Unauthorized Telegram Webhook attempt: invalid or missing secret token.');
+        return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
+      }
+    } else if (clientSecret && clientSecret !== 'qcontrol_secure_webhook_123') {
+      // In development fallback, if a token was sent, ensure it matches fallback
+      console.warn('Unauthorized Telegram Webhook attempt in dev fallback.');
+      return NextResponse.json({ error: 'Unauthorized: Invalid dev secret token' }, { status: 401 });
     }
     
     // Rate Limit: Prevent brute force or spam on webhook
     const ip = getIpAddress(request);
-    if (!checkRateLimit(`tg_webhook_${ip}`, 100, 60 * 1000)) { // 100 req per minute
+    if (!checkRateLimit(`tg_webhook_${ip}`, 120, 60 * 1000)) {
        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
     const update = await request.json();
     const updateId = update.update_id;
-    const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+    const callbackQuery = update.callback_query;
+    const callbackQueryId = callbackQuery?.id;
+    const callbackData = callbackQuery?.data;
+    const chatId = update.message?.chat?.id || callbackQuery?.message?.chat?.id || callbackQuery?.from?.id;
 
+    const tracker = new PerformanceTracker(
+      updateId || 0,
+      callbackQueryId ? 'callback_query' : update.message ? 'message' : 'other',
+      callbackData || update.message?.text?.split(' ')[0]
+    );
+
+    // Instant in-memory idempotency check (0.01ms)
+    const isDuplicate = isDuplicateUpdate(updateId, callbackQueryId);
+    if (isDuplicate) {
+      tracker.markAcknowledged();
+      tracker.finish('SUCCESS', 'Duplicate ignored');
+      if (callbackQueryId) {
+        return NextResponse.json({
+          method: 'answerCallbackQuery',
+          callback_query_id: callbackQueryId
+        });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // Persist to telegram_updates asynchronously (never blocks response)
     if (updateId && chatId) {
-        // Idempotency check happens instantly
-        const isNew = await verifyIdempotency(updateId, String(chatId));
-        
-        if (isNew) {
-            // Instantly background the webhook processing
-            after(async () => {
-                try {
-                    await processWebhook(update);
-                } catch (err: any) {
-                    console.error(`[Webhook Background Error] update_id: ${updateId}, msg: ${err.message}`);
-                }
-            });
-        }
+      Promise.resolve(supabase.from('telegram_updates').insert({
+        update_id: updateId,
+        chat_id: String(chatId)
+      })).catch(() => {});
+    }
+
+    // Mark callback acknowledged
+    if (callbackQueryId) {
+      tracker.markAcknowledged();
+    }
+
+    // Instantly background the business operations
+    const runBackground = () => {
+      processWebhook(update).then(() => {
+        tracker.finish('SUCCESS');
+      }).catch((err: any) => {
+        console.error(`[Webhook Background Error] update_id: ${updateId}, msg: ${err.message}`);
+        tracker.finish('ERROR', err.message);
+      });
+    };
+
+    try {
+      after(async () => {
+        runBackground();
+      });
+    } catch {
+      setTimeout(runBackground, 0);
+    }
+
+    // Return instant Telegram Webhook Response Method for callback queries!
+    // This acknowledges the button in Telegram in the EXACT SAME HTTP transaction,
+    // with 0 additional round trips and 0 latency.
+    if (callbackQueryId) {
+      return NextResponse.json({
+        method: 'answerCallbackQuery',
+        callback_query_id: callbackQueryId,
+        cache_time: 0
+      });
     }
     
-    // Always return 200 OK instantly so Telegram never retries and buttons feel lightning fast
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram Webhook Parse Error:', error);

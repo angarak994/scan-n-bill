@@ -68,8 +68,8 @@ export default function HeroNew() {
                     </div>
                     {table.status !== 'AVAILABLE' && (
                        <div className="flex items-center gap-[var(--space-4)] tabular-nums text-[var(--text-primary)]">
-                         <span>{formatDuration(table.elapsedTime)}</span>
-                         <span className="font-bold w-16 text-right">₹{table.currentBill}</span>
+                         <span>{formatDuration(table.startTime ? Math.max(0, state.currentTime - table.startTime - table.pausedDuration) : 0)}</span>
+                         <span className="font-bold w-16 text-right">₹{table.baseRate}</span>
                        </div>
                     )}
                   </button>
@@ -80,7 +80,7 @@ export default function HeroNew() {
                 <div className="mt-[var(--space-4)] p-[var(--space-3)] bg-[var(--bg-surface)] rounded-[var(--radius-sm)] border border-[var(--border-strong)] animate-in fade-in slide-in-from-top-2">
                   <div className="text-[var(--text-secondary)] mb-[var(--space-2)] flex justify-between">
                      <span>Table {selectedTable} Detail</span>
-                     <span>Rate: ₹{state.tables.find(t => t.id === selectedTable)?.rate}/hr</span>
+                     <span>Rate: ₹{state.tables.find(t => t.id === selectedTable)?.baseRate || 200}/hr</span>
                   </div>
                   <div className="flex gap-[var(--space-2)]">
                     <Button variant="secondary" className="py-[var(--space-2)] px-[var(--space-3)] text-[var(--text-xs)] flex-1">Pause</Button>

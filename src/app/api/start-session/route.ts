@@ -38,6 +38,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid business' }, { status: 404 });
     }
 
+    const configuredTables = business.tables || [];
+    const isValidTable = configuredTables.length === 0 || configuredTables.some((t: any) =>
+      String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase()
+    );
+    if (!isValidTable) {
+      return NextResponse.json({ error: `Table '${table_id}' is not configured for this business.` }, { status: 400 });
+    }
+
     if (!isOwner) {
        // Unauthenticated QR Flow: Verify business allows QR actions
        const prefs = business.pricing_rules?.globalSettings?.preferences || {};

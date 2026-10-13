@@ -3,23 +3,35 @@
 import { formatPhoneInput } from '@/lib/utils/formatPhoneInput';
 import { useEffect, useState, Suspense, useMemo, useRef, useCallback, useSyncExternalStore } from 'react';
 
-import { calculateBilling, parseDateString, formatTimeReadable } from '@/lib/billing';
-import { MenuManagerTab } from './MenuManagerTab';
+import dynamic from 'next/dynamic';
+import { calculateBilling, parseDateString, formatTimeReadable, applySessionDiscounts } from '@/lib/billing';
 import { createClient } from '@supabase/supabase-js';
 import { EnhancedTableView } from './EnhancedTableView';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
-import WelcomeCelebration from './WelcomeCelebration';
 import { toast } from 'react-hot-toast';
-import QKhataTab from './QKhataTab';
-import PaymentsTab from './PaymentsTab';
-import MessagingTab from './MessagingTab';
-
-import SubscriptionTab from './SubscriptionTab';
-import BookingsTab from './BookingsTab';
+import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
+import FancyLanguageToggle from '@/components/FancyLanguageToggle';
 import { LanguageProvider, useLanguage } from '@/context/LanguageContext';
+
+// Tab loading skeleton for lazy-loaded tabs
+const TabLoadingSkeleton = () => (
+  <div className="flex flex-col items-center justify-center py-24 gap-3">
+    <div className="w-8 h-8 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
+    <span className="text-[11px] font-bold uppercase tracking-widest text-text-disabled">Loading Module...</span>
+  </div>
+);
+
+// Route- & Tab-Level Code Splitting (PERF-06): Lazy-load tabs on demand
+const QKhataTab = dynamic(() => import('./QKhataTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const PaymentsTab = dynamic(() => import('./PaymentsTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const BookingsTab = dynamic(() => import('./BookingsTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const MenuManagerTab = dynamic(() => import('./MenuManagerTab').then(mod => mod.MenuManagerTab), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const MessagingTab = dynamic(() => import('./MessagingTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const SubscriptionTab = dynamic(() => import('./SubscriptionTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const WelcomeCelebration = dynamic(() => import('./WelcomeCelebration'), { ssr: false });
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -91,7 +103,7 @@ function DashboardContent() {
   const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -134,6 +146,8 @@ function DashboardContent() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [finalQRData, setFinalQRData] = useState<{ table_id: string; game_type: string; cost: number; member_id?: string; session_id: string } | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [isClosingManual, setIsClosingManual] = useState(false);
   const [manualCustomer, setManualCustomer] = useState('');
@@ -169,6 +183,8 @@ function DashboardContent() {
     enable_qkhata: true,
     show_pricing_on_dashboard: true,
     show_member_details: true,
+    auto_qr_billing: true,
+    enhanced_tables: false,
     default_view: 'overview'
   };
   const [preferences, setPreferences] = useState(defaultPreferences);
@@ -212,26 +228,55 @@ function DashboardContent() {
   const [qkhataSearch, setQkhataSearch] = useState('');
   const [selectedQkhataMember, setSelectedQkhataMember] = useState<any>(null);
 
-  const getDisplayName = (rawName: string, memberId?: string) => {
-    if (memberId && memberships) {
-      const qkMember = memberships.find((m: any) => m.id === memberId);
-      if (qkMember) return qkMember.name;
+  // Pre-indexed Maps for O(1) customer and membership lookups across dashboard
+  const { customerByPhoneMap, customerByNameMap, customerByIdMap, membershipByIdMap } = useMemo(() => {
+    const phoneMap = new Map<string, any>();
+    const nameMap = new Map<string, any>();
+    const idMap = new Map<string, any>();
+    const memMap = new Map<string, any>();
+
+    if (data?.dbCustomers) {
+      for (const c of data.dbCustomers) {
+        if (c.id) idMap.set(c.id, c);
+        if (c.phone) phoneMap.set(c.phone.trim(), c);
+        if (c.name) nameMap.set(c.name.trim().toLowerCase(), c);
+      }
+    }
+
+    if (memberships) {
+      for (const m of memberships) {
+        if (m.id) memMap.set(m.id, m);
+      }
+    }
+
+    return { customerByPhoneMap: phoneMap, customerByNameMap: nameMap, customerByIdMap: idMap, membershipByIdMap: memMap };
+  }, [data?.dbCustomers, memberships]);
+
+  const getDisplayName = useCallback((rawName: string, memberId?: string) => {
+    if (memberId && membershipByIdMap.has(memberId)) {
+      return membershipByIdMap.get(memberId).name;
     }
     if (!rawName) return 'Guest';
-    if (!data?.dbCustomers) return rawName;
-    const member = data.dbCustomers.find((c: any) => c.phone === rawName || c.name.toLowerCase() === rawName.toLowerCase());
-    return member ? member.name : rawName;
-  };
+    const trimmed = rawName.trim();
+    if (customerByPhoneMap.has(trimmed)) {
+      return customerByPhoneMap.get(trimmed).name;
+    }
+    const lower = trimmed.toLowerCase();
+    if (customerByNameMap.has(lower)) {
+      return customerByNameMap.get(lower).name;
+    }
+    return rawName;
+  }, [membershipByIdMap, customerByPhoneMap, customerByNameMap]);
 
   const qkhataMembers = useMemo(() => {
     if (!memberships) return [];
     
     return memberships.map((m: any) => {
-      // Match with a true dbCustomer to get ledger balances
-      const matchedCustomer = data?.dbCustomers?.find((c: any) => 
-        (c.phone && m.mobile && c.phone === m.mobile) || 
-        (c.name && m.name && c.name.trim().toLowerCase() === m.name.trim().toLowerCase())
-      );
+      const phoneTrim = m.mobile ? m.mobile.trim() : null;
+      const nameLower = m.name ? m.name.trim().toLowerCase() : null;
+      const matchedCustomer = (phoneTrim && customerByPhoneMap.get(phoneTrim)) ||
+        (nameLower && customerByNameMap.get(nameLower)) ||
+        (m.id && customerByIdMap.get(m.id)) || null;
       
       return {
         id: m.id, // Must use membership ID since sessions.member_id is a foreign key to memberships
@@ -240,7 +285,7 @@ function DashboardContent() {
         outstanding_balance: matchedCustomer ? (matchedCustomer.outstanding_balance || 0) : 0
       };
     });
-  }, [memberships, data?.dbCustomers]);
+  }, [memberships, customerByPhoneMap, customerByNameMap, customerByIdMap]);
 
   const filteredQkhataMembers = useMemo(() => {
     return qkhataMembers.filter(m => 
@@ -340,13 +385,37 @@ function DashboardContent() {
   const [showCurrentPin, setShowCurrentPin] = useState(false);
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
-  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [endSessionData, setEndSessionData] = useState<{ session: any, cost: number, duration?: string, amountReceived: string, paymentMode: 'now' | 'credit', dueDate: string, paymentMethodOption?: string, cashTendered?: string, splitWays?: number } | null>(null);
-  const [finalQRData, setFinalQRData] = useState<any>(null);
+  const [endSessionData, setEndSessionData] = useState<{ 
+    session: any, 
+    cost: number, 
+    duration?: string, 
+    amountReceived: string, 
+    paymentMode: 'now' | 'credit', 
+    dueDate: string, 
+    paymentMethodOption?: string, 
+    cashTendered?: string, 
+    splitWays?: number,
+    isSplitPayment?: boolean,
+    splitCash?: string,
+    splitUpi?: string,
+    splitCard?: string,
+    breakdown?: {
+      baseTableCost: number,
+      foodCost: number,
+      discountAmount: number,
+      discountLabel?: string
+    }
+  } | null>(null);
+  const [isEndingSession, setIsEndingSession] = useState(false);
 
-  // Happy Hour States
+  // Discount Configuration States
   const [selectedTable, setSelectedTable] = useState('');
-  const [discountPercent, setDiscountPercent] = useState('40');
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
+  const [discountPercent, setDiscountPercent] = useState('20');
+  const [discountFixedAmount, setDiscountFixedAmount] = useState('50');
+  const [maxDiscountCap, setMaxDiscountCap] = useState('');
+  const [minBillAmount, setMinBillAmount] = useState('');
+  const [discountLabel, setDiscountLabel] = useState('');
   const [applyToFood, setApplyToFood] = useState(false);
   const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
 
@@ -395,6 +464,8 @@ function DashboardContent() {
   const [newStationMaxPlayers, setNewStationMaxPlayers] = useState('4');
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [stationToDelete, setStationToDelete] = useState<{id: string, name: string} | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<any | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [selectedGameRule, setSelectedGameRule] = useState('ps5');
   const reportDateRangeRef = useRef(reportDateRange);
   const telegramLoadedRef = useRef(false);
@@ -404,7 +475,7 @@ function DashboardContent() {
   // Deduplication ref for active fetches to avoid redundant network calls
   const activeFetch = useRef<{ url: string, promise: Promise<any> } | null>(null);
 
-  const fetchDashboardData = useCallback(async (targetStartDate: string, targetEndDate: string, isBackground = false) => {
+  const fetchDashboardData = useCallback(async (targetStartDate: string, targetEndDate: string, isBackground = false, scope?: string) => {
     try {
       if (!isBackground) {
          if (targetStartDate === currentDay && targetEndDate === currentDay) setLoading(true);
@@ -413,6 +484,9 @@ function DashboardContent() {
 
       let url = '/api/dashboard-data';
       url += `?startDate=${targetStartDate}&endDate=${targetEndDate}`;
+      if (scope) {
+        url += `&scope=${scope}`;
+      }
 
       // Deduplicate identical in-flight requests unless it's a background realtime sync
       if (!isBackground && activeFetch.current && activeFetch.current.url === url) {
@@ -435,12 +509,16 @@ function DashboardContent() {
         const json = await res.json();
         
         if (targetStartDate === currentDay && targetEndDate === currentDay) {
-          setData(json);
-          setMembershipPlans(json.membership_plans || []);
-          if (json.businessId) setBusinessId(json.businessId);
-          setIsAuthorized(true);
-          if (json.has_logged_in === false) {
-            setShowCelebration(prev => !prev ? true : prev);
+          if (scope && scope !== 'all') {
+            setData(prev => prev ? { ...prev, ...json } : json);
+          } else {
+            setData(json);
+            setMembershipPlans(json.membership_plans || []);
+            if (json.businessId) setBusinessId(json.businessId);
+            setIsAuthorized(true);
+            if (json.has_logged_in === false) {
+              setShowCelebration(prev => !prev ? true : prev);
+            }
           }
         }
         
@@ -464,8 +542,8 @@ function DashboardContent() {
     }
   }, [businessId, currentDay, reportDateRange.start, reportDateRange.end]);
 
-  const fetchData = useCallback(async (pinToUse?: string, isBackground = false) => {
-    return fetchDashboardData(currentDay, currentDay, isBackground);
+  const fetchData = useCallback(async (pinToUse?: string, isBackground = false, scope?: string) => {
+    return fetchDashboardData(currentDay, currentDay, isBackground, scope);
   }, [fetchDashboardData, currentDay]);
 
   // Initial load check
@@ -605,28 +683,92 @@ function DashboardContent() {
   useEffect(() => {
     if (isAuthorized) {
       // Setup Supabase Realtime for universal state synchronization
-      let subscription: any = null;
+      let syncSubscription: any = null;
+      let sessionDeltaSubscription: any = null;
+
       if (supabase && businessId) {
-        
-        const handleSync = () => {
+        // Fast Realtime Delta Listener: Instantly updates active/completed table sessions in React state (0ms latency)
+        sessionDeltaSubscription = supabase.channel(`realtime_sessions_delta_${businessId}`)
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'sessions',
+            filter: `business_id=eq.${businessId}`
+          }, (changePayload: any) => {
+            const { eventType, new: newRecord, old: oldRecord } = changePayload;
+            if (eventType === 'INSERT' && newRecord) {
+              if (newRecord.status === 'ACTIVE') {
+                setData(prev => {
+                  if (!prev) return prev;
+                  const alreadyExists = prev.activeSessions.some((s: any) => s.id === newRecord.id);
+                  if (alreadyExists) return prev;
+                  return {
+                    ...prev,
+                    activeSessions: [newRecord, ...prev.activeSessions]
+                  };
+                });
+              }
+            } else if (eventType === 'UPDATE' && newRecord) {
+              setData(prev => {
+                if (!prev) return prev;
+                if (newRecord.status === 'ACTIVE') {
+                  return {
+                    ...prev,
+                    activeSessions: prev.activeSessions.map((s: any) => s.id === newRecord.id ? { ...s, ...newRecord } : s)
+                  };
+                } else if (newRecord.status === 'COMPLETED') {
+                  const wasActive = prev.activeSessions.some((s: any) => s.id === newRecord.id);
+                  return {
+                    ...prev,
+                    activeSessions: prev.activeSessions.filter((s: any) => s.id !== newRecord.id),
+                    completedSessions: wasActive
+                      ? [newRecord, ...prev.completedSessions]
+                      : prev.completedSessions.map((s: any) => s.id === newRecord.id ? newRecord : s)
+                  };
+                }
+                return prev;
+              });
+            } else if (eventType === 'DELETE' && oldRecord) {
+              setData(prev => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  activeSessions: prev.activeSessions.filter((s: any) => s.id !== oldRecord.id)
+                };
+              });
+            }
+          })
+          .subscribe();
+
+        // Fast-path Universal Sync Bus with 100ms debounce (reduced from 400ms for snappy responsiveness)
+        const handleSync = (payload: any) => {
+          const triggeredTable = payload?.new?.triggered_by;
+          let targetScope: string | undefined = undefined;
+          if (triggeredTable === 'sessions') targetScope = 'sessions';
+          else if (triggeredTable === 'notifications') targetScope = 'notifications';
+          else if (triggeredTable === 'bookings') targetScope = 'bookings';
+          else if (triggeredTable === 'customers' || triggeredTable === 'memberships') targetScope = 'customers';
+          else if (triggeredTable === 'promotions') targetScope = 'promotions';
+
           if (syncTimeout.current) clearTimeout(syncTimeout.current);
           syncTimeout.current = setTimeout(() => {
-             fetchRef.current(undefined, true);
-          }, 800);
+             fetchRef.current(undefined, true, targetScope);
+          }, 100);
         };
 
-        subscription = supabase.channel('dashboard_sync_channel')
+        syncSubscription = supabase.channel(`dashboard_sync_${businessId}`)
           .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dashboard_syncs', filter: `business_id=eq.${businessId}` }, handleSync)
           .subscribe();
       }
       
       return () => {
-        if (subscription && supabase) supabase.removeChannel(subscription);
+        if (syncSubscription && supabase) supabase.removeChannel(syncSubscription);
+        if (sessionDeltaSubscription && supabase) supabase.removeChannel(sessionDeltaSubscription);
       };
     }
   }, [isAuthorized, businessId]);
 
-  const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string, paymentMethod?: string, dueDate?: string) => {
+  const handleIntervention = async (action: string, sessionId: string, amountRecovered?: number, transferTableId?: string, paymentMethod?: string, dueDate?: string, splitPayments?: Array<{ method: string; amount: number }>) => {
     if (!businessId || !data) return null;
 
     // Optimistic UI Update
@@ -639,7 +781,6 @@ function DashboardContent() {
           s.id === sessionId ? { ...s, paused_at: new Date().toISOString() } : s
         )
       } : prev);
-      toast.success('✓ Session paused successfully.');
     } else if (action === 'resume') {
       setData(prev => prev ? {
         ...prev,
@@ -647,36 +788,43 @@ function DashboardContent() {
           s.id === sessionId ? { ...s, paused_at: undefined, paused_duration_seconds: (s.paused_duration_seconds || 0) + Math.floor((new Date().getTime() - new Date(s.paused_at!).getTime()) / 1000) } : s
         )
       } : prev);
-      toast.success('✓ Session resumed.');
     } else if (action === 'force_end') {
       setData(prev => prev ? {
         ...prev,
         activeSessions: prev.activeSessions.filter(s => s.id !== sessionId)
       } : prev);
-      toast.success('✓ Session ended successfully.');
     }
 
     try {
       const res = await fetch('/api/intervene-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId, payment_method: paymentMethod, due_date: dueDate })
+        body: JSON.stringify({ action, session_id: sessionId, business_id: businessId, amount_recovered: amountRecovered, transfer_table_id: transferTableId, payment_method: paymentMethod, due_date: dueDate, split_payments: splitPayments })
       });
-      const dataJson = await res.json();
+      const dataJson = await res.json().catch(() => ({}));
       if (res.ok) {
         if (action === 'confirm_playing') {
           setOverdueSession(null);
+        } else if (action === 'pause') {
+          toast.success('✓ Session paused successfully.');
+        } else if (action === 'resume') {
+          toast.success('✓ Session resumed.');
+        } else if (action === 'force_end') {
+          toast.success('✓ Session ended successfully.');
+        } else if (action === 'transfer') {
+          toast.success('✓ Table transferred.');
         }
-        // fetchData removed; Realtime updates sessions
-        if (action === 'transfer') toast.success('✓ Table transferred.');
         return dataJson;
       } else {
         setData(previousData); // Rollback
-        toast.error("We couldn't complete your request. Please try again.");
+        const errorMessage = dataJson?.error || "Failed to complete request. Please try again.";
+        toast.error(errorMessage);
+        return null;
       }
-    } catch (e) {
+    } catch (e: any) {
       setData(previousData); // Rollback
-      toast.error("Something went wrong. We're working on it.");
+      toast.error(e?.message || "Something went wrong. Please check your connection.");
+      return null;
     }
   };
 
@@ -715,8 +863,8 @@ function DashboardContent() {
         } : prev);
         toast.success('✓ Booking updated.');
       } else {
-        const error = await res.json();
-        toast.error("We couldn't update the booking. Please try again.");
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.error || "Failed to update booking.");
       }
     } catch (e) {
       toast.error('Network error. Could not update booking.');
@@ -727,6 +875,7 @@ function DashboardContent() {
 
   const toggleLazyMode = async () => {
     if (!data) return;
+    const previousRules = data.pricingRules;
     const newVal = !isLazyModeEnabled;
     const updatedPricingRules = {
       ...data.pricingRules,
@@ -739,7 +888,7 @@ function DashboardContent() {
     setData(prev => prev ? { ...prev, pricingRules: updatedPricingRules } : prev);
     
     try {
-      await fetch('/api/update-business-config', {
+      const res = await fetch('/api/update-business-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -747,9 +896,14 @@ function DashboardContent() {
           pricing_rules: updatedPricingRules
         })
       });
+      const resData = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(resData?.error || 'Failed to update business configuration');
+      }
       toast.success(`Lazy Mode ${newVal ? 'ON ⚡' : 'OFF'}`);
-    } catch (e) {
-      toast.error('Network error. Failed to toggle Lazy Mode.');
+    } catch (e: any) {
+      setData(prev => prev ? { ...prev, pricingRules: previousRules } : prev);
+      toast.error(e?.message || 'Network error. Failed to toggle Lazy Mode.');
     }
   };
 
@@ -916,6 +1070,66 @@ function DashboardContent() {
     await handleSaveConfig(undefined, updatedTables);
     toast.success(`Station "${stationToDelete.name}" deleted successfully.`);
     setStationToDelete(null);
+  };
+
+  const handleDeleteFoodOrder = async () => {
+    if (!orderToDelete || !data || !businessId) return;
+    const orderId = orderToDelete.id;
+    setDeletingOrderId(orderId);
+    const toastId = toast.loading(t('deleting_order', 'Deleting order...'));
+
+    const parts = orderToDelete.message ? orderToDelete.message.split('|') : [];
+    const sessionId = parts.length >= 3 ? parts[parts.length - 1] : null;
+    const orderTotal = parts.length >= 2 ? (parseFloat(parts[parts.length - 2]) || 0) : 0;
+
+    const prevFoodOrders = data.foodOrders || [];
+    const prevActiveSessions = data.activeSessions || [];
+
+    // Optimistic UI update: Remove order and decrement table session food_cost immediately
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        foodOrders: (prev.foodOrders || []).filter((o: any) => o.id !== orderId),
+        activeSessions: (prev.activeSessions || []).map((s: any) => {
+          if (s.id === sessionId) {
+            const currentFoodCost = typeof s.food_cost === 'number' ? s.food_cost : 0;
+            return { ...s, food_cost: Math.max(0, currentFoodCost - orderTotal) };
+          }
+          return s;
+        })
+      };
+    });
+
+    try {
+      const res = await fetch('/api/delete-food-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, businessId })
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        // Rollback optimistic state on failure
+        setData(prev => prev ? { ...prev, foodOrders: prevFoodOrders, activeSessions: prevActiveSessions } : prev);
+        toast.error(result.error || 'Failed to delete food order', { id: toastId });
+        return;
+      }
+
+      toast.success(t('order_deleted_success', 'Food order deleted successfully'), { id: toastId });
+      setOrderToDelete(null);
+
+      // Background refresh to synchronize authoritative session totals, reports, and sync queues
+      fetchData(undefined, true);
+    } catch (err: any) {
+      console.error('Error deleting food order:', err);
+      setData(prev => prev ? { ...prev, foodOrders: prevFoodOrders, activeSessions: prevActiveSessions } : prev);
+      toast.error(err.message || 'Network error while deleting order', { id: toastId });
+      fetchData(undefined, true);
+    } finally {
+      setDeletingOrderId(null);
+    }
   };
 
   const renderBookingReminders = () => {
@@ -1200,11 +1414,11 @@ function DashboardContent() {
       fetchMembershipPlans();
         toast.success('✓ Customer profile created.');
       } else {
-        const err = await res.json();
-        toast.error(err.error);
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to create customer profile.");
       }
-    } catch (e) {
-      toast.error("We couldn't create the membership. Please try again.");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to create customer profile. Please check your connection.");
     } finally {
       setIsCreatingMember(false);
     }
@@ -1222,11 +1436,11 @@ function DashboardContent() {
         toast.success(`✓ Customer profile for ${name} deleted.`);
         fetchMemberships();
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         toast.error(err.error || "Failed to delete membership.");
       }
     } catch (err: any) {
-      toast.error("We couldn't delete the membership. Please try again.");
+      toast.error(err?.message || "Failed to delete customer profile. Please check your connection.");
     }
   };
 
@@ -1260,10 +1474,11 @@ function DashboardContent() {
         // fetchData removed
         toast.success('✓ Settings updated.');
       } else {
-        toast.error("We couldn't complete your request. Please try again.");
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to update session settings.");
       }
-    } catch (e) {
-      toast.error('Network error. Could not update session.');
+    } catch (e: any) {
+      toast.error(e?.message || 'Network error. Could not update session.');
     }
   };
 
@@ -1314,24 +1529,60 @@ function DashboardContent() {
   const handleApplyDiscount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTable || !businessId) return;
+
+    if (discountType === 'percentage') {
+      const pct = Number(discountPercent);
+      if (isNaN(pct) || pct < 1 || pct > 100) {
+        toast.error('Discount percentage must be between 1% and 100%');
+        return;
+      }
+    } else {
+      const amt = Number(discountFixedAmount);
+      if (isNaN(amt) || amt < 1) {
+        toast.error('Fixed discount amount must be at least ₹1');
+        return;
+      }
+    }
+
     setIsUpdatingDiscount(true);
     try {
+      const payload = {
+        business_id: businessId,
+        table_id: selectedTable,
+        type: discountType,
+        percent: discountType === 'percentage' ? Number(discountPercent) : undefined,
+        amount: discountType === 'fixed' ? Number(discountFixedAmount) : undefined,
+        maxDiscount: maxDiscountCap ? Number(maxDiscountCap) : undefined,
+        minBillAmount: minBillAmount ? Number(minBillAmount) : undefined,
+        applyToFood,
+        label: discountLabel.trim() || undefined,
+        isActive: true,
+      };
+
       const res = await fetch('/api/update-discount', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId, table_id: selectedTable, percent: Number(discountPercent), applyToFood })
+        body: JSON.stringify(payload)
       });
-      if (res.ok) {
-        // fetchData removed; relying on session realtime update
-        toast.success('✓ Discount applied.');
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (data) {
+          setData({ ...data, activeDiscounts: json.active_discounts });
+        }
+        const targetLabel = selectedTable === 'all' ? 'All Tables' : (data?.tables?.find(t => t.id === selectedTable)?.name || selectedTable);
+        const valLabel = discountType === 'percentage' ? `${discountPercent}%` : `₹${discountFixedAmount}`;
+        toast.success(`✓ ${valLabel} discount applied to ${targetLabel}`);
+        setSelectedTable('');
+        setMaxDiscountCap('');
+        setMinBillAmount('');
+        setDiscountLabel('');
       } else {
-        toast.error('Could not apply discount.');
+        toast.error(json.error || 'Could not apply discount.');
       }
     } catch (e) {
       toast.error('Network error. Could not apply discount.');
     } finally {
       setIsUpdatingDiscount(false);
-      setSelectedTable('');
     }
   };
   
@@ -1342,13 +1593,17 @@ function DashboardContent() {
       const res = await fetch('/api/update-discount', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId, table_id: tableId, percent: 0, applyToFood: false })
+        body: JSON.stringify({ business_id: businessId, table_id: tableId, remove: true })
       });
-      if (res.ok) {
-        // fetchData removed
-        toast.success('✓ Discount removed.');
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (data) {
+          setData({ ...data, activeDiscounts: json.active_discounts });
+        }
+        const targetLabel = tableId === 'all' ? 'All Tables' : (data?.tables?.find(t => t.id === tableId)?.name || tableId);
+        toast.success(`✓ Removed discount for ${targetLabel}`);
       } else {
-        toast.error('Could not remove discount.');
+        toast.error(json.error || 'Could not remove discount.');
       }
     } catch (e) {
       toast.error('Network error. Could not remove discount.');
@@ -1724,14 +1979,19 @@ function DashboardContent() {
     const startFull = session.start_time.includes('T') ? session.start_time : `${session.date}, ${session.start_time}`;
     try {
       // Determine applicable discount for this table
-      let tableDiscount = currentDiscounts?.[session.table_id] || undefined;
+      let tableDiscount: any = currentDiscounts?.[session.table_id] || currentDiscounts?.['all'] || undefined;
       if (!tableDiscount && isPromoValid && activePromo) {
-        tableDiscount = { percent: activePromo.discount_percent, applyToFood: false };
+        tableDiscount = { type: 'percentage', percent: activePromo.discount_percent, applyToFood: false };
+      }
+      if (tableDiscount && tableDiscount.isActive === false) {
+        tableDiscount = undefined;
       }
 
       const endFull = session.paused_at ? session.paused_at : now.toISOString();
-      const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules, session.num_players || 1, tableDiscount, session.paused_duration_seconds, (session as any).locked_rate, (session as any).locked_rate_name);
-      return acc + res.cost;
+      const res = calculateBilling(startFull, endFull, session.game_type, data.pricingRules, session.num_players || 1, undefined, session.paused_duration_seconds, (session as any).locked_rate, (session as any).locked_rate_name, data.activePromotions || []);
+      const rawFoodCost = (session as any).food_cost || 0;
+      const disc = applySessionDiscounts(res.cost, rawFoodCost, tableDiscount);
+      return acc + disc.finalTotalCost;
     } catch { return acc; }
   }, 0);
 
@@ -1744,27 +2004,106 @@ function DashboardContent() {
         {/* Revenue Card */}
         <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300">
           <div className="flex justify-between items-start mb-2 sm:mb-4">
-            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Daily Revenue</h3>
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t('daily_revenue')}</h3>
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
           </div>
-          <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
+          <div className="flex items-end justify-between gap-2 sm:gap-3 mb-2 sm:mb-4">
             <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono"><PrivacyText value={data.dailyRevenue || 0} isPrivacyMode={isPrivacyMode} /></span>
-            <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1">+12.4%</span>
+            
+            {/* Real-time Revenue Intelligence Growth Calculator */}
+            {(() => {
+              const currentRev = data.dailyRevenue || 0;
+              const prevRev = data.revenueIntelligence?.previousRevenue ?? 0;
+              let growthPct = 0;
+              let trend: 'up' | 'down' | 'flat' = 'flat';
+
+              if (prevRev > 0) {
+                growthPct = Number((((currentRev - prevRev) / prevRev) * 100).toFixed(1));
+                trend = growthPct > 0 ? 'up' : growthPct < 0 ? 'down' : 'flat';
+              } else if (currentRev > 0) {
+                growthPct = 100.0;
+                trend = 'up';
+              } else {
+                growthPct = 0.0;
+                trend = 'flat';
+              }
+
+              const sign = growthPct > 0 ? '+' : '';
+              const isPositive = growthPct >= 0;
+              const comparisonText = data.revenueIntelligence?.comparisonLabel || 'vs yesterday';
+
+              return (
+                <div 
+                  className="group relative inline-flex items-center mb-0.5 sm:mb-1 cursor-help select-none"
+                  title={`Growth: ${sign}${growthPct}% (${comparisonText})`}
+                >
+                  <span className={`inline-flex items-center gap-1 text-xs sm:text-sm font-bold font-mono px-2 py-0.5 rounded-md transition-all ${
+                    trend === 'up' 
+                      ? 'text-accent bg-accent/10 border border-accent/25 shadow-[0_0_10px_rgba(16,185,129,0.15)]' 
+                      : trend === 'down' 
+                      ? 'text-rose-500 bg-rose-500/10 border border-rose-500/25' 
+                      : 'text-text-secondary bg-bg-surface border border-border-light'
+                  }`}>
+                    {trend === 'up' && (
+                      <svg className="w-3.5 h-3.5 text-accent stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    )}
+                    {trend === 'down' && (
+                      <svg className="w-3.5 h-3.5 text-rose-500 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
+                      </svg>
+                    )}
+                    {trend === 'flat' && (
+                      <span className="text-[10px] text-text-secondary leading-none">•</span>
+                    )}
+                    <span>{sign}{growthPct}%</span>
+                  </span>
+
+                  {/* Real-time Growth Intelligence Tooltip */}
+                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover:flex flex-col gap-1.5 p-3 rounded-xl bg-bg-primary/95 backdrop-blur-md border border-border-theme shadow-2xl text-[11px] min-w-[210px] z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between border-b border-border-light/60 pb-1.5">
+                      <span className="font-bold text-text-primary uppercase tracking-wider text-[10px]">Revenue Growth</span>
+                      <span className={`font-mono font-bold text-xs ${isPositive ? 'text-accent' : 'text-rose-400'}`}>
+                        {sign}{growthPct}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-text-secondary text-[10px]">
+                      <span>Current:</span>
+                      <span className="font-mono font-bold text-text-primary">₹{currentRev.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-text-secondary text-[10px]">
+                      <span>Baseline ({comparisonText}):</span>
+                      <span className="font-mono font-bold text-text-primary">₹{prevRev.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-text-secondary text-[10px] border-t border-border-light/40 pt-1">
+                      <span>Net Difference:</span>
+                      <span className={`font-mono font-bold ${currentRev - prevRev >= 0 ? 'text-accent' : 'text-rose-400'}`}>
+                        {currentRev - prevRev >= 0 ? '+' : ''}₹{(currentRev - prevRev).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-text-disabled italic text-center pt-0.5">
+                      Real-time intelligence calculation
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <div className="mt-auto pt-4 border-t border-border-light flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-text-secondary font-medium">Goal: <PrivacyText value={data.goals?.daily_revenue || 0} isPrivacyMode={isPrivacyMode} /></span>
-              <span className="text-xs font-bold text-accent">{data.goals?.daily_revenue ? Math.min(Math.round((data.dailyRevenue / data.goals.daily_revenue) * 100), 100) : 100}% Achieved</span>
+              <span className="text-xs text-text-secondary font-medium">{t('goal')}: <PrivacyText value={data.goals?.daily_revenue || 0} isPrivacyMode={isPrivacyMode} /></span>
+              <span className="text-xs font-bold text-accent">{data.goals?.daily_revenue ? Math.min(Math.round((data.dailyRevenue / data.goals.daily_revenue) * 100), 100) : 100}% {t('achieved')}</span>
             </div>
             <div className="w-full h-1.5 bg-border-light rounded-full overflow-hidden">
               <div className="h-full bg-accent transition-all duration-1000 ease-out" style={{ width: `${data.goals?.daily_revenue ? Math.min((data.dailyRevenue / data.goals.daily_revenue) * 100, 100) : 100}%` }}></div>
             </div>
             {!data.goals?.daily_revenue ? (
-              <p className="text-[10px] text-text-secondary text-right mt-1">No daily target set</p>
+              <p className="text-[10px] text-text-secondary text-right mt-1">{t('no_target_set')}</p>
             ) : data.dailyRevenue < data.goals.daily_revenue ? (
-              <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - data.dailyRevenue} isPrivacyMode={isPrivacyMode} /> remaining to reach today's target</p>
+              <p className="text-[10px] text-text-secondary text-right mt-1"><PrivacyText value={data.goals.daily_revenue - data.dailyRevenue} isPrivacyMode={isPrivacyMode} /> {t('remaining_to_reach')}</p>
             ) : (
-              <p className="text-[10px] text-success text-right mt-1 font-bold">Daily target achieved!</p>
+              <p className="text-[10px] text-success text-right mt-1 font-bold">{t('daily_target_achieved')}</p>
             )}
           </div>
         </div>
@@ -1775,10 +2114,10 @@ function DashboardContent() {
           className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300 cursor-pointer hover:border-accent/50"
         >
           <div className="flex justify-between items-start mb-2 sm:mb-4">
-            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Active Tables</h3>
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t('active_tables')}</h3>
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
-              <span className="text-[8px] sm:text-[10px] text-accent font-bold uppercase tracking-widest">Live</span>
+              <span className="text-[8px] sm:text-[10px] text-accent font-bold uppercase tracking-widest">{t('live')}</span>
             </div>
           </div>
           <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
@@ -1786,23 +2125,23 @@ function DashboardContent() {
             <span className="text-xs sm:text-sm font-semibold text-accent mb-0.5 sm:mb-1 font-mono">{occupancyPercent}% OCC.</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme">
-            <span className="text-[10px] sm:text-xs text-text-secondary italic">{totalTables - activeCount} Tables available and ready</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary italic">{totalTables - activeCount} {t('tables_available_ready')}</span>
           </div>
         </div>
 
         {/* Sessions Card */}
         <div className="bg-bg-card rounded-xl p-4 sm:p-6 border border-border-theme flex flex-col hover-lift smooth-transition transition-all duration-300 col-span-1 sm:col-span-2 lg:col-span-1">
           <div className="flex justify-between items-start mb-2 sm:mb-4">
-            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">Sessions</h3>
+            <h3 className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-widest">{t('sessions')}</h3>
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           </div>
           <div className="flex items-end gap-2 sm:gap-3 mb-2 sm:mb-4">
             <span className="text-2xl sm:text-4xl font-bold text-text-primary tracking-tight font-mono">{totalSessions}</span>
-            <span className="text-xs sm:text-sm font-semibold text-text-secondary mb-0.5 sm:mb-1">Avg. {avgDuration}</span>
+            <span className="text-xs sm:text-sm font-semibold text-text-secondary mb-0.5 sm:mb-1">{t('avg_duration')} {avgDuration}</span>
           </div>
           <div className="mt-auto pt-4 border-t border-border-theme flex justify-between">
-            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(data.dailyRevenue / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /> / session</span>
-            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><span className="text-text-primary font-bold">{data.completedSessions.length}</span> finished</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><PrivacyText value={data.completedSessions.length > 0 ? Math.round(data.dailyRevenue / data.completedSessions.length) : 0} isPrivacyMode={isPrivacyMode} /> / {t('sessions')}</span>
+            <span className="text-[10px] sm:text-xs text-text-secondary font-medium"><span className="text-text-primary font-bold">{data.completedSessions.length}</span> {t('finished')}</span>
           </div>
         </div>
       </div>
@@ -1815,11 +2154,11 @@ function DashboardContent() {
           <div className="p-5 flex justify-between items-center border-b border-border-theme bg-bg-primary/50">
             <div className="flex items-center gap-3">
               <IconBookings />
-              <h3 className="text-lg font-bold">Upcoming <span className="text-accent text-sm font-normal">Bookings</span></h3>
+              <h3 className="text-lg font-bold">{t('upcoming_bookings')}</h3>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
-              <span className="text-[10px] text-accent font-bold uppercase tracking-widest">Live Sync</span>
+              <span className="text-[10px] text-accent font-bold uppercase tracking-widest">{t('live')}</span>
             </div>
           </div>
           
@@ -1829,7 +2168,7 @@ function DashboardContent() {
               if (upcoming.length === 0) {
                 return (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-70">
-                    <p className="text-text-secondary text-sm">Ready to grow your business? Schedule your first booking today.</p>
+                    <p className="text-text-secondary text-sm">{t('schedule_booking_empty')}</p>
                   </div>
                 );
               }
@@ -1851,7 +2190,7 @@ function DashboardContent() {
                   <div className="flex justify-between items-center mt-3">
                     <span className="text-xs font-bold text-accent">{formatTimeReadable(booking.start_time, true, booking.booking_date)} • {booking.duration_minutes}m</span>
                     <div className="flex gap-2">
-                      <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-2 py-1 rounded border border-danger/50 text-danger text-[10px] font-bold uppercase hover:bg-danger/10">No Show</button>
+                      <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-2 py-1 rounded border border-danger/50 text-danger text-[10px] font-bold uppercase hover:bg-danger/10">{t('no_show')}</button>
                       {(() => {
                         const isOccupied = data?.activeSessions?.some((s: any) => s.table_id === booking.table_id);
                         return (
@@ -1861,7 +2200,7 @@ function DashboardContent() {
                             title={isOccupied ? "Table is currently occupied" : "Start Session"}
                             className={`px-3 py-1 rounded text-white text-[10px] font-bold uppercase shadow-lg ${isOccupied ? 'bg-gray-500 cursor-not-allowed opacity-50' : 'bg-accent hover:bg-accent/90 shadow-accent/20'}`}
                           >
-                            {isOccupied ? 'Occupied' : 'Start'}
+                            {isOccupied ? t('occupied') : t('start')}
                           </button>
                         );
                       })()}
@@ -1918,11 +2257,11 @@ function DashboardContent() {
            <div className="p-5 flex justify-between items-center border-b border-border-theme bg-bg-primary/50">
              <div className="flex items-center gap-3">
                <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-               <h3 className="text-lg font-bold">Live Food <span className="text-accent text-sm font-normal">Orders</span></h3>
+               <h3 className="text-lg font-bold">{t('live_food_orders')}</h3>
              </div>
              <div className="flex items-center gap-2">
                <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_5px_rgba(141,213,182,0.8)]"></div>
-               <span className="text-[10px] text-accent font-bold uppercase tracking-widest">Live Sync</span>
+               <span className="text-[10px] text-accent font-bold uppercase tracking-widest">{t('live')}</span>
              </div>
            </div>
            
@@ -1932,7 +2271,7 @@ function DashboardContent() {
                if (orders.length === 0) {
                  return (
                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-70">
-                     <p className="text-text-secondary text-sm">No active food orders. Orders placed via QR menu will appear here.</p>
+                     <p className="text-text-secondary text-sm">{t('no_food_orders')}</p>
                    </div>
                  );
                }
@@ -1961,9 +2300,27 @@ function DashboardContent() {
                           }
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-accent">₹{total}</div>
-                        <div className="text-[10px] text-text-secondary mt-1">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' })}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-accent">₹{total}</div>
+                          <div suppressHydrationWarning className="text-[10px] text-text-secondary mt-1">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' })}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOrderToDelete(order)}
+                          disabled={deletingOrderId === order.id}
+                          title={t('delete_food_order', 'Delete Order')}
+                          aria-label={t('delete_food_order', 'Delete Order')}
+                          className="p-2 text-text-secondary hover:text-red-400 hover:bg-red-500/10 active:scale-95 border border-transparent hover:border-red-500/20 rounded-lg transition-all flex items-center justify-center shrink-0 disabled:opacity-50"
+                        >
+                          {deletingOrderId === order.id ? (
+                            <svg className="w-4 h-4 animate-spin text-red-400" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
                     </div>
                   );
@@ -2215,7 +2572,7 @@ function DashboardContent() {
         <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col p-8">
           <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-bold">Revenue Reports</h2>
+              <h2 className="text-2xl font-bold">{t('reports')}</h2>
               <p className="text-text-secondary mt-1 text-sm">Download your billing data synchronized from Google Sheets.</p>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
@@ -2242,7 +2599,7 @@ function DashboardContent() {
             </div>
             
             <div className="bg-bg-surface border border-border-theme p-6 rounded-xl flex flex-col justify-center items-center text-center">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Completed Sessions</p>
+              <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('completed_sessions')}</p>
               <p className="text-3xl font-bold text-text-primary font-mono">{revenueKpis?.totalSessions || 0}</p>
             </div>
             
@@ -2263,9 +2620,9 @@ function DashboardContent() {
           <EnhancedTableView
             layoutToggleNode={
               <div className="flex items-center gap-2 bg-bg-card border border-border-theme p-1 rounded-lg shadow-sm">
-                 <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">Layout</span>
-                 <button onClick={() => handleUpdatePreference('enhanced_tables', false)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-text-primary">Standard</button>
-                 <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-accent text-black shadow-sm pointer-events-none">Premium</button>
+                 <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">{t('layout', 'Layout')}</span>
+                 <button onClick={() => handleUpdatePreference('enhanced_tables', false)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-text-primary">{t('standard', 'Standard')}</button>
+                 <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-accent text-black shadow-sm pointer-events-none">{t('premium', 'Premium')}</button>
               </div>
             }
             tables={data.tables || []}
@@ -2281,7 +2638,7 @@ function DashboardContent() {
             formatINR={formatINR}
             paymentQrConfig={(data as any)?.payment_qr_config}
             onIntervention={handleIntervention}
-            onEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
+            onEndSession={(session, cost, duration, breakdown) => setEndSessionData({ session, cost, duration, breakdown, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
             onRefresh={fetchData}
             onStartSession={(tableId, gameType) => {
               setManualTable(tableId);
@@ -2309,9 +2666,9 @@ function DashboardContent() {
     <div className="flex flex-col gap-4 mt-2">
       <div className="flex justify-end">
          <div className="flex items-center gap-2 bg-bg-card border border-border-theme p-1 rounded-lg shadow-sm">
-            <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">Layout</span>
-            <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-bg-surface text-text-primary border border-border-theme shadow-sm pointer-events-none">Standard</button>
-            <button onClick={() => handleUpdatePreference('enhanced_tables', true)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-accent">Premium</button>
+            <span className="text-[10px] uppercase font-bold text-text-secondary px-2 tracking-widest">{t('layout', 'Layout')}</span>
+            <button className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors bg-bg-surface text-text-primary border border-border-theme shadow-sm pointer-events-none">{t('standard', 'Standard')}</button>
+            <button onClick={() => handleUpdatePreference('enhanced_tables', true)} className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-bold transition-colors text-text-secondary hover:text-accent">{t('premium', 'Premium')}</button>
          </div>
       </div>
       
@@ -2320,12 +2677,12 @@ function DashboardContent() {
           <div>
             <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
               <div className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_8px_rgba(var(--accent-color),0.8)]"></div>
-              Live Active Tables
+              {t('live_active_tables', 'Live Active Tables')}
             </h3>
           </div>
           <div className="text-right">
              <p className="text-sm font-bold font-mono text-accent bg-accent/10 px-3 py-1.5 rounded-lg border border-accent/20 shadow-inner">
-               Total Open: <LiveTotalOpenCounter activeSessions={data.activeSessions} pricingRules={data.pricingRules} currentDiscounts={currentDiscounts} activePromotions={data?.activePromotions || []} />
+               {t('total_open', 'Total Open')}: <LiveTotalOpenCounter activeSessions={data.activeSessions} pricingRules={data.pricingRules} currentDiscounts={currentDiscounts} activePromotions={data?.activePromotions || []} />
              </p>
           </div>
         </div>
@@ -2334,17 +2691,17 @@ function DashboardContent() {
           <table className="w-full text-left border-collapse min-w-[900px]">
             <thead className="sticky top-0 z-10 bg-bg-primary shadow-sm">
               <tr className="text-[11px] font-extrabold text-text-secondary uppercase tracking-widest border-b border-border-theme">
-                <th className="p-4 md:p-5">Table</th>
-                <th className="p-4 md:p-5">Client</th>
-                <th className="p-4 md:p-5">Timer</th>
-                <th className="p-4 md:p-5">Status</th>
-                <th className="p-4 md:p-5">Amount</th>
-                <th className="p-4 md:p-5 text-right">Actions</th>
+                <th className="p-4 md:p-5">{t('table', 'Table')}</th>
+                <th className="p-4 md:p-5">{t('client', 'Client')}</th>
+                <th className="p-4 md:p-5">{t('timer', 'Timer')}</th>
+                <th className="p-4 md:p-5">{t('status', 'Status')}</th>
+                <th className="p-4 md:p-5">{t('amount', 'Amount')}</th>
+                <th className="p-4 md:p-5 text-right">{t('actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {data.activeSessions.length === 0 ? (
-                <tr><td colSpan={6} className="p-12 text-center text-text-secondary text-base">Your business is ready. Assign a customer to a table to start tracking.</td></tr>
+                <tr><td colSpan={6} className="p-12 text-center text-text-secondary text-base">{t('business_ready_empty', 'Your business is ready. Assign a customer to a table to start tracking.')}</td></tr>
               ) : (
                 data.activeSessions.map(session => (
                   <LiveSessionRow preferences={preferences} 
@@ -2358,7 +2715,7 @@ function DashboardContent() {
                     toReadableIST={toReadableIST}
                     isPrivacyMode={isPrivacyMode}
                     formatINR={formatINR}
-                    onRequestEndSession={(session, cost, duration) => setEndSessionData({ session, cost, duration, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
+                    onRequestEndSession={(session, cost, duration, breakdown) => setEndSessionData({ session, cost, duration, breakdown, amountReceived: String(cost), paymentMode: 'now', dueDate: '', paymentMethodOption: 'Cash' })}
                     getDisplayName={getDisplayName}
                   />
                 ))
@@ -2373,7 +2730,7 @@ function DashboardContent() {
         <div className="p-4 md:p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center flex-wrap gap-4">
           <h3 className="text-xl font-bold flex items-center gap-2 text-text-primary">
             <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            Completed Sessions
+            {t('completed_sessions', 'Completed Sessions')}
           </h3>
           <div className="flex items-center gap-3">
             <input 
@@ -2733,8 +3090,76 @@ function DashboardContent() {
   const renderSettings = () => (
     <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4 pb-20">
       <div className="mb-2">
-        <h1 className="text-3xl font-black tracking-tight mb-2">Settings</h1>
-        <p className="text-text-secondary text-sm">Configure your business profile, pricing rules, and security preferences.</p>
+        <h1 className="text-3xl font-black tracking-tight mb-2">{t('settings', 'Settings')}</h1>
+        <p className="text-text-secondary text-sm">Configure your business profile, language preferences, pricing rules, and security preferences.</p>
+      </div>
+
+      {/* Language & Regional Preferences */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2.5">
+              <span>🌐</span> {t('language', 'Language')} & Regional Preferences
+            </h2>
+            <p className="text-text-secondary text-sm mt-1">
+              Choose your preferred interface language. Changes reflect across the dashboard and bot immediately.
+            </p>
+          </div>
+          <FancyLanguageToggle />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={() => setLanguage('en')}
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+              language === 'en'
+                ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
+                : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-lg font-bold text-text-primary">English</span>
+              {language === 'en' && <span className="text-accent text-xs font-bold bg-accent/20 px-2 py-0.5 rounded-full">Active</span>}
+            </div>
+            <p className="text-xs text-text-secondary">Standard English interface across all tabs, reports, and controls.</p>
+            <span className="text-xs font-mono font-bold text-accent mt-3">EN</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setLanguage('hi')}
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+              language === 'hi'
+                ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
+                : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-lg font-bold text-text-primary">हिंदी</span>
+              {language === 'hi' && <span className="text-accent text-xs font-bold bg-accent/20 px-2 py-0.5 rounded-full">सक्रिय</span>}
+            </div>
+            <p className="text-xs text-text-secondary">हिंदी इंटरफ़ेस — बिलिंग, टेबल, बुकिंग और खाता प्रबंधन।</p>
+            <span className="text-xs font-mono font-bold text-accent mt-3">हिं (Hindi)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setLanguage('mr')}
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+              language === 'mr'
+                ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
+                : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-lg font-bold text-text-primary">मराठी</span>
+              {language === 'mr' && <span className="text-accent text-xs font-bold bg-accent/20 px-2 py-0.5 rounded-full">सक्रिय</span>}
+            </div>
+            <p className="text-xs text-text-secondary">मराठी इंटरफेस — टेबल्स, सेशन्स, क्यू-खाते व बिलिंग नियंत्रण।</p>
+            <span className="text-xs font-mono font-bold text-accent mt-3">मरा (Marathi)</span>
+          </button>
+        </div>
       </div>
 
       {/* Business Profile Configuration */}
@@ -2799,7 +3224,7 @@ function DashboardContent() {
               Google Sheets Database
             </h2>
             <p className="text-text-secondary text-sm mt-1">
-              Connect a Google Sheet to sync all your active sessions, activity logs, and financial records in real-time.
+              Connect a Google Sheet to sync all your operational sessions, member records, bookings, and F&B orders in real-time.
             </p>
           </div>
           {data?.google_sheet_id && (
@@ -2829,28 +3254,57 @@ function DashboardContent() {
               {isUpdatingConfig ? 'Saving...' : 'Connect Sheet'}
             </button>
             {data?.google_sheet_id && (
-              <button 
-                type="button"
-                disabled={isUpdatingConfig}
-                onClick={async () => {
-                  if(!businessId || !data?.google_sheet_id) return;
-                  const toastId = toast.loading('Refreshing sheet structure without overwriting data...');
-                  try {
-                    const res = await fetch('/api/update-business-config', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ business_id: businessId, action: 'refresh_sheet_structure', google_sheet_id: data.google_sheet_id })
-                    });
-                    if(!res.ok) throw new Error('Failed to refresh structure');
-                    toast.success('Sheet structure restored successfully!', { id: toastId });
-                  } catch(e) {
-                    toast.error('Error refreshing structure.', { id: toastId });
-                  }
-                }}
-                className="flex-1 bg-bg-primary text-text-primary border border-border-light font-bold py-3 rounded-lg hover-lift smooth-transition hover:border-accent transition-colors disabled:opacity-50"
-              >
-                Refresh Sheet Structure
-              </button>
+              <>
+                <button 
+                  type="button"
+                  disabled={isUpdatingConfig}
+                  onClick={async () => {
+                    if(!businessId || !data?.google_sheet_id) return;
+                    const toastId = toast.loading('Refreshing sheet structure without overwriting data...');
+                    try {
+                      const res = await fetch('/api/update-business-config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ business_id: businessId, action: 'refresh_sheet_structure', google_sheet_id: data.google_sheet_id })
+                      });
+                      if(!res.ok) throw new Error('Failed to refresh structure');
+                      toast.success('Sheet structure restored successfully!', { id: toastId });
+                    } catch(e) {
+                      toast.error('Error refreshing structure.', { id: toastId });
+                    }
+                  }}
+                  className="flex-1 bg-bg-primary text-text-primary border border-border-light font-bold py-3 rounded-lg hover-lift smooth-transition hover:border-accent transition-colors disabled:opacity-50 text-xs"
+                >
+                  Refresh Structure
+                </button>
+                <button 
+                  type="button"
+                  disabled={isUpdatingConfig}
+                  onClick={async () => {
+                    if(!businessId || !data?.google_sheet_id) return;
+                    const defaultMonth = new Date().toISOString().substring(0, 7);
+                    const promptMonth = window.prompt("Enter month to reconcile (YYYY-MM):", defaultMonth);
+                    if (!promptMonth) return;
+                    const toastId = toast.loading(`Reconciling ${promptMonth} with Google Sheets...`);
+                    try {
+                      const res = await fetch('/api/sheets/reconcile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ business_id: businessId, month: promptMonth.trim() })
+                      });
+                      const json = await res.json();
+                      if(!res.ok || !json.success) throw new Error(json.error || 'Reconciliation failed');
+                      const r = json.report;
+                      toast.success(`Reconciled: ${r.totalDbSessions} sessions (${r.createdInSheet} added, ${r.updatedInSheet} updated, ${r.ordersSynced} F&B orders synced)`, { id: toastId, duration: 6000 });
+                    } catch(e: any) {
+                      toast.error(`Reconciliation error: ${e.message}`, { id: toastId });
+                    }
+                  }}
+                  className="flex-1 bg-accent/10 text-accent border border-accent/20 font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/20 transition-colors disabled:opacity-50 text-xs"
+                >
+                  Reconcile Month
+                </button>
+              </>
             )}
           </div>
           <div className="mt-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
@@ -2913,10 +3367,12 @@ function DashboardContent() {
                     body: JSON.stringify({ business_id: businessId, goals })
                   });
                   if (res.ok) {
-                    // fetchData removed
-              toast.success('✓ Settings updated.');
+                    toast.success('✓ Settings updated.');
+                  } else {
+                    const errJson = await res.json().catch(() => ({}));
+                    toast.error(errJson.error || "Failed to save goals.");
                   }
-                } catch(err) { toast.error("We couldn't complete your request. Please try again."); }
+                } catch(err: any) { toast.error(err?.message || "Failed to save goals."); }
               }} className="max-w-md flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
@@ -3526,40 +3982,298 @@ function DashboardContent() {
                 </div>
               )}
             </div>
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-              <h2 className="text-2xl font-bold mb-6">Manual Table Discounts</h2>
-              <form onSubmit={handleApplyDiscount} className="max-w-md flex flex-col gap-4">
-                <CustomSelect 
-                  value={selectedTable}
-                  onChange={v => setSelectedTable(v)}
-                  placeholder="-- Select Table --"
-                  options={data.tables?.map(t => ({value: t.id, label: t.name})) || []}
-                  className="font-semibold"
-                />
-                <input 
-                  type="number" 
-                  min="1" max="100"
-                  value={discountPercent}
-                  onChange={e => setDiscountPercent(e.target.value)}
-                  className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
-                  placeholder="Discount %"
-                  required
-                />
-                <button type="submit" disabled={!selectedTable || isUpdatingDiscount} className="w-full bg-accent text-bg-primary font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity shadow-lg disabled:opacity-50">
-                  {isUpdatingDiscount ? 'Applying...' : 'Apply Manual Discount'}
-                </button>
-              </form>
-              
-              <div className="mt-6 flex flex-wrap gap-2">
-                {Object.entries(data.activeDiscounts || {}).map(([tableId, discount]) => (
-                  <div key={tableId} className="flex items-center gap-2 bg-bg-surface px-3 py-1.5 rounded-lg border border-border-theme text-xs">
-                    <span className="font-bold text-accent">{tableId}</span> 
-                    <span className="text-text-secondary">| {discount.percent}% Off</span>
-                    <button onClick={() => handleRemoveDiscount(tableId)} className="ml-1 text-danger hover:text-danger/80">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 md:p-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-border-theme">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 rounded-lg bg-accent/10 text-accent">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                    </span>
+                    <h2 className="text-xl md:text-2xl font-bold text-text-primary">Discounts & Table Concessions</h2>
                   </div>
-                ))}
+                  <p className="text-xs md:text-sm text-text-secondary mt-1">Configure percentage or flat rupee discounts per table or club-wide. Automatically calculated by the server billing engine.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Form Column */}
+                <form onSubmit={handleApplyDiscount} className="lg:col-span-7 flex flex-col gap-4">
+                  {/* Table Selection */}
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Eligible Table <span className="text-danger">*</span></label>
+                    <CustomSelect 
+                      value={selectedTable}
+                      onChange={v => setSelectedTable(v)}
+                      placeholder="-- Select Table or All Tables --"
+                      options={[
+                        { value: 'all', label: '🌟 All Tables (Global Concession)' },
+                        ...(data.tables?.map(t => ({ value: t.id, label: `${t.name} (${t.type.toUpperCase()})` })) || [])
+                      ]}
+                      className="font-semibold"
+                    />
+                  </div>
+
+                  {/* Discount Type Selector */}
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Discount Type <span className="text-danger">*</span></label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('percentage')}
+                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                          discountType === 'percentage' 
+                            ? 'bg-accent/20 border-accent text-accent shadow-sm' 
+                            : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'
+                        }`}
+                      >
+                        <span>%</span> Percentage Discount
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType('fixed')}
+                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                          discountType === 'fixed' 
+                            ? 'bg-accent/20 border-accent text-accent shadow-sm' 
+                            : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'
+                        }`}
+                      >
+                        <span>₹</span> Fixed Rupee Amount
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Value Inputs */}
+                  {discountType === 'percentage' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Discount Percent (%) <span className="text-danger">*</span></label>
+                        <div className="relative">
+                          <input 
+                            type="number" 
+                            min="1" max="100"
+                            value={discountPercent}
+                            onChange={e => setDiscountPercent(e.target.value)}
+                            className="w-full pl-4 pr-8 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono font-bold"
+                            placeholder="e.g. 20"
+                            required
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs font-bold">%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Max Discount Cap (₹) <span className="text-text-disabled font-normal text-[10px]">(Optional)</span></label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs font-bold">₹</span>
+                          <input 
+                            type="number" 
+                            min="1"
+                            value={maxDiscountCap}
+                            onChange={e => setMaxDiscountCap(e.target.value)}
+                            className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                            placeholder="e.g. 100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Flat Discount Amount (₹) <span className="text-danger">*</span></label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs font-bold">₹</span>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={discountFixedAmount}
+                          onChange={e => setDiscountFixedAmount(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono font-bold"
+                          placeholder="e.g. 50"
+                          required
+                        />
+                      </div>
+                      <p className="text-[11px] text-text-secondary mt-1">Discount automatically caps at bill amount to prevent negative totals.</p>
+                    </div>
+                  )}
+
+                  {/* Rules: Min Bill & Scope */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Min Bill Required (₹) <span className="text-text-disabled font-normal text-[10px]">(Optional)</span></label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs font-bold">₹</span>
+                        <input 
+                          type="number" 
+                          min="0"
+                          value={minBillAmount}
+                          onChange={e => setMinBillAmount(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                          placeholder="e.g. 200"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Discount Label / Reason <span className="text-text-disabled font-normal text-[10px]">(Optional)</span></label>
+                      <input 
+                        type="text" 
+                        value={discountLabel}
+                        onChange={e => setDiscountLabel(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                        placeholder="e.g. Happy Hour / VIP"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Apply to Food Checkbox */}
+                  <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                    <label className="flex items-center gap-3 cursor-pointer text-xs font-semibold text-text-primary select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={applyToFood} 
+                        onChange={e => setApplyToFood(e.target.checked)} 
+                        className="w-4 h-4 rounded accent-accent cursor-pointer"
+                      />
+                      <span>Apply discount to Food & Beverages orders as well</span>
+                    </label>
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    disabled={!selectedTable || isUpdatingDiscount} 
+                    className="w-full bg-accent text-bg-primary font-black py-3 rounded-xl hover:opacity-95 transition-opacity shadow-lg shadow-accent/10 disabled:opacity-50 text-sm mt-1"
+                  >
+                    {isUpdatingDiscount ? 'Applying Concession...' : 'Apply Table Discount'}
+                  </button>
+                </form>
+
+                {/* Live Preview Column */}
+                <div className="lg:col-span-5 flex flex-col">
+                  {(() => {
+                    const sampleTableCost = 200;
+                    const sampleFoodCost = applyToFood ? 100 : 0;
+                    const previewConfig = {
+                      type: discountType,
+                      percent: discountType === 'percentage' ? Number(discountPercent) || 0 : undefined,
+                      amount: discountType === 'fixed' ? Number(discountFixedAmount) || 0 : undefined,
+                      maxDiscount: maxDiscountCap ? Number(maxDiscountCap) : undefined,
+                      minBillAmount: minBillAmount ? Number(minBillAmount) : undefined,
+                      applyToFood,
+                      isActive: true,
+                    };
+                    const previewRes = applySessionDiscounts(sampleTableCost, sampleFoodCost, previewConfig);
+                    const sampleTotalBase = sampleTableCost + sampleFoodCost;
+                    return (
+                      <div className="h-full bg-bg-primary rounded-xl border border-border-theme p-5 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between pb-3 border-b border-border-theme">
+                            <span className="text-xs font-bold text-accent uppercase tracking-wider flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
+                              Live Calculation Preview
+                            </span>
+                            <span className="text-[10px] text-text-secondary bg-bg-surface px-2 py-0.5 rounded border border-border-theme font-mono">Sample Bill</span>
+                          </div>
+
+                          <div className="mt-4 space-y-2 text-xs">
+                            <div className="flex justify-between text-text-secondary">
+                              <span>Base Table Fee:</span>
+                              <span className="font-mono text-text-primary">₹{sampleTableCost}</span>
+                            </div>
+                            {applyToFood && (
+                              <div className="flex justify-between text-text-secondary">
+                                <span>F&B Orders:</span>
+                                <span className="font-mono text-text-primary">₹{sampleFoodCost}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-text-secondary">
+                              <span>Total Eligible Bill:</span>
+                              <span className="font-mono font-bold text-text-primary">₹{sampleTotalBase}</span>
+                            </div>
+                            
+                            <div className="border-t border-border-theme/60 my-2"></div>
+
+                            <div className="flex justify-between text-success font-bold">
+                              <span>Discount Applied:</span>
+                              <span className="font-mono">- ₹{previewRes.totalDiscountAmount}</span>
+                            </div>
+                            {previewRes.totalDiscountAmount > 0 && (
+                              <p className="text-[10px] text-text-secondary text-right italic font-mono">{previewRes.discountAppliedLabel}</p>
+                            )}
+
+                            {previewRes.minBillShortfall && previewRes.minBillShortfall > 0 ? (
+                              <div className="mt-2 p-2 rounded bg-warning/10 border border-warning/30 text-[11px] text-warning leading-snug">
+                                ⚠️ Sample bill (₹{sampleTotalBase}) is below the ₹{minBillAmount} minimum threshold. Concession will not trigger until threshold is reached.
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-border-theme flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Final Payable</span>
+                          <span className="text-2xl font-black font-mono text-accent">₹{previewRes.finalTotalCost}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Active Discounts List */}
+              <div className="mt-8 pt-6 border-t border-border-theme">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-text-secondary">
+                    Active Table Discounts ({Object.keys(data.activeDiscounts || {}).length})
+                  </h3>
+                  {Object.keys(data.activeDiscounts || {}).length > 1 && (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to remove all active discounts?')) {
+                          handleRemoveDiscount('all');
+                        }
+                      }}
+                      className="text-xs font-bold text-danger hover:underline"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {Object.keys(data.activeDiscounts || {}).length === 0 ? (
+                  <div className="text-center py-6 border border-dashed border-border-theme rounded-xl text-text-disabled text-xs">
+                    No discounts currently active. Select a table above to apply an instant concession.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {Object.entries(data.activeDiscounts || {}).map(([tableId, discount]: [string, any]) => {
+                      const isFixed = discount.type === 'fixed' || (discount.amount && !discount.percent);
+                      const tableName = tableId === 'all' ? 'All Tables' : (data.tables?.find(t => t.id === tableId)?.name || tableId);
+                      return (
+                        <div key={tableId} className="flex items-center justify-between bg-bg-surface p-3 rounded-xl border border-border-theme text-xs shadow-sm group hover:border-accent/40 transition-colors">
+                          <div className="flex flex-col gap-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-text-primary truncate">{tableName}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-accent/10 text-accent border border-accent/20">
+                                {isFixed ? `Flat ₹${discount.amount}` : `${discount.percent}% OFF`}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1 text-[10px] text-text-secondary">
+                              <span>{discount.applyToFood ? 'Table + F&B' : 'Table Only'}</span>
+                              {discount.maxDiscount ? <span>• Max ₹{discount.maxDiscount}</span> : null}
+                              {discount.minBillAmount ? <span>• Min ₹{discount.minBillAmount}</span> : null}
+                              {discount.label ? <span className="text-accent truncate">• {discount.label}</span> : null}
+                            </div>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveDiscount(tableId)} 
+                            title={`Remove discount for ${tableName}`}
+                            className="p-1.5 text-text-disabled hover:text-danger hover:bg-danger/10 rounded-lg transition-colors shrink-0 ml-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3717,37 +4431,37 @@ function DashboardContent() {
             <div>
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Workflow Features</h3>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.require_customer_name} onChange={(e) => handleUpdatePreference('require_customer_name', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean(preferences.require_customer_name)} onChange={(e) => handleUpdatePreference('require_customer_name', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Require Customer Name for Sessions</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.enable_memberships} onChange={(e) => handleUpdatePreference('enable_memberships', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean(preferences.enable_memberships)} onChange={(e) => handleUpdatePreference('enable_memberships', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Enable Memberships System</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.enable_qkhata} onChange={(e) => handleUpdatePreference('enable_qkhata', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean(preferences.enable_qkhata)} onChange={(e) => handleUpdatePreference('enable_qkhata', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Enable QKhata (Credit) System</span>
               </label>
             </div>
             <div>
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Display Preferences</h3>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.show_pricing_on_dashboard} onChange={(e) => handleUpdatePreference('show_pricing_on_dashboard', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean(preferences.show_pricing_on_dashboard)} onChange={(e) => handleUpdatePreference('show_pricing_on_dashboard', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Live Pricing on Active Sessions</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={(preferences as any).auto_qr_billing !== false} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean((preferences as any).auto_qr_billing !== false)} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show QR Billing Popup automatically when session ends</span>
               </label>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={preferences.show_member_details} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean(preferences.show_member_details)} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Member Details in Tables</span>
               </label>
             </div>
             <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Table Experience</h3>
               <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                <input type="checkbox" checked={(preferences as any).enhanced_tables} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
+                <input type="checkbox" checked={Boolean((preferences as any).enhanced_tables ?? false)} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <div>
                    <span className="text-sm font-bold text-text-primary">Enhanced Table View</span>
                    <p className="text-xs text-text-secondary">Use the new interactive 3D table interface.</p>
@@ -4163,7 +4877,7 @@ function DashboardContent() {
                         </span>
                         <div className="flex items-center gap-3 text-xs text-text-secondary font-mono">
                           <span>ID: {owner.chatId}</span>
-                          {owner.addedAt && <span className="opacity-60">• Added {new Date(owner.addedAt).toLocaleDateString()}</span>}
+                          {owner.addedAt && <span suppressHydrationWarning className="opacity-60">• Added {new Date(owner.addedAt).toLocaleDateString()}</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -4314,200 +5028,74 @@ function DashboardContent() {
   );
   return (
     <div className="flex h-screen bg-bg-primary text-text-primary overflow-hidden font-sans">
-      {/* End Session Modal */}
-      {endSessionData && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setEndSessionData(null)}>
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-entrance" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-danger/10 border-b border-danger/20 p-5">
-              <h3 className="text-xl font-bold flex items-center gap-3 text-danger">
-                End Session
-              </h3>
-              <p className="text-sm text-text-secondary mt-1">Finalize bill for {getDisplayName(endSessionData.session.customer_name, endSessionData.session.member_id)}</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
-                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Table</span>
-                <span className="font-mono font-bold text-lg bg-bg-surface px-3 py-1 rounded-lg border border-border-theme">{endSessionData.session.table_id}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
-                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Duration</span>
-                <span className="font-mono font-bold text-lg text-text-primary">{endSessionData.duration}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-border-theme/50 pb-3">
-                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Total Bill</span>
-                <div className="text-right">
-                  <span className="text-xl font-black text-accent">{formatINR(endSessionData.cost)}</span>
-                  {endSessionData.splitWays && endSessionData.splitWays > 1 && (
-                     <div className="text-xs text-text-secondary mt-1 font-semibold bg-bg-surface px-2 py-1 rounded-md border border-border-theme inline-block">
-                        {formatINR(endSessionData.cost / endSessionData.splitWays)} per person
-                     </div>
-                  )}
-                </div>
-              </div>
+      {/* Redesigned Session Completion / Payment Modal */}
+      <SessionCompletionModal
+        isOpen={Boolean(endSessionData)}
+        data={endSessionData}
+        pricingRules={data?.pricingRules}
+        preferences={preferences}
+        customerByPhoneMap={customerByPhoneMap}
+        customerByNameMap={customerByNameMap}
+        customerByIdMap={customerByIdMap}
+        membershipByIdMap={membershipByIdMap}
+        getDisplayName={getDisplayName}
+        onClose={() => setEndSessionData(null)}
+        onConfirm={async ({ isCredit, dueDate, isSplit, amountPaid, paymentMethod, splitPayments }) => {
+          if (!endSessionData) return false;
 
-              <div className="flex items-center justify-between border-b border-border-theme/50 pb-3">
-                <span className="text-sm text-text-secondary font-bold tracking-widest uppercase">Split Bill</span>
-                <div className="flex bg-bg-surface border border-border-theme rounded-lg overflow-hidden">
-                  {[1, 2, 3, 4, 5].map(ways => (
-                    <button
-                      key={ways}
-                      onClick={() => setEndSessionData({...endSessionData, splitWays: ways})}
-                      className={`px-3 py-1 text-xs font-bold transition-colors ${
-                        (endSessionData.splitWays || 1) === ways 
-                          ? 'bg-text-primary text-bg-primary' 
-                          : 'text-text-secondary hover:bg-bg-primary hover:text-text-primary'
-                      } ${ways !== 5 ? 'border-r border-border-theme/50' : ''}`}
-                    >
-                      {ways === 1 ? 'No' : `${ways} Ways`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Payment Mode Toggle (Only for Members) */}
-              {!!endSessionData.session.member_id && (
-                <div className="flex gap-2 p-1 bg-bg-primary rounded-xl mt-4">
-                  <button 
-                    onClick={() => setEndSessionData({...endSessionData, paymentMode: 'now'})}
-                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${endSessionData.paymentMode === 'now' ? 'bg-bg-card text-accent shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
-                  >
-                    Pay Now
-                  </button>
-                  <button 
-                    onClick={() => setEndSessionData({...endSessionData, paymentMode: 'credit'})}
-                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${endSessionData.paymentMode === 'credit' ? 'bg-warning/20 text-warning shadow-sm border border-warning/30' : 'text-text-secondary hover:text-warning/70'}`}
-                  >
-                    Play on Credit (QKhata)
-                  </button>
-                </div>
-              )}
+          try {
+            if (isCredit) {
+              const res = await handleIntervention('force_end', endSessionData.session.id, 0, undefined, 'QKhata', dueDate);
+              if (res) {
+                setEndSessionData(null);
+                if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                  setOverdueSession(null);
+                }
+                return true;
+              }
+              return false;
+            }
 
-              {endSessionData.paymentMode === 'now' ? (
-                <div>
-                  <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Amount Received (₹)</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
-                    <input 
-                      type="number" 
-                      value={endSessionData.amountReceived}
-                      onChange={(e) => setEndSessionData({...endSessionData, amountReceived: e.target.value})}
-                      className="w-full pl-8 pr-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-lg font-mono tabular-nums text-text-primary input-premium [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                      placeholder={String(endSessionData.cost)}
-                    />
-                  </div>
-                  <p className="text-xs text-text-secondary mt-2 mb-4">Edit this if the customer is paying a different amount. The remaining balance goes to QKhata.</p>
-                  <label className="block text-sm font-bold tracking-widest uppercase text-text-secondary mb-2">Payment Method</label>
-                  <select 
-                    value={endSessionData.paymentMethodOption || 'Cash'}
-                    onChange={(e) => setEndSessionData({...endSessionData, paymentMethodOption: e.target.value})}
-                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary mb-2 focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="UPI">UPI</option>
-                    <option value="Card">Card</option>
-                    <option value="Other">Other</option>
-                  </select>
+            if (isSplit) {
+              const res = await handleIntervention('force_end', endSessionData.session.id, amountPaid, undefined, 'Split', undefined, splitPayments);
+              if (res) {
+                setEndSessionData(null);
+                if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                  setOverdueSession(null);
+                }
+                return true;
+              }
+              return false;
+            }
 
-                  {(endSessionData.paymentMethodOption === 'Cash' || !endSessionData.paymentMethodOption) && (
-                    <div className="mt-4 p-4 bg-bg-surface border border-border-theme rounded-xl animate-in fade-in slide-in-from-top-2">
-                      <label className="block text-xs font-bold tracking-widest uppercase text-text-secondary mb-2 flex justify-between">
-                        <span>Cash Tendered (₹)</span>
-                        <span className="text-accent cursor-pointer hover:underline" onClick={() => setEndSessionData({...endSessionData, cashTendered: String(endSessionData.amountReceived)})}>Exact Amount</span>
-                      </label>
-                      <div className="relative mb-3">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary font-bold">₹</span>
-                        <input 
-                          type="number" 
-                          value={endSessionData.cashTendered || ''}
-                          onChange={(e) => setEndSessionData({...endSessionData, cashTendered: e.target.value})}
-                          className="w-full pl-8 pr-4 py-2 bg-bg-primary border border-border-theme rounded-lg outline-none text-base font-mono tabular-nums text-text-primary"
-                          placeholder="e.g. 500"
-                        />
-                      </div>
-                      <div className="flex justify-between items-center pt-3 border-t border-border-theme/50">
-                        <span className="text-xs font-bold uppercase tracking-widest text-text-secondary">Change Due</span>
-                        <span className={`text-lg font-black font-mono ${
-                          (Number(endSessionData.cashTendered || 0) - Number(endSessionData.amountReceived)) > 0 
-                            ? 'text-success' 
-                            : 'text-text-secondary'
-                        }`}>
-                          {endSessionData.cashTendered && Number(endSessionData.cashTendered) > 0 
-                            ? formatINR(Math.max(0, Number(endSessionData.cashTendered) - Number(endSessionData.amountReceived)))
-                            : '₹0'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="p-4 border border-warning/30 bg-warning/5 rounded-xl space-y-3">
-                  <div>
-                    <label className="block text-sm font-bold tracking-widest uppercase text-warning mb-2">Due Date</label>
-                    <input 
-                      type="date"
-                      value={endSessionData.dueDate}
-                      onChange={(e) => setEndSessionData({...endSessionData, dueDate: e.target.value})}
-                      className="w-full px-4 py-3 bg-bg-primary border border-warning/30 rounded-xl outline-none text-sm text-text-primary input-premium"
-                    />
-                  </div>
-                  <button 
-                    onClick={() => {
-                      const member = (data?.dbCustomers || []).find((c: any) => c.name.toLowerCase() === endSessionData.session.customer_name.toLowerCase() || c.phone === endSessionData.session.customer_name);
-                      let nextCycle = new Date();
-                      if (member && member.created_at) {
-                        const regDate = new Date(member.created_at);
-                        nextCycle = new Date(nextCycle.getFullYear(), nextCycle.getMonth() + 1, regDate.getDate());
-                      } else {
-                        nextCycle.setMonth(nextCycle.getMonth() + 1);
-                      }
-                      setEndSessionData({...endSessionData, dueDate: nextCycle.toISOString().split('T')[0]});
-                    }}
-                    className="text-xs text-warning hover:underline font-semibold"
-                  >
-                    + Use Next Billing Cycle / Registration Date
-                  </button>
-                  <p className="text-[10px] text-text-secondary leading-tight mt-1">This will add ₹{endSessionData.cost} to their outstanding QKhata balance.</p>
-                </div>
-              )}
-
-              <div className="mt-8 flex gap-3">
-                <button 
-                  onClick={() => setEndSessionData(null)}
-                  className="flex-1 py-3.5 bg-bg-surface text-text-primary font-bold text-sm uppercase rounded-xl hover:bg-bg-primary transition-colors border border-border-theme"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={async () => {
-                    const isCredit = endSessionData.paymentMode === 'credit';
-                    const amountToRecord = isCredit ? 0 : (endSessionData.amountReceived === '' ? endSessionData.cost : Number(endSessionData.amountReceived));
-                    const paymentMethod = isCredit ? 'QKhata' : (endSessionData.paymentMethodOption || 'Cash');
-                    const dueDate = isCredit && endSessionData.dueDate ? endSessionData.dueDate : undefined;
-                    
-                    const res = await handleIntervention('force_end', endSessionData.session.id, amountToRecord, undefined, paymentMethod, dueDate);
-                    setEndSessionData(null);
-                    if (overdueSession && overdueSession.id === endSessionData.session.id) {
-                      setOverdueSession(null);
-                    }
-                    if (!isCredit && res?.sessionResult && (preferences as any).auto_qr_billing !== false) {
-                      setFinalQRData({
-                        table_id: endSessionData.session.table_id,
-                        game_type: endSessionData.session.game_type,
-                        cost: res.sessionResult.cost,
-                        member_id: endSessionData.session.member_id,
-                        session_id: endSessionData.session.id
-                      });
-                    }
-                  }}
-                  className={`flex-[2] py-3.5 text-white font-extrabold text-sm uppercase rounded-xl btn-premium ${endSessionData.paymentMode === 'credit' ? 'bg-warning text-black shadow-[0_4px_15px_rgba(250,204,21,0.4)]' : 'bg-danger shadow-[0_4px_15px_rgba(239,68,68,0.4)]'}`}
-                >
-                  {endSessionData.paymentMode === 'credit' ? 'Confirm QKhata' : 'Confirm & End'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            // Single Method Payment
+            const res = await handleIntervention('force_end', endSessionData.session.id, amountPaid, undefined, paymentMethod, undefined);
+            if (res) {
+              setEndSessionData(null);
+              if (overdueSession && overdueSession.id === endSessionData.session.id) {
+                setOverdueSession(null);
+              }
+              if (res?.sessionResult && (preferences as any)?.auto_qr_billing !== false) {
+                setFinalQRData({
+                  table_id: endSessionData.session.table_id,
+                  game_type: endSessionData.session.game_type,
+                  cost: res.sessionResult.cost,
+                  member_id: endSessionData.session.member_id,
+                  session_id: endSessionData.session.id
+                });
+              }
+              return true;
+            }
+            return false;
+          } catch (err: any) {
+            console.error('Session completion failed:', err);
+            toast.error(err?.message || 'Failed to complete session.');
+            return false;
+          }
+        }}
+        formatINR={formatINR}
+        t={t}
+      />
 
       {/* Final QR Modal */}
       {finalQRData && (
@@ -4533,14 +5121,17 @@ function DashboardContent() {
                     className="w-full h-full object-contain"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 text-xs text-center border-2 border-dashed border-gray-200 rounded-lg p-2 gap-2">
-                    <span className="text-lg">⚠️</span>
-                    UPI payment is not configured for this business.
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 text-xs text-center border-2 border-dashed border-gray-300 rounded-lg p-3 gap-1.5">
+                    <span className="text-2xl">⚠️</span>
+                    <span className="font-bold text-gray-800">UPI Not Configured</span>
+                    <span className="text-[10px] text-gray-500">Add business UPI ID in Settings to generate dynamic payment QR codes.</span>
                   </div>
                 )}
               </div>
               
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-2">Scan to Pay</p>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mt-2">
+                {data?.pricingRules?.globalSettings?.preferences?.business_upi_id ? 'Scan to Pay' : 'Manual Payment Recorded'}
+              </p>
               
               <div className="w-full flex flex-col gap-2 mt-4">
                 <button onClick={() => setFinalQRData(null)} className="w-full py-3 bg-[#16231E] hover:bg-[#1C2A29] text-white border border-[#274036] rounded-xl font-bold transition-colors">
@@ -4650,44 +5241,44 @@ function DashboardContent() {
 
         <nav className="flex-1 px-4 py-6 flex flex-col gap-2">
           <button onClick={() => setSidebarTab('overview')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'overview' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconOverview /> Overview
+            <IconOverview /> {t('dashboard', 'Overview')}
           </button>
           <button onClick={() => setSidebarTab('tables')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'tables' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconTables /> Tables
+            <IconTables /> {t('tables', 'Tables')}
           </button>
           <button onClick={() => setSidebarTab('bookings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'bookings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconBookings /> Bookings
+            <IconBookings /> {t('bookings', 'Bookings')}
           </button>
           {!preferences.simple_mode && (
-<button onClick={() => setSidebarTab('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'reports' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconBookings /> Reports
-          </button>
-)}
+            <button onClick={() => setSidebarTab('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'reports' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+              <IconBookings /> {t('reports', 'Reports')}
+            </button>
+          )}
           {(!preferences.simple_mode || true) && preferences.enable_memberships && (
-<button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconCustomers /> Members
-          </button>
-)}
+            <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+              <IconCustomers /> {t('members', 'Members')}
+            </button>
+          )}
           
           {!preferences.simple_mode && (
-<button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconMenu /> Food & Beverages
-          </button>
-)}
+            <button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+              <IconMenu /> Food & Beverages
+            </button>
+          )}
           
           {(!preferences.simple_mode || true) && preferences.enable_qkhata && (
-<button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
-            QKhata
-          </button>
-)}
+            <button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
+              {t('qkhata', 'QKhata')}
+            </button>
+          )}
 
           {!preferences.simple_mode && (
-<button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-            Messaging
-          </button>
-)}
+            <button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+              Messaging
+            </button>
+          )}
 
           <button onClick={() => setSidebarTab('payments')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'payments' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 
@@ -4698,10 +5289,12 @@ function DashboardContent() {
         <div className="p-4 flex flex-col gap-2 border-t border-border-theme/50">
           <button onClick={() => setIsManualModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2 shadow-[0_0_15px_rgba(240,165,0,0.3)] btn-premium">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-            New Session
+            {t('new_session')}
           </button>
 
-          
+          <button onClick={() => setSidebarTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
+            <IconSettings /> {t('settings', 'Settings')}
+          </button>
 
           <button onClick={() => setSidebarTab('subscription')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'subscription' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
@@ -4736,7 +5329,7 @@ function DashboardContent() {
                 </div>
               ) : (
                 <h2 className="text-lg lg:text-xl font-bold text-text-primary capitalize">
-                  {sidebarTab === 'qkhata' ? 'QKhata' : sidebarTab === 'menu' ? 'Food & Beverages' : sidebarTab === 'customers' ? 'Members' : sidebarTab}
+                  {sidebarTab === 'qkhata' ? t('qkhata') : sidebarTab === 'tables' ? t('tables') : sidebarTab === 'bookings' ? t('bookings') : sidebarTab === 'reports' ? t('reports') : sidebarTab === 'customers' ? t('members') : sidebarTab === 'settings' ? t('settings') : sidebarTab === 'menu' ? 'Food & Beverages' : sidebarTab}
                 </h2>
               )}
               <p className="text-[10px] lg:text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
@@ -4746,32 +5339,7 @@ function DashboardContent() {
           </div>
           <div className="flex items-center gap-4 lg:gap-6">
             {/* Multi-language Selector Pill */}
-            <div className="flex items-center bg-bg-surface border border-border-theme rounded-lg p-0.5 text-xs font-semibold shadow-sm">
-              <button 
-                type="button"
-                onClick={() => setLanguage('en')}
-                className={`px-2 py-1 rounded transition-colors ${language === 'en' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
-                title="English"
-              >
-                EN
-              </button>
-              <button 
-                type="button"
-                onClick={() => setLanguage('hi')}
-                className={`px-2 py-1 rounded transition-colors ${language === 'hi' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
-                title="हिंदी (Hindi)"
-              >
-                हिं
-              </button>
-              <button 
-                type="button"
-                onClick={() => setLanguage('mr')}
-                className={`px-2 py-1 rounded transition-colors ${language === 'mr' ? 'bg-accent text-white shadow-sm font-bold' : 'text-text-secondary hover:text-text-primary'}`}
-                title="मराठी (Marathi)"
-              >
-                मरा
-              </button>
-            </div>
+            <FancyLanguageToggle />
             <div className="flex gap-4 text-text-secondary items-center">
               <Tooltip text="Open Google Sheet">
                 <button
@@ -4909,7 +5477,7 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && <BookingsTab businessId={businessId} bookings={data?.bookings || []} />}
+          {sidebarTab === 'bookings' && <BookingsTab businessId={businessId} bookings={data?.bookings || []} tables={data?.tables || []} onRefresh={fetchData} />}
           {sidebarTab === 'reports' && renderReports()}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
@@ -4954,13 +5522,13 @@ function DashboardContent() {
             <div className="p-6 pr-20 sm:p-8 sm:pr-24 border-b border-border-theme">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold">New Session</h2>
-                  <p className="text-text-secondary mt-1 text-sm">Start a session for walk-ins without QR.</p>
+                  <h2 className="text-2xl font-bold">{t('new_session', 'New Session')}</h2>
+                  <p className="text-text-secondary mt-1 text-sm">{t('new_session_subtitle', 'Start a session for walk-ins without QR.')}</p>
                 </div>
                 <div className="flex items-center gap-3 bg-bg-surface px-4 py-2 border border-border-theme rounded-xl shrink-0">
                    <div className="flex flex-col text-right">
-                     <span className="text-xs font-bold text-text-primary uppercase tracking-wider">Lazy Mode</span>
-                     <span className="text-[10px] text-text-secondary">Instant Start</span>
+                     <span className="text-xs font-bold text-text-primary uppercase tracking-wider">{t('lazy_mode', 'Lazy Mode')}</span>
+                     <span className="text-[10px] text-text-secondary">{t('instant_start', 'Instant Start')}</span>
                    </div>
                    <button type="button" onClick={toggleLazyMode} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isLazyModeEnabled ? 'bg-accent' : 'bg-bg-primary border border-border-theme'}`}>
                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isLazyModeEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -4975,17 +5543,17 @@ function DashboardContent() {
               <div className={`transition-all duration-300 ease-in-out ${isLazyModeEnabled ? 'max-h-0 opacity-0 overflow-hidden m-0' : 'max-h-[500px] opacity-100 overflow-visible'}`}>
                 <div className="relative">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Customer Name <span className="text-danger">*</span></label>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">{t('customer_name', 'Customer Name')} <span className="text-danger">*</span></label>
                     <button 
                       type="button" 
                       onClick={() => setShowQkhataPopover(!showQkhataPopover)}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg text-[10px] font-extrabold uppercase tracking-widest transition-colors border border-accent/20"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                      {selectedQkhataMember ? 'Change Member' : 'Select Member'}
+                      {selectedQkhataMember ? t('change_member', 'Change Member') : t('select_member', 'Select Member')}
                     </button>
                   </div>
-                  <input type="text" required={!isLazyModeEnabled} value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary input-premium" placeholder="Walk-In or Member Name" />
+                  <input type="text" required={!isLazyModeEnabled} value={manualCustomer} onChange={e => { setManualCustomer(e.target.value); setSelectedQkhataMember(null); setManualCustomerId(null); }} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary input-premium" placeholder={t('walkin_placeholder', 'Walk-In or Member Name')} />
 
                   {/* Redesigned QKhata Popover */}
                   {showQkhataPopover && (
@@ -4998,7 +5566,7 @@ function DashboardContent() {
                             autoFocus
                             value={qkhataSearch}
                             onChange={e => setQkhataSearch(e.target.value)}
-                            placeholder="Search registered member..." 
+                            placeholder={t('search_member_placeholder', 'Search registered member...')} 
                             className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm outline-none text-text-primary placeholder:text-text-disabled input-premium"
                           />
                         </div>
@@ -5007,8 +5575,8 @@ function DashboardContent() {
                         {filteredQkhataMembers.length === 0 ? (
                           <div className="py-8 px-4 flex flex-col items-center text-center">
                             <svg className="w-8 h-8 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
-                            <p className="text-xs font-bold text-text-secondary">No members found</p>
-                            <p className="text-[10px] text-text-secondary mt-1">Only registered members can use QKhata.</p>
+                            <p className="text-xs font-bold text-text-secondary">{t('no_members_found', 'No members found')}</p>
+                            <p className="text-[10px] text-text-secondary mt-1">{t('only_members_qkhata', 'Only registered members can use QKhata.')}</p>
                           </div>
                         ) : (
                           filteredQkhataMembers.map(member => {
@@ -5034,11 +5602,11 @@ function DashboardContent() {
                                 <div className="flex flex-col items-end">
                                   <span className={`text-sm font-bold font-mono ${bal > 0 ? 'text-text-primary' : 'text-text-secondary'}`}>₹{bal.toLocaleString('en-IN')}</span>
                                   {bal <= 0 ? (
-                                    <span className="text-[9px] uppercase tracking-widest text-success font-extrabold mt-0.5">Available</span>
+                                    <span className="text-[9px] uppercase tracking-widest text-success font-extrabold mt-0.5">{t('available', 'Available')}</span>
                                   ) : isOverdue ? (
-                                    <span className="text-[9px] uppercase tracking-widest text-danger font-extrabold mt-0.5">Overdue</span>
+                                    <span className="text-[9px] uppercase tracking-widest text-danger font-extrabold mt-0.5">{t('overdue', 'Overdue')}</span>
                                   ) : (
-                                    <span className="text-[9px] uppercase tracking-widest text-warning font-extrabold mt-0.5">Outstanding</span>
+                                    <span className="text-[9px] uppercase tracking-widest text-warning font-extrabold mt-0.5">{t('pending', 'Outstanding')}</span>
                                   )}
                                 </div>
                               </button>
@@ -5054,7 +5622,7 @@ function DashboardContent() {
               {/* Table and Game Type - 2 Columns */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('select_table', 'Select Table')} <span className="text-danger">*</span></label>
                   <CustomSelect
                     value={manualTable}
                     onChange={v => {
@@ -5064,13 +5632,13 @@ function DashboardContent() {
                         setManualGame(allowed[0]);
                       }
                     }}
-                    placeholder="-- Choose table --"
+                    placeholder={t('choose_table', '-- Choose table --')}
                     options={data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
                     className="min-h-[48px]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Game Type <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('game_type', 'Game Type')} <span className="text-danger">*</span></label>
                   <CustomSelect 
                     value={manualGame} 
                     onChange={v => setManualGame(v)} 
@@ -5084,24 +5652,24 @@ function DashboardContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {(manualGame.toLowerCase() === 'ps5' || manualGame.toLowerCase() === 'playstation' || manualGame.toLowerCase() === 'ps4') && (
                   <div>
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Players <span className="text-danger">*</span></label>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('players', 'Players')} <span className="text-danger">*</span></label>
                     <CustomSelect 
                       value={manualPlayers} 
                       onChange={v => setManualPlayers(v)} 
-                      options={[{value: "1", label: "1 Player"}, {value: "2", label: "2 Players"}, {value: "3", label: "3 Players"}, {value: "4", label: "4 Players"}]}
+                      options={[{value: "1", label: t('player_1', '1 Player')}, {value: "2", label: t('player_2', '2 Players')}, {value: "3", label: t('player_3', '3 Players')}, {value: "4", label: t('player_4', '4 Players')}]}
                       className="min-h-[48px]" 
                     />
                   </div>
                 )}
                 <div className={!(manualGame.toLowerCase() === 'ps5' || manualGame.toLowerCase() === 'playstation' || manualGame.toLowerCase() === 'ps4') ? 'sm:col-span-2' : ''}>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Custom Start Time (Optional)</label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('custom_start_time', 'Custom Start Time (Optional)')}</label>
                   <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Session Notes (Optional)</label>
-                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" placeholder="Special requests..." />
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('session_notes', 'Session Notes (Optional)')}</label>
+                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl outline-none text-sm text-text-primary min-h-[48px] input-premium" placeholder={t('notes_placeholder', 'Special requests...')} />
               </div>
 
               {/* Selected Member Highlight */}
@@ -5112,7 +5680,7 @@ function DashboardContent() {
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-accent mb-0.5">Playing on QKhata</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-accent mb-0.5">{t('playing_on_qkhata', 'Playing on QKhata')}</span>
                       <span className="text-sm font-bold text-text-primary">{selectedQkhataMember.name} <span className="text-text-secondary font-mono text-xs font-normal">({selectedQkhataMember.phone})</span></span>
                     </div>
                   </div>
@@ -5126,12 +5694,12 @@ function DashboardContent() {
                 {isStartingManual ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                    Starting...
+                    {t('starting', 'Starting...')}
                   </>
                 ) : (
                   <>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Start Session
+                    {t('start_session', 'Start Session')}
                   </>
                 )}
               </button>
@@ -5151,15 +5719,15 @@ function DashboardContent() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
             <div className="p-8 border-b border-border-theme">
-              <h2 className="text-2xl font-bold">New Manual Booking</h2>
-              <p className="text-text-secondary mt-1 text-sm">Reserve a table directly from the admin command center.</p>
+              <h2 className="text-2xl font-bold">{t('new_booking')}</h2>
+              <p className="text-text-secondary mt-1 text-sm">{t('schedule_booking')}</p>
             </div>
             <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-5">
               {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
               
               <div className="flex gap-4 w-full">
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Table <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('select_table')} <span className="text-danger">*</span></label>
                   <CustomSelect
                     value={bookingTable}
                     onChange={v => {
@@ -5167,13 +5735,13 @@ function DashboardContent() {
                       const allowed = getAvailableGameTypesForTable(v);
                       if (allowed.length > 0) setBookingGame(allowed[0]);
                     }}
-                    placeholder="-- Choose a table --"
+                    placeholder={`-- ${t('choose_table')} --`}
                     options={data?.tables?.map((t: any) => ({ value: t.id, label: `${t.name} (${t.type || t.id})` })) || []}
                     className="min-h-[44px]"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Date <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('booking_date')} <span className="text-danger">*</span></label>
                   <input type="date" required value={bookingDate} onChange={e => setBookingDate(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" />
                 </div>
               </div>
@@ -5181,10 +5749,10 @@ function DashboardContent() {
               {bookingTable && (
                 <div>
                   <div className="flex justify-between items-end mb-2">
-                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Select Time <span className="text-danger">*</span></label>
+                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">{t('booking_time')} <span className="text-danger">*</span></label>
                     <div className="flex items-center gap-2">
-                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-accent/20 border border-accent/50 mr-1"></span>Available</span>
-                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-border-theme/50 mr-1"></span>Occupied</span>
+                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-accent/20 border border-accent/50 mr-1"></span>{t('available')}</span>
+                       <span className="text-[10px] font-bold text-text-secondary uppercase"><span className="inline-block w-2 h-2 rounded-full bg-border-theme/50 mr-1"></span>{t('occupied')}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
@@ -5214,11 +5782,11 @@ function DashboardContent() {
 
               <div className="flex gap-4 w-full">
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('customer_name')}</label>
                   <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" placeholder="Optional" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('duration')} <span className="text-danger">*</span></label>
                   <CustomSelect 
                     value={bookingDuration} 
                     onChange={v => setBookingDuration(v)} 
@@ -5235,7 +5803,7 @@ function DashboardContent() {
 
               {bookingGame === 'ps5' && (
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Number of Players <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('players')} <span className="text-danger">*</span></label>
                   <CustomSelect 
                     value={bookingPlayers} 
                     onChange={v => setBookingPlayers(v)} 
@@ -5246,7 +5814,7 @@ function DashboardContent() {
               )}
               
               <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-2 bg-accent text-white font-bold py-3.5 rounded-lg disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium">
-                {isCreatingBooking ? 'Saving Booking...' : 'Save Booking'}
+                {isCreatingBooking ? t('loading') : t('confirm_booking')}
               </button>
             </form>
           </div>
@@ -5331,14 +5899,28 @@ function DashboardContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              <button onClick={() => { setSidebarTab('overview'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'overview' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconOverview /> {t('dashboard', 'Overview')}
+              </button>
+              <button onClick={() => { setSidebarTab('tables'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'tables' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconTables /> {t('tables', 'Tables')}
+              </button>
+              <button onClick={() => { setSidebarTab('bookings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'bookings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconBookings /> {t('bookings', 'Bookings')}
+              </button>
+              <button onClick={() => { setSidebarTab('qkhata'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                {t('qkhata', 'QKhata')}
+              </button>
+              <button onClick={() => { setSidebarTab('settings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
+                <IconSettings /> {t('settings', 'Settings')}
+              </button>
               <button onClick={() => { setSidebarTab('support'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
                 <IconSupport /> Support
               </button>
               <div className="my-4 border-t border-border-theme/50"></div>
               <button onClick={() => { setIsManualModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2">
-                New Session
+                {t('new_session')}
               </button>
-
             </div>
           </div>
         </div>
@@ -5351,19 +5933,19 @@ function DashboardContent() {
             <div className="w-16 h-16 bg-accent/20 text-accent rounded-full flex items-center justify-center mx-auto mb-4">
               <IconLogout />
             </div>
-            <h3 className="text-xl font-bold text-text-primary mb-2">Are you sure you want to log out?</h3>
+            <h3 className="text-xl font-bold text-text-primary mb-2">{t('logout_confirm')}</h3>
             <div className="flex gap-3 w-full mt-6">
               <button 
                 onClick={() => setIsLogoutModalOpen(false)}
                 className="flex-1 py-3 text-text-secondary font-bold text-sm bg-bg-card border border-border-theme rounded-lg hover:text-text-primary transition-colors"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button 
                 onClick={confirmLogout}
                 className="flex-1 py-3 bg-danger text-white font-bold text-sm rounded-lg shadow-[0_4px_15px_rgba(239,68,68,0.4)] btn-premium"
               >
-                Logout
+                {t('logout')}
               </button>
             </div>
           </div>
@@ -5384,7 +5966,7 @@ function DashboardContent() {
                 onClick={() => setStationToDelete(null)}
                 className="flex-1 px-4 py-2 bg-bg-card border border-border-theme text-text-primary rounded-lg font-bold text-sm hover:bg-bg-primary transition-colors"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 type="button"
@@ -5398,31 +5980,117 @@ function DashboardContent() {
         </div>
       )}
 
+      {/* Delete Food Order Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-bg-surface border border-border-theme rounded-xl p-6 w-full max-w-md shadow-2xl animate-entrance">
+            <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-center mb-1 text-text-primary">
+              {t('confirm_delete_food_order_title', 'Delete Food Order')}
+            </h3>
+            <p className="text-center text-xs text-text-secondary mb-4 font-medium">
+              {orderToDelete.title}
+            </p>
+
+            <div className="bg-bg-card border border-border-theme rounded-lg p-3.5 mb-4 text-xs">
+              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border-theme">
+                <span className="text-text-secondary font-medium">Order Total</span>
+                <span className="text-accent font-bold text-sm">
+                  ₹{orderToDelete.message ? (orderToDelete.message.split('|')[1] || '0') : '0'}
+                </span>
+              </div>
+              <div className="text-text-secondary max-h-32 overflow-y-auto flex flex-col gap-1">
+                {(() => {
+                  const itemsStr = orderToDelete.message?.split('|')[0] || '[]';
+                  let parsedItems: any = [];
+                  try { parsedItems = JSON.parse(itemsStr); } catch (e) {}
+                  if (Array.isArray(parsedItems)) {
+                    return parsedItems.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>• {item.name}</span>
+                        <span className="font-bold text-text-primary">x {item.quantity || 1}</span>
+                      </div>
+                    ));
+                  } else if (typeof parsedItems === 'object' && parsedItems !== null) {
+                    return Object.entries(parsedItems).map(([name, qty], idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>• {name}</span>
+                        <span className="font-bold text-text-primary">x {qty as number}</span>
+                      </div>
+                    ));
+                  }
+                  return <span>{itemsStr}</span>;
+                })()}
+              </div>
+            </div>
+
+            <p className="text-text-secondary text-xs mb-6 text-center leading-relaxed">
+              {t('confirm_delete_food_order_desc', 'Are you sure you want to delete this food order? The order cost will be deducted from the table session.')}
+            </p>
+
+            <div className="flex items-center gap-3 w-full">
+              <button
+                type="button"
+                disabled={deletingOrderId !== null}
+                onClick={() => setOrderToDelete(null)}
+                className="flex-1 px-4 py-2.5 bg-bg-card border border-border-theme text-text-primary rounded-lg font-bold text-sm hover:bg-bg-primary transition-colors disabled:opacity-50"
+              >
+                {t('cancel', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deletingOrderId !== null}
+                onClick={handleDeleteFoodOrder}
+                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 active:scale-95 text-white rounded-lg font-bold text-sm shadow-[0_4px_15px_rgba(239,68,68,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {deletingOrderId === orderToDelete.id ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                    <span>{t('deleting_order', 'Deleting...')}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>{t('delete_food_order', 'Delete Order')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Bottom Navigation */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg-surface/80 backdrop-blur-xl border-t border-border-theme z-40 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
         <div className="flex justify-around items-center h-[72px]">
           <button onClick={() => setSidebarTab('overview')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
             {sidebarTab === 'overview' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconOverview />
-            <span className="text-[10px] font-bold tracking-wide">Overview</span>
+            <span className="text-[10px] font-bold tracking-wide">{t('dashboard', 'Overview')}</span>
           </button>
           <button onClick={() => setSidebarTab('tables')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
             {sidebarTab === 'tables' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconTables />
-            <span className="text-[10px] font-bold tracking-wide">Tables</span>
+            <span className="text-[10px] font-bold tracking-wide">{t('tables', 'Tables')}</span>
           </button>
           <button onClick={() => setSidebarTab('bookings')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
             {sidebarTab === 'bookings' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
             <IconBookings />
-            <span className="text-[10px] font-bold tracking-wide">Bookings</span>
+            <span className="text-[10px] font-bold tracking-wide">{t('bookings', 'Bookings')}</span>
           </button>
           {!preferences.simple_mode && (
-<button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
-            {sidebarTab === 'reports' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
-            <IconBookings />
-            <span className="text-[10px] font-bold tracking-wide">Reports</span>
-          </button>
-)}
+            <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
+              {sidebarTab === 'reports' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
+              <IconBookings />
+              <span className="text-[10px] font-bold tracking-wide">{t('reports', 'Reports')}</span>
+            </button>
+          )}
         </div>
       </div>
 

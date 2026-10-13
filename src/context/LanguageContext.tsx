@@ -34,7 +34,12 @@ function subscribe(callback: () => void) {
   if (typeof window === 'undefined') return () => {};
   window.addEventListener('storage', callback);
   window.addEventListener('qcontrol_language_change', callback);
+
+  // Immediately notify on next tick so client mounts with stored language
+  const timer = setTimeout(callback, 0);
+
   return () => {
+    clearTimeout(timer);
     window.removeEventListener('storage', callback);
     window.removeEventListener('qcontrol_language_change', callback);
   };

@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
+    "dev:turbo": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker": "npx tsx scripts/telegram-worker.ts",
+    "webhook:set": "node fix_webhook2.js",
+    "test:tg-perf": "npx tsx scripts/test-telegram-performance.ts",
     "lint": "eslint"
   },
   "dependencies": {

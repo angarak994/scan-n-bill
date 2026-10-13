@@ -13,40 +13,59 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: businesses } = await supabase.from('businesses').select('id');
-    if (!businesses) return NextResponse.json({ success: true, count: 0 });
+    const nowMs = Date.now();
+    const cutoffThreshold = new Date(nowMs - TWELVE_HOURS_MS).toISOString();
+
+    // 1. Single batch query across all businesses for overdue active sessions
+    const { data: overdueSessions, error: queryError } = await supabase
+      .from('sessions')
+      .select('id, table_id, business_id, start_time')
+      .eq('status', 'ACTIVE')
+      .lt('start_time', cutoffThreshold);
+
+    if (queryError) {
+      console.error('Failed to query overdue sessions:', queryError);
+      return NextResponse.json({ error: 'Database query failed' }, { status: 500 });
+    }
 
     let cutoffCount = 0;
-    const nowMs = Date.now();
-
-    for (const business of businesses) {
-      // We can fetch active sessions natively
-      const { data: activeSessions } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('business_id', business.id)
-        .eq('status', 'ACTIVE');
-
-      if (!activeSessions) continue;
-
-      for (const s of activeSessions) {
-        if (s.start_time) {
-          const startMs = new Date(s.start_time).getTime();
-          if (nowMs - startMs > TWELVE_HOURS_MS) {
-            try {
-              await endSession(s.table_id, business.id);
-              cutoffCount++;
-            } catch (e) {
-              console.error(`Failed to auto-end session ${s.id} in cron`, e);
-            }
-          }
+    if (overdueSessions && overdueSessions.length > 0) {
+      for (const s of overdueSessions) {
+        try {
+          await endSession(s.table_id, s.business_id, 'Auto-Cutoff');
+          cutoffCount++;
+        } catch (e) {
+          console.error(`Failed to auto-end session ${s.id} in cron`, e);
         }
       }
     }
 
-    return NextResponse.json({ success: true, cutoffCount });
+    // 2. Automated Retention Cleanup: purge ephemeral realtime sync events older than 24 hours
+    // This prevents unbounded storage growth in Supabase while preserving all business data & audit logs.
+    let cleanedSyncCount = 0;
+    try {
+      const oneDayAgo = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('dashboard_syncs')
+        .delete({ count: 'exact' })
+        .lt('created_at', oneDayAgo);
+      cleanedSyncCount = count || 0;
+    } catch (cleanupErr) {
+      console.warn('Non-critical dashboard_syncs cleanup warning:', cleanupErr);
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      cutoffCount, 
+      cleanedSyncCount,
+      timestamp: new Date().toISOString() 
+    });
   } catch (error: any) {
     console.error('Cron auto-cutoff error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  return GET(request);
 }

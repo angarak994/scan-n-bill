@@ -95,9 +95,11 @@ function LiveTimer({ session }: { session: any }) {
           <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
             Game: {session.game_type} • {session.customer_name} {session.num_players && session.num_players > 1 ? `(${session.num_players} Players)` : ''}
           </p>
-          {session.discount && session.discount.percent > 0 && (
+          {session.discount && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) && (
             <p className="text-orange-500 font-bold text-sm">
-              {session.discount.percent}% Discount Applied {session.discount.applyToFood ? '(Incl. Food)' : ''}
+              {session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent)
+                ? `Flat ₹${session.discount.amount} Discount Applied ${session.discount.applyToFood ? '(Incl. Food)' : ''}`
+                : `${session.discount.percent}% Discount Applied ${session.discount.applyToFood ? '(Incl. Food)' : ''}`}
             </p>
           )}
         </div>
@@ -114,10 +116,12 @@ function LiveTimer({ session }: { session: any }) {
             <div className="flex flex-col items-center mt-4">
               <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>
               <p className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-                {session.discount && session.discount.percent > 0 && session.discount.applyToFood ? (
+                {session.discount && session.discount.applyToFood && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) ? (
                   <>
                     <span className="text-gray-400 line-through text-lg mr-2">₹{session.food_cost}</span>
-                    ₹{Math.round(session.food_cost * (1 - (session.discount.percent/100)))}
+                    ₹{session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent)
+                      ? Math.max(0, session.food_cost - (session.discount.amount || 0))
+                      : Math.round(session.food_cost * (1 - ((session.discount.percent || 0)/100)))}
                   </>
                 ) : (
                   `₹${session.food_cost}`
@@ -131,10 +135,14 @@ function LiveTimer({ session }: { session: any }) {
       <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs mx-auto">
         <p className="text-gray-500 dark:text-gray-400 font-medium">
           Active Rate: 
-          {session.discount && session.discount.percent > 0 ? (
+          {session.discount && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) ? (
             <>
               <span className="line-through mx-2 text-gray-400">₹{currentActiveRate}</span>
-              <span className="text-green-600 font-bold">₹{Math.round(currentActiveRate * (1 - (session.discount.percent/100)))} / hour</span>
+              <span className="text-green-600 font-bold">
+                ₹{session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent)
+                  ? Math.max(0, currentActiveRate - (session.discount.amount || 0))
+                  : Math.round(currentActiveRate * (1 - ((session.discount.percent || 0)/100)))} / hour
+              </span>
             </>
           ) : (
             ` ₹${currentActiveRate} / hour`
@@ -147,8 +155,8 @@ function LiveTimer({ session }: { session: any }) {
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: { percent: number; applyToFood: boolean }; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
-  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: { percent: number; applyToFood: boolean }; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: any; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: any; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'completed'; duration: string; cost: number; end_time: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'error'; message: string };
@@ -492,9 +500,9 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                 <span>•</span>
                 <span className="capitalize">{session.game_type}</span>
               </div>
-              {session.discount && session.discount.percent > 0 && (
+              {session.discount && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) && (
                 <div className="mt-3 inline-block bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md animate-pulse">
-                  Happy Hour: {session.discount.percent}% OFF
+                  Special Offer: {session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent) ? `Flat ₹${session.discount.amount} OFF` : `${session.discount.percent}% OFF`}
                 </div>
               )}
             </div>

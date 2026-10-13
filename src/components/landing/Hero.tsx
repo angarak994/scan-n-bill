@@ -74,43 +74,88 @@ export default function Hero() {
   ] as const;
 
   return (
-    <section className="relative w-full max-w-7xl mx-auto px-4 sm:px-8 pt-12 sm:pt-24 pb-16 sm:pb-32 flex flex-col items-center text-center mt-6 sm:mt-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+    <section className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-14 pb-16 sm:pb-24 flex flex-col items-center text-center">
+      {/* Category Pill Badge */}
       <ScrollReveal animation="fade-up" delay={0}>
-        <span className="inline-block px-4 py-1.5 rounded-full bg-accent/10 text-accent font-bold text-xs uppercase tracking-widest mb-8 border border-accent/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-          The complete platform for gaming businesses
-        </span>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border border-accent/25 text-accent font-semibold text-xs uppercase tracking-wider mb-6 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+          <span className="w-2 h-2 rounded-full bg-accent animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+          <span>The Complete Platform For Gaming Businesses</span>
+        </div>
       </ScrollReveal>
       
-      {/* Hero Headline Container (Fixed height to prevent CLS) */}
-      <div className="min-h-[140px] sm:min-h-[180px] md:min-h-[240px] w-full flex items-center justify-center">
+      {/* Hero Headline */}
+      <div className="w-full flex items-center justify-center max-w-5xl mx-auto">
         <h1 
           id="hero-headline"
-          className={`text-4xl sm:text-6xl md:text-[5rem] font-black tracking-tighter leading-tight max-w-5xl [text-wrap:balance] transition-opacity duration-500 ${isReady ? 'opacity-100 animate-hero-reveal' : 'opacity-0'}`}
+          className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.08] text-text-primary [text-wrap:balance]"
         >
           {headline || "Run your club. Not your spreadsheets."}
         </h1>
       </div>
       
-      {/* Hero Subline Container */}
-      <div className="min-h-[80px] sm:min-h-[100px] w-full flex items-start justify-center mt-6">
+      {/* Hero Subline */}
+      <div className="w-full flex items-center justify-center mt-6 max-w-2xl mx-auto">
         <p 
           id="hero-subline"
-          className="text-lg sm:text-xl text-text-secondary max-w-2xl mx-auto [text-wrap:balance] opacity-0 animate-hero-reveal-delayed"
+          className="text-lg sm:text-xl text-text-secondary leading-relaxed [text-wrap:balance]"
         >
           Tables, sessions, billing, members and promotions in one live system.
         </p>
       </div>
+
+      {/* Hero Action CTAs */}
+      <ScrollReveal animation="fade-up" delay={150}>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 mt-8 mb-6 w-full">
+          <Link
+            href="/onboard"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-accent text-white font-bold text-sm sm:text-base rounded-full hover:bg-accent/90 active:scale-95 transition-all shadow-[0_0_25px_rgba(16,185,129,0.35)] hover:shadow-[0_0_35px_rgba(16,185,129,0.55)] whitespace-nowrap"
+          >
+            <span>Register Business</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          </Link>
+
+          <Link
+            href="/demo"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-bg-surface hover:bg-bg-card border border-border/80 hover:border-accent/40 text-text-primary font-bold text-sm sm:text-base rounded-full transition-all shadow-sm whitespace-nowrap"
+          >
+            <span className="w-2 h-2 rounded-full bg-accent animate-ping"></span>
+            <span>Explore Interactive Demo</span>
+          </Link>
+        </div>
+
+        {/* Trust Badges */}
+        <div className="flex flex-wrap items-center justify-center gap-y-2 gap-x-6 text-xs font-medium text-text-secondary mb-12">
+          <span className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+            No credit card required
+          </span>
+          <span className="text-border/60 hidden sm:inline">•</span>
+          <span className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+            Instant 2-minute setup
+          </span>
+          <span className="text-border/60 hidden sm:inline">•</span>
+          <span className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+            Cloud + Telegram sync
+          </span>
+        </div>
+      </ScrollReveal>
       
-      <ScrollReveal animation="fade-up" delay={300} className="w-full relative z-10 group mt-8">
-        <div className="w-full max-w-[1000px] mx-auto rounded-xl overflow-hidden border border-border bg-bg-surface glass-panel p-0 shadow-2xl">
+      {/* Live Interactive Sandbox Preview */}
+      <ScrollReveal animation="fade-up" delay={250} className="w-full relative z-10 group">
+        <div id="live-preview" className="w-full max-w-[1020px] mx-auto rounded-2xl overflow-hidden border border-border/80 bg-bg-surface glass-panel p-0 shadow-2xl transition-all duration-300">
           
           {/* Dashboard Header */}
-          <div className="w-full h-12 bg-bg-card flex items-center px-4 sm:px-6 border-b border-border z-20 relative justify-between">
+          <div className="w-full h-14 bg-bg-card flex items-center px-4 sm:px-6 border-b border-border z-20 relative justify-between">
             <div className="flex items-center gap-3">
-               <div className="w-6 h-6 bg-accent rounded text-bg-primary flex items-center justify-center font-bold text-xs tracking-tighter">Q</div>
-               <span className="font-bold font-mono tracking-tighter text-sm">Corner Pocket Club</span>
+               <div className="w-7 h-7 bg-accent rounded-lg text-white flex items-center justify-center font-bold text-xs tracking-tighter shadow-sm">Q</div>
+               <span className="font-bold font-mono tracking-tight text-sm text-text-primary">Corner Pocket Club</span>
             </div>
-            <div className="bg-bg-surface px-3 py-1 rounded text-xs text-text-secondary font-mono border border-border">Live View</div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
+              <div className="bg-bg-surface px-3 py-1 rounded-md text-xs font-semibold text-text-secondary font-mono border border-border">Live Interactive Preview</div>
+            </div>
           </div>
           
           <div className="relative w-full p-0 flex flex-col sm:flex-row bg-bg-surface">
@@ -129,8 +174,11 @@ export default function Hero() {
                 </button>
               ))}
               
-              <div className="mt-auto px-2">
-                <button className="w-full py-2 bg-bg-surface border border-border-light rounded-lg text-xs font-bold hover:bg-bg-card transition-colors">Logout</button>
+              <div className="mt-auto pt-4 px-1 border-t border-border/50">
+                <div className="w-full py-2 px-3 bg-bg-surface/70 border border-border/60 rounded-lg text-[11px] font-semibold text-text-secondary flex items-center justify-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
+                  <span>Interactive Sandbox</span>
+                </div>
               </div>
             </div>
             

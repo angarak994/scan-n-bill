@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { businessManager } from '@/lib/businessManager';
-import { logActivityToSheet } from '@/lib/googleSheets';
 
 export async function handleSessionIntervention(params: {
   action: string;
@@ -12,8 +11,9 @@ export async function handleSessionIntervention(params: {
   due_date?: string;
   transfer_table_id?: string;
   performed_by?: string;
+  split_payments?: Array<{ method: string; amount: number }>;
 }) {
-  const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id, performed_by = 'dashboard_user' } = params;
+  const { action, session_id, business_id, amount_recovered, payment_method, due_date, transfer_table_id, performed_by = 'dashboard_user', split_payments } = params;
 
   if (!session_id || !business_id || !action) {
     throw new Error('Missing parameters');
@@ -70,7 +70,7 @@ export async function handleSessionIntervention(params: {
       }
       
       const { endSession } = require('../sessionManager');
-      const sessionResult = await endSession(session.table_id, business_id, sourceLabel, amount_recovered, payment_method, due_date);
+      const sessionResult = await endSession(session.table_id, business_id, sourceLabel, amount_recovered, payment_method, due_date, split_payments);
       
       dbUpdates = {
         status: 'COMPLETED',
@@ -104,30 +104,17 @@ export async function handleSessionIntervention(params: {
     if (updateError) throw updateError;
   }
 
-  // Log intervention
-  await supabase.from('session_interventions').insert([{
-    session_id,
-    intervention_type: interventionType,
-    amount_recovered: amount_recovered || 0,
-    performed_by
-  }]);
-
-  // Log intervention to Google Sheets asynchronously (fire-and-forget)
-  Promise.all([
-    logActivityToSheet(`${interventionType.toUpperCase()}_SESSION`, {
-      user: (performed_by === 'telegram_bot' || performed_by === 'Qbot') ? 'Qbot' : 'Club Owner',
-      table: session.table_id,
-      session: session_id,
-      details: `Session ${interventionType}`
-    }, business_id),
-    
-
-    // Add unified session sync
-    (async () => {
-      const { syncSessionToSheet } = require('../googleSheets');
-      await syncSessionToSheet(session_id, business_id);
-    })()
-  ]).catch(e => console.error('Google Sheets Intervention Sync Error:', e));
+  // Log intervention (non-blocking / non-fatal)
+  try {
+    await supabase.from('session_interventions').insert([{
+      session_id,
+      intervention_type: interventionType,
+      amount_recovered: amount_recovered || 0,
+      performed_by
+    }]);
+  } catch (logErr) {
+    console.error('Session intervention DB log error (non-fatal):', logErr);
+  }
 
   return { success: true, dbUpdates, sessionResult: action === 'force_end' ? (dbUpdates as any) : undefined };
 }

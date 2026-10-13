@@ -26,10 +26,21 @@ export default function MembersReports() {
   const [memberTab, setMemberTab] = useState<'spending' | 'sessions' | 'qkhata'>('spending');
   const [reportRange, setReportRange] = useState<'today' | 'week' | 'month'>('today');
 
+  const baselines = {
+    today: { rev: 18420, prevRev: 16388, sessions: 42 },
+    week: { rev: 114500, prevRev: 105820, sessions: 285 },
+    month: { rev: 485000, prevRev: 418825, sessions: 1205 }
+  };
+
+  const getDynamicGrowth = (rev: number, prevRev: number) => {
+    const rate = ((rev - prevRev) / prevRev) * 100;
+    return `${rate >= 0 ? '+' : ''}${rate.toFixed(1)}%`;
+  };
+
   const reportData = {
-    today: { rev: 18420, sessions: 42, growth: '+12.4%' },
-    week: { rev: 114500, sessions: 285, growth: '+8.2%' },
-    month: { rev: 485000, sessions: 1205, growth: '+15.8%' }
+    today: { rev: baselines.today.rev, sessions: baselines.today.sessions, growth: getDynamicGrowth(baselines.today.rev, baselines.today.prevRev) },
+    week: { rev: baselines.week.rev, sessions: baselines.week.sessions, growth: getDynamicGrowth(baselines.week.rev, baselines.week.prevRev) },
+    month: { rev: baselines.month.rev, sessions: baselines.month.sessions, growth: getDynamicGrowth(baselines.month.rev, baselines.month.prevRev) }
   };
   
   const currentReport = reportData[reportRange];

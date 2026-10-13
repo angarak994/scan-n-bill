@@ -121,13 +121,160 @@ export function getCurrentRate(gameType: string | null | undefined, nowMs: numbe
   return { rate: baseRate, slabName };
 }
 
+export type DiscountType = 'percentage' | 'fixed';
+
+export interface TableDiscountConfig {
+  type?: DiscountType; // default 'percentage'
+  percent?: number;    // for percentage (1 - 100)
+  amount?: number;     // for fixed (₹)
+  maxDiscount?: number;// optional max cap for percentage (₹)
+  minBillAmount?: number;// optional min bill required (₹)
+  applyToFood?: boolean;// default false
+  label?: string;      // custom display label
+  isActive?: boolean;  // default true
+  expiryDate?: string; // ISO string or YYYY-MM-DD
+}
+
+/**
+ * Authoritative pure discount engine for sessions and tables.
+ * Accurately handles percentage (%) and fixed (₹) discounts,
+ * minimum bill amount rules, configurable max limits,
+ * proportional distribution across table and F&B, and prevents negative totals.
+ */
+export function applySessionDiscounts(
+  tableCost: number,
+  foodCost: number = 0,
+  discountConfig?: TableDiscountConfig | { percent: number; applyToFood: boolean } | null
+): {
+  finalTableCost: number;
+  finalFoodCost: number;
+  tableDiscountAmount: number;
+  foodDiscountAmount: number;
+  totalDiscountAmount: number;
+  finalTotalCost: number;
+  discountAppliedLabel: string;
+  isEligible: boolean;
+  minBillShortfall?: number;
+} {
+  const safeTableCost = Math.max(0, Math.round(tableCost || 0));
+  const safeFoodCost = Math.max(0, Math.round(foodCost || 0));
+  const totalBaseCost = safeTableCost + safeFoodCost;
+
+  if (!discountConfig || (discountConfig as any).isActive === false || totalBaseCost <= 0) {
+    return {
+      finalTableCost: safeTableCost,
+      finalFoodCost: safeFoodCost,
+      tableDiscountAmount: 0,
+      foodDiscountAmount: 0,
+      totalDiscountAmount: 0,
+      finalTotalCost: totalBaseCost,
+      discountAppliedLabel: 'None',
+      isEligible: true,
+    };
+  }
+
+  // Check expiry date if configured
+  if ((discountConfig as any).expiryDate) {
+    const expTime = new Date((discountConfig as any).expiryDate).getTime();
+    if (!isNaN(expTime) && Date.now() > expTime) {
+      return {
+        finalTableCost: safeTableCost,
+        finalFoodCost: safeFoodCost,
+        tableDiscountAmount: 0,
+        foodDiscountAmount: 0,
+        totalDiscountAmount: 0,
+        finalTotalCost: totalBaseCost,
+        discountAppliedLabel: 'Expired Discount',
+        isEligible: false,
+      };
+    }
+  }
+
+  const applyToFood = Boolean(discountConfig.applyToFood);
+  const eligibleAmount = applyToFood ? totalBaseCost : safeTableCost;
+
+  // Check minimum bill amount rule
+  const minBill = Number((discountConfig as any).minBillAmount) || 0;
+  if (minBill > 0 && eligibleAmount < minBill) {
+    return {
+      finalTableCost: safeTableCost,
+      finalFoodCost: safeFoodCost,
+      tableDiscountAmount: 0,
+      foodDiscountAmount: 0,
+      totalDiscountAmount: 0,
+      finalTotalCost: totalBaseCost,
+      discountAppliedLabel: `Min Bill ₹${minBill} Required`,
+      isEligible: false,
+      minBillShortfall: minBill - eligibleAmount,
+    };
+  }
+
+  // Determine type: 'fixed' vs 'percentage'
+  const isFixed = (discountConfig as any).type === 'fixed' || 
+    (Number((discountConfig as any).amount) > 0 && !(discountConfig as any).percent);
+
+  let rawDiscount = 0;
+  let label = '';
+
+  if (isFixed) {
+    const fixedAmount = Math.max(0, Number((discountConfig as any).amount) || 0);
+    // Never allow fixed discount to exceed eligible bill
+    rawDiscount = Math.min(eligibleAmount, fixedAmount);
+    label = `Flat ₹${fixedAmount} Off`;
+  } else {
+    // Percentage discount
+    const percent = Math.min(100, Math.max(0, Number(discountConfig.percent) || 0));
+    if (percent > 0) {
+      let pctDiscount = (eligibleAmount * percent) / 100;
+      const maxDiscount = Number((discountConfig as any).maxDiscount);
+      if (maxDiscount > 0 && pctDiscount > maxDiscount) {
+        pctDiscount = maxDiscount;
+        label = `${percent}% Off (Max ₹${maxDiscount})`;
+      } else {
+        label = `${percent}% Off`;
+      }
+      rawDiscount = Math.min(eligibleAmount, Math.round(pctDiscount));
+    }
+  }
+
+  const totalDiscountAmount = Math.max(0, Math.min(eligibleAmount, Math.round(rawDiscount)));
+
+  let tableDiscountAmount = 0;
+  let foodDiscountAmount = 0;
+
+  if (applyToFood) {
+    if (totalBaseCost > 0) {
+      tableDiscountAmount = Math.min(safeTableCost, Math.round((safeTableCost / totalBaseCost) * totalDiscountAmount));
+      foodDiscountAmount = Math.min(safeFoodCost, totalDiscountAmount - tableDiscountAmount);
+    }
+  } else {
+    tableDiscountAmount = Math.min(safeTableCost, totalDiscountAmount);
+    foodDiscountAmount = 0;
+  }
+
+  const finalTableCost = Math.max(0, safeTableCost - tableDiscountAmount);
+  const finalFoodCost = Math.max(0, safeFoodCost - foodDiscountAmount);
+  const finalTotalCost = finalTableCost + finalFoodCost;
+
+  return {
+    finalTableCost,
+    finalFoodCost,
+    tableDiscountAmount,
+    foodDiscountAmount,
+    totalDiscountAmount,
+    finalTotalCost,
+    discountAppliedLabel: label,
+    isEligible: true,
+  };
+}
+
 export function calculateCost(
   startMs: number, 
   endMs: number, 
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  manualDiscount?: { percent: number; applyToFood: boolean; },
+  manualDiscount?: TableDiscountConfig | { percent: number; applyToFood: boolean; },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string,
@@ -165,96 +312,144 @@ export function calculateCost(
   const breakdown: { startMs: number; endMs: number; rate: number; cost: number; slabName: string }[] = [];
 
   // Evaluate rates across the exact full elapsed stay [startMs, endMs].
-  let currentMs = startMs;
   const evaluationEndMs = Math.max(startMs, endMs);
   
   if (evaluationEndMs > startMs) {
-    while (currentMs < evaluationEndMs) {
-      const nextMs = Math.min(currentMs + 60000, evaluationEndMs);
-      const chunkHours = (nextMs - currentMs) / 3600000;
+    const elapsedStayHours = (evaluationEndMs - startMs) / 3600000;
+    const game = (gameType || 'pool').trim().toLowerCase();
+    const rule = pricing?.rules?.[game];
 
-      let rate = 0; 
-      let slabName = '';
-      let isPromoApplied = false;
-
-      // Base rate calculation (no promo)
-      let rawBaseRate = 0;
-      if (lockedRate !== undefined && lockedRate !== null) {
-        rawBaseRate = Number(lockedRate);
-      } else {
-        rawBaseRate = getCurrentRate(gameType, currentMs, pricing, numPlayers).rate;
+    // Pre-parse and filter active promotions that overlap with this session stay
+    const applicablePromos = (activePromotions || []).filter(promo => {
+      if (promo.status !== 'Active' && promo.status !== 'Scheduled') return false;
+      if (promo.applicable_game_types && promo.applicable_game_types.length > 0) {
+        if (!promo.applicable_game_types.includes(gameType?.toLowerCase() || '')) return false;
       }
-      noPromoTotalCost += (chunkHours * rawBaseRate);
+      return true;
+    }).map(promo => {
+      const pStart = parseDateString(promo.start_time);
+      const pEnd = parseDateString(promo.end_time);
+      let slotStartMins: number | null = null;
+      let slotEndMins: number | null = null;
+      if (promo.time_slot_start && promo.time_slot_end) {
+        const [sh, sm] = promo.time_slot_start.split(':').map(Number);
+        const [eh, em] = promo.time_slot_end.split(':').map(Number);
+        if (!isNaN(sh) && !isNaN(sm)) slotStartMins = sh * 60 + sm;
+        if (!isNaN(eh) && !isNaN(em)) slotEndMins = eh * 60 + em;
+      }
+      return {
+        ...promo,
+        pStart,
+        pEnd,
+        slotStartMins,
+        slotEndMins
+      };
+    }).filter(p => evaluationEndMs > p.pStart && startMs < p.pEnd);
 
-      // Check for active system promotions for this exact minute
-      for (const promo of activePromotions) {
-        if (promo.status !== 'Active' && promo.status !== 'Scheduled') continue;
-        
-        const pStart = parseDateString(promo.start_time);
-        const pEnd = parseDateString(promo.end_time);
-        
-        if (currentMs >= pStart && currentMs < pEnd) {
-          // Check Time Slot (Happy Hour constraint within the promo)
-          if (promo.time_slot_start && promo.time_slot_end) {
-            const currentHour = new Date(currentMs + IST_OFFSET).getUTCHours();
-            const currentMin = new Date(currentMs + IST_OFFSET).getUTCMinutes();
-            const currentTotalMins = currentHour * 60 + currentMin;
-            const [startH, startM] = promo.time_slot_start.split(':').map(Number);
-            const [endH, endM] = promo.time_slot_end.split(':').map(Number);
-            if (currentTotalMins < (startH * 60 + startM) || currentTotalMins >= (endH * 60 + endM)) {
-              continue; // Outside daily happy hour window
+    // --- FAST-PATH 1: Locked Rate Session without active promotions ---
+    if (applicablePromos.length === 0 && lockedRate !== undefined && lockedRate !== null) {
+      const rate = Number(lockedRate);
+      const slabName = lockedRateName || 'Dynamic Rate';
+      unpausedTotalCost = elapsedStayHours * rate;
+      noPromoTotalCost = elapsedStayHours * rate;
+      appliedSlabs.add(slabName);
+      breakdown.push({ startMs, endMs: evaluationEndMs, rate, cost: unpausedTotalCost, slabName });
+    }
+    // --- FAST-PATH 2: Fixed Rate Game Rule without active promotions ---
+    else if (applicablePromos.length === 0 && (!rule || rule.type === 'fixed')) {
+      const cr = getCurrentRate(gameType, startMs, pricing, numPlayers);
+      unpausedTotalCost = elapsedStayHours * cr.rate;
+      noPromoTotalCost = elapsedStayHours * cr.rate;
+      appliedSlabs.add(cr.slabName);
+      breakdown.push({ startMs, endMs: evaluationEndMs, rate: cr.rate, cost: unpausedTotalCost, slabName: cr.slabName });
+    }
+    // --- FAST-PATH 3: Time-Based Game without Cutoff Transition or Promotions ---
+    else if (applicablePromos.length === 0 && rule?.type === 'time_based' && elapsedStayHours < 12 &&
+      getCurrentRate(gameType, startMs, pricing, numPlayers).rate === getCurrentRate(gameType, evaluationEndMs - 1, pricing, numPlayers).rate
+    ) {
+      const cr = getCurrentRate(gameType, startMs, pricing, numPlayers);
+      unpausedTotalCost = elapsedStayHours * cr.rate;
+      noPromoTotalCost = elapsedStayHours * cr.rate;
+      appliedSlabs.add(cr.slabName);
+      breakdown.push({ startMs, endMs: evaluationEndMs, rate: cr.rate, cost: unpausedTotalCost, slabName: cr.slabName });
+    }
+    // --- GENERAL PATH: Multi-Slab or Active Promotion Iteration ---
+    else {
+      let currentMs = startMs;
+      while (currentMs < evaluationEndMs) {
+        const nextMs = Math.min(currentMs + 60000, evaluationEndMs);
+        const chunkHours = (nextMs - currentMs) / 3600000;
+
+        let rate = 0; 
+        let slabName = '';
+        let isPromoApplied = false;
+
+        // Base rate calculation (no promo)
+        let rawBaseRate = 0;
+        if (lockedRate !== undefined && lockedRate !== null) {
+          rawBaseRate = Number(lockedRate);
+        } else {
+          rawBaseRate = getCurrentRate(gameType, currentMs, pricing, numPlayers).rate;
+        }
+        noPromoTotalCost += (chunkHours * rawBaseRate);
+
+        // Check pre-parsed active promotions for this minute
+        for (const promo of applicablePromos) {
+          if (currentMs >= promo.pStart && currentMs < promo.pEnd) {
+            // Check Time Slot (Happy Hour constraint within the promo)
+            if (promo.slotStartMins !== null && promo.slotEndMins !== null) {
+              const dateIst = new Date(currentMs + IST_OFFSET);
+              const currentTotalMins = dateIst.getUTCHours() * 60 + dateIst.getUTCMinutes();
+              if (currentTotalMins < promo.slotStartMins || currentTotalMins >= promo.slotEndMins) {
+                continue; // Outside daily happy hour window
+              }
+            }
+
+            // Apply promotion
+            if (promo.promo_type === 'fixed_price' && promo.fixed_price !== null) {
+              rate = Number(promo.fixed_price);
+              slabName = `Promo: ${promo.name} (Fixed Rate)`;
+              isPromoApplied = true;
+              break;
+            } else if (promo.promo_type === 'fixed_amount' && promo.fixed_amount_discount !== null) {
+              rate = Math.max(0, rawBaseRate - Number(promo.fixed_amount_discount));
+              slabName = `Promo: ${promo.name} (-₹${promo.fixed_amount_discount})`;
+              isPromoApplied = true;
+              break;
+            } else {
+              const discountPercent = Number(promo.discount_percent || 0);
+              if (discountPercent > 0) {
+                rate = rawBaseRate * (1 - (discountPercent / 100));
+                slabName = `Promo: ${promo.name} (${discountPercent}% Off)`;
+                isPromoApplied = true;
+                break;
+              }
             }
           }
-          
-          // Check game type constraint
-          if (promo.applicable_game_types && promo.applicable_game_types.length > 0) {
-             if (!promo.applicable_game_types.includes(gameType?.toLowerCase() || '')) continue;
-          }
+        }
 
-          // Apply promotion
-          if (promo.promo_type === 'fixed_price' && promo.fixed_price !== null) {
-             rate = Number(promo.fixed_price);
-             slabName = `Promo: ${promo.name} (Fixed Rate)`;
-             isPromoApplied = true;
-             break;
-          } else if (promo.promo_type === 'fixed_amount' && promo.fixed_amount_discount !== null) {
-             rate = Math.max(0, rawBaseRate - Number(promo.fixed_amount_discount));
-             slabName = `Promo: ${promo.name} (-₹${promo.fixed_amount_discount})`;
-             isPromoApplied = true;
-             break;
+        if (!isPromoApplied) {
+          if (lockedRate !== undefined && lockedRate !== null) {
+            rate = Number(lockedRate); slabName = lockedRateName || 'Dynamic Rate';
           } else {
-             const discountPercent = Number(promo.discount_percent || 0);
-             if (discountPercent > 0) {
-               rate = rawBaseRate * (1 - (discountPercent / 100));
-               slabName = `Promo: ${promo.name} (${discountPercent}% Off)`;
-               isPromoApplied = true;
-               break;
-             }
+            const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
+            rate = cr.rate; slabName = cr.slabName;
           }
         }
-      }
 
-      if (!isPromoApplied) {
-        if (lockedRate !== undefined && lockedRate !== null) {
-          rate = Number(lockedRate); slabName = lockedRateName || 'Dynamic Rate';
+        appliedSlabs.add(slabName);
+        const chunkCost = chunkHours * rate;
+        unpausedTotalCost += chunkCost;
+        
+        if (breakdown.length > 0 && breakdown[breakdown.length - 1].slabName === slabName && breakdown[breakdown.length - 1].rate === rate) {
+          breakdown[breakdown.length - 1].endMs = nextMs;
+          breakdown[breakdown.length - 1].cost += chunkCost;
         } else {
-          const cr = getCurrentRate(gameType, currentMs, pricing, numPlayers);
-          rate = cr.rate; slabName = cr.slabName;
+          breakdown.push({ startMs: currentMs, endMs: nextMs, rate, cost: chunkCost, slabName });
         }
+        
+        currentMs = nextMs;
       }
-
-      appliedSlabs.add(slabName);
-      const chunkCost = chunkHours * rate;
-      unpausedTotalCost += chunkCost;
-      
-      if (breakdown.length > 0 && breakdown[breakdown.length - 1].slabName === slabName && breakdown[breakdown.length - 1].rate === rate) {
-        breakdown[breakdown.length - 1].endMs = nextMs;
-        breakdown[breakdown.length - 1].cost += chunkCost;
-      } else {
-        breakdown.push({ startMs: currentMs, endMs: nextMs, rate, cost: chunkCost, slabName });
-      }
-      
-      currentMs = nextMs;
     }
   } else {
     // 0 elapsed time
@@ -296,13 +491,13 @@ export function calculateCost(
   let discountAmount = Math.max(0, baseCost - finalCost);
   
   // Apply Flat Session Manual Discount (on top of promos)
-  if (manualDiscount && manualDiscount.percent > 0) {
-    const finalBeforeManual = finalCost;
-    finalCost = finalCost * (1 - (manualDiscount.percent / 100));
-    finalCost = Math.round(finalCost);
-    // Add the manual discount chunk to the total discountAmount
-    discountAmount += (finalBeforeManual - finalCost);
-    appliedSlabs.add(`Manual Discount (${manualDiscount.percent}% Off)`);
+  if (manualDiscount) {
+    const disc = applySessionDiscounts(finalCost, 0, manualDiscount);
+    if (disc.totalDiscountAmount > 0) {
+      discountAmount += disc.totalDiscountAmount;
+      finalCost = disc.finalTableCost;
+      appliedSlabs.add(`Manual Discount (${disc.discountAppliedLabel})`);
+    }
   }
 
   return { cost: finalCost, baseCost, discountAmount, slabsApplied: Array.from(appliedSlabs).join(' + ') || 'None', breakdown };
@@ -317,7 +512,7 @@ export function calculateBilling(
   gameType: string | null | undefined, 
   pricing?: BusinessPricing, 
   numPlayers: number = 1,
-  manualDiscount?: { percent: number; applyToFood: boolean; },
+  manualDiscount?: TableDiscountConfig | { percent: number; applyToFood: boolean; },
   pausedDurationSecs: number = 0,
   lockedRate?: number,
   lockedRateName?: string,

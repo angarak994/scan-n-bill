@@ -24,11 +24,28 @@ export async function verifyToken(token: string) {
   }
 }
 
-export async function getSession() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('qcontrol_session')?.value;
-  if (!token) return null;
-  return await verifyToken(token);
+export async function getSession(req?: Request) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('qcontrol_session')?.value;
+    if (token) return await verifyToken(token);
+  } catch (err) {
+    // cookies() was called outside request scope (e.g. In unit test)
+  }
+
+  if (req) {
+    const cookieHeader = req.headers.get('cookie') || '';
+    const match = cookieHeader.match(/qcontrol_session=([^;]+)/);
+    if (match && match[1]) {
+      return await verifyToken(match[1]);
+    }
+    const authHeader = req.headers.get('authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      return await verifyToken(authHeader.substring(7));
+    }
+  }
+
+  return null;
 }
 
 export async function setSession(businessId: string, role: string = 'owner') {

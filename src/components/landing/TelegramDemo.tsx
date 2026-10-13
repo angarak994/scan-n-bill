@@ -3,6 +3,15 @@ import React from 'react';
 import ScrollReveal from '@/components/ui/ScrollReveal';
 import { useDemoEngine } from '@/components/landing/store/DemoEngine';
 
+const formatTimeDeterministic = (timestamp: number | string | Date) => {
+  const d = new Date(timestamp);
+  let hours = d.getHours();
+  const minutes = d.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+};
+
 export default function TelegramDemo() {
   const { state, startTable, pauseTable, stopTable, addTelegramMsg } = useDemoEngine();
 
@@ -64,8 +73,8 @@ export default function TelegramDemo() {
                     <div className={`p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-[#0088cc] text-white rounded-tr-none' : 'bg-bg-card border border-border-light rounded-tl-none text-text-primary'}`}>
                       <div className="text-sm font-medium">{msg.text}</div>
                     </div>
-                    <span className="text-[10px] text-text-disabled mt-1 px-1 tracking-wider">
-                      {new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    <span suppressHydrationWarning className="text-[10px] text-text-disabled mt-1 px-1 tracking-wider">
+                      {formatTimeDeterministic(msg.time)}
                     </span>
                   </div>
                 ))}

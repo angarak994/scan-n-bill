@@ -72,6 +72,14 @@ export async function POST(request: Request) {
       console.error('Failed to update booking status, but session created', updateError);
     }
 
+    // Trigger non-blocking unified sync so Sheets row includes linked Booking ID
+    try {
+      const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
+      enqueueSheetsSync('SESSION', session.id, business_id);
+    } catch (e) {
+      console.error('Failed to enqueue converted booking session sync', e);
+    }
+
     return NextResponse.json({ success: true, session });
   } catch (error: any) {
     console.error('Start Booking Session API Error:', error);

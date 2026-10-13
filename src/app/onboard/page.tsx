@@ -266,7 +266,7 @@ export default function OnboardPage() {
             {/* Demo Sandbox Card */}
             <div 
               onClick={launchInstantDemo}
-              className={`group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-accent shadow-2xl bg-bg-surface ${loading && onboardMode === 'demo' ? 'opacity-50 pointer-events-none' : ''}`}
+              className={`group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-accent shadow-2xl bg-bg-surface ${loading ? 'opacity-50 pointer-events-none' : ''}`}
             >
               <div className="w-16 h-16 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                 <svg className="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -278,7 +278,7 @@ export default function OnboardPage() {
                 Start instantly with a pre-configured dashboard. We auto-generate tables and standard pricing so you can test QControl immediately. No Google Sheets required.
               </p>
               <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-accent group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
-                {loading && onboardMode === 'demo' ? 'Launching...' : 'Launch Sandbox'}
+                {loading ? 'Launching...' : 'Launch Sandbox'}
               </div>
             </div>
 
