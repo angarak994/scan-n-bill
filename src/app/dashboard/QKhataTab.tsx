@@ -286,11 +286,11 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
             </div>
 
             {/* Main Content Area */}
-            <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden shadow-sm flex flex-col lg:flex-row h-[calc(100vh-240px)] min-h-[600px]">
+            <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden shadow-sm flex flex-col lg:flex-row h-auto lg:h-[calc(100vh-240px)] min-h-[500px] lg:min-h-[600px]">
                 
                 {/* Left Panel: Customer List */}
                 <div className={`w-full lg:w-[350px] shrink-0 h-full ${selectedCustomer ? 'hidden lg:flex' : 'flex'} flex-col border-r border-border-theme bg-bg-primary/20`}>
-                    <div className="p-5 border-b border-border-theme shrink-0">
+                    <div className="p-4 sm:p-5 border-b border-border-theme shrink-0">
                         <div className="mb-4">
                             <h3 className="text-lg font-bold text-text-primary tracking-tight">{t(language, 'members')}</h3>
                             <p className="text-xs text-text-secondary mt-0.5">{t(language, 'select_member_ledger')}</p>
@@ -328,7 +328,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                         )}
                                         <div className="flex justify-between items-start mb-1.5 pl-2">
                                             <div className="flex items-center gap-2">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${selectedCustomer?.id === c.id ? 'bg-accent text-white' : 'bg-bg-primary text-text-primary group-hover:bg-accent/20 group-hover:text-accent'} transition-colors`}>
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${selectedCustomer?.id === c.id ? 'bg-accent text-black' : 'bg-bg-primary text-text-primary group-hover:bg-accent/20 group-hover:text-accent'} transition-colors`}>
                                                     {c.name.substring(0,2).toUpperCase()}
                                                 </div>
                                                 <div>
@@ -366,10 +366,10 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     {selectedCustomer ? (
                         <>
                             {/* Ledger Header */}
-                            <div className="p-6 lg:p-8 border-b border-border-theme shrink-0">
+                            <div className="p-4 sm:p-6 lg:p-8 border-b border-border-theme shrink-0">
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        <button onClick={() => setSelectedCustomer(null)} className="lg:hidden text-text-secondary hover:text-text-primary text-sm font-semibold mb-4 flex items-center gap-1 transition-colors">
+                                        <button onClick={() => setSelectedCustomer(null)} className="lg:hidden text-text-secondary hover:text-text-primary text-sm font-semibold mb-4 flex items-center gap-1.5 transition-colors touch-target min-h-[44px]">
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
                                             {t(language, 'back')}
                                         </button>
@@ -428,7 +428,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                     <button 
                                         onClick={handleSettle}
                                         disabled={!settlementAmount || isSubmitting}
-                                        className="relative z-10 bg-accent text-white px-8 py-2.5 rounded-xl font-bold text-sm btn-premium disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)]"
+                                        className="relative z-10 min-h-[44px] bg-accent text-black font-black px-8 py-2.5 rounded-xl text-sm btn-premium disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)] touch-target flex items-center justify-center shrink-0"
                                     >
                                         {isSubmitting ? t(language, 'loading') : t(language, 'settle_balance')}
                                     </button>

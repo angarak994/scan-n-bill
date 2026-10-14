@@ -15,6 +15,8 @@ import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
 import FancyLanguageToggle from '@/components/FancyLanguageToggle';
 import { LanguageProvider, useLanguage } from '@/context/LanguageContext';
+import MobileMoreSheet from '@/components/ui/MobileMoreSheet';
+import ResponsiveModalSheet from '@/components/ui/ResponsiveModalSheet';
 
 // Tab loading skeleton for lazy-loaded tabs
 const TabLoadingSkeleton = () => (
@@ -31,6 +33,7 @@ const BookingsTab = dynamic(() => import('./BookingsTab'), { loading: () => <Tab
 const MenuManagerTab = dynamic(() => import('./MenuManagerTab').then(mod => mod.MenuManagerTab), { loading: () => <TabLoadingSkeleton />, ssr: false });
 const MessagingTab = dynamic(() => import('./MessagingTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
 const SubscriptionTab = dynamic(() => import('./SubscriptionTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
+const ReportsTab = dynamic(() => import('./ReportsTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
 const WelcomeCelebration = dynamic(() => import('./WelcomeCelebration'), { ssr: false });
 
 // Setup Supabase Client for Realtime
@@ -86,16 +89,21 @@ const formatINR = (amount: number) => {
 };
 
 // Icons
-const IconOverview = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>;
-const IconMenu = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>;
-const IconTables = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>;
-const IconBookings = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>;
-const IconCustomers = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>;
-const IconSettings = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>;
-const IconSupport = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>;
-const IconLogout = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>;
-const IconEye = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
-const IconEyeOff = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>;
+const IconOverview = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>;
+const IconMenu = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>;
+const IconTables = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>;
+const IconBookings = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>;
+const IconCustomers = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>;
+const IconPayments = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>;
+const IconQKhata = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>;
+const IconReports = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>;
+const IconMessaging = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>;
+const IconSettings = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>;
+const IconSubscription = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>;
+const IconSupport = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>;
+const IconLogout = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>;
+const IconEye = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>;
+const IconEyeOff = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>;
 
 
 
@@ -119,6 +127,7 @@ function DashboardContent() {
 
   // UI State
   const [sidebarTab, _setSidebarTab] = useState<'overview' | 'tables' | 'bookings' | 'reports' | 'customers' | 'settings' | 'subscription' | 'support' | 'qkhata' | 'payments' | 'messaging' | 'menu'>('overview');
+  const [useLegacyReports, setUseLegacyReports] = useState(false);
   
   const setSidebarTab = (tab: any) => {
     _setSidebarTab(tab);
@@ -144,6 +153,29 @@ function DashboardContent() {
     }
   }, []);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('qcontrol_sidebar_collapsed');
+      if (saved !== null) {
+        setIsSidebarCollapsed(saved === 'true');
+      } else if (window.innerWidth >= 768 && window.innerWidth < 1024) {
+        setIsSidebarCollapsed(true);
+      }
+    }
+  }, []);
+
+  const toggleSidebarCollapse = useCallback(() => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('qcontrol_sidebar_collapsed', String(next));
+      }
+      return next;
+    });
+  }, []);
   const [activeBoardTab, setActiveBoardTab] = useState<'active' | 'history'>('active');
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -166,13 +198,25 @@ function DashboardContent() {
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
   const [editingPlan, setEditingPlan] = useState<any>(null);
 
-  // Registration OTP State
+  // Registration OTP & Manual Verification State
   const [registrationStep, setRegistrationStep] = useState<1 | 2 | 3>(1);
   const [otp, setOtp] = useState('');
   const [verificationId, setVerificationId] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [verificationMode, setVerificationMode] = useState<'otp' | 'manual'>('otp');
+  const [manualApprovalNotes, setManualApprovalNotes] = useState('');
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [selectedMemberProfile, setSelectedMemberProfile] = useState<any>(null);
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setOtpCooldown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otpCooldown]);
 
   
   const defaultPreferences = {
@@ -1288,47 +1332,52 @@ function DashboardContent() {
   };
 
   
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMember.mobile || newMember.mobile.length < 5) return toast.error('Enter a valid mobile number or email');
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newMember.mobile || newMember.mobile.length < 5) return toast.error('Enter a valid 10-digit mobile number');
     setIsSendingOtp(true);
     try {
       const res = await fetch('/api/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact: newMember.mobile }) // newMember.mobile holds the generic input
+        body: JSON.stringify({ contact: newMember.mobile })
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success('OTP Sent! Check console.');
+        toast.success(data.message || 'Verification code sent to customer phone');
         setRegistrationStep(2);
+        setOtpCooldown(data.cooldownSeconds || 60);
       } else {
         toast.error(data.error || 'Failed to send OTP');
+        if (data.retryAfter) {
+          setOtpCooldown(data.retryAfter);
+        }
       }
-    } catch(e) { toast.error('Network error'); }
+    } catch(e) { toast.error('Network error. Please check your connection.'); }
     setIsSendingOtp(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp) return toast.error('Enter OTP');
+    const cleanOtp = otp.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) return toast.error('Enter valid 6-digit OTP');
     setIsVerifyingOtp(true);
     try {
       const res = await fetch('/api/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact: newMember.mobile, otp })
+        body: JSON.stringify({ contact: newMember.mobile, otp: cleanOtp })
       });
       const data = await res.json();
       if (res.ok) {
         setVerificationId(data.verificationId);
         setVerificationToken(data.verificationToken);
         setRegistrationStep(3);
-        toast.success('Mobile verified!');
+        toast.success('Mobile verified successfully!');
       } else {
         toast.error(data.error || 'Invalid OTP');
       }
-    } catch(e) { toast.error('Network error'); }
+    } catch(e) { toast.error('Network error. Please check your connection.'); }
     setIsVerifyingOtp(false);
   };
 
@@ -1398,24 +1447,48 @@ function DashboardContent() {
   const handleCreateMembership = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isCreatingMember) return;
+    if (!newMember.name?.trim()) return toast.error('Please enter customer full name');
+    if (!newMember.mobile) return toast.error('Please enter mobile number');
+    if (!newMember.plan_id) return toast.error('Please select a membership plan');
+
     setIsCreatingMember(true);
     try {
+      const payload: any = {
+        name: newMember.name.trim(),
+        mobile: newMember.mobile,
+        email: newMember.email?.trim() || undefined,
+        tier: newMember.plan_id,
+        duration_months: (membershipPlans.find((p:any) => p.id === newMember.plan_id)?.duration_months || 12)
+      };
+
+      if (verificationMode === 'manual') {
+        payload.verificationMethod = 'MANUAL_OWNER_VERIFICATION';
+        payload.notes = manualApprovalNotes || 'Customer known to owner';
+      } else {
+        payload.verificationMethod = 'OTP_VERIFIED';
+        payload.verificationToken = verificationToken;
+        payload.verificationId = verificationId;
+      }
+
       const res = await fetch('/api/memberships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newMember, verificationToken, verificationId, tier: newMember.plan_id, duration_months: (membershipPlans.find((p:any) => p.id === newMember.plan_id)?.duration_months || 12) })
+        body: JSON.stringify(payload)
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewMember({ name: '', mobile: '', email: '', plan_id: '' });
         setRegistrationStep(1);
         setOtp('');
         setVerificationToken('');
+        setVerificationId('');
+        setManualApprovalNotes('');
+        setVerificationMode('otp');
         fetchMemberships();
-      fetchMembershipPlans();
-        toast.success('✓ Customer profile created.');
+        fetchMembershipPlans();
+        toast.success(data.message || '✓ Customer profile created.');
       } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Failed to create customer profile.");
+        toast.error(data.error || "Failed to create customer profile.");
       }
     } catch (e: any) {
       toast.error(e?.message || "Failed to create customer profile. Please check your connection.");
@@ -2861,26 +2934,133 @@ function DashboardContent() {
 };
 
   const renderCustomers = () => (
-    <div className="flex flex-col gap-8 mt-4">
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-border-theme bg-bg-primary/50 flex justify-between items-center">
+    <div className="flex flex-col gap-8 mt-4 px-3 sm:px-6 md:px-0">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col shadow-sm">
+        <div className="p-4 sm:p-6 border-b border-border-theme bg-bg-primary/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h3 className="text-xl font-bold text-text-primary">Membership Directory</h3>
             <p className="text-xs text-text-secondary mt-1 italic">Manage your loyal members</p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-between sm:justify-end">
             {selectedBulkSmsCustomers.length > 0 && (
-              <button onClick={() => setShowBulkSmsModal(true)} className="px-4 py-2 bg-accent text-black font-bold text-sm rounded-lg hover:bg-accent/90 transition-colors shadow shadow-accent/20">
+              <button 
+                onClick={() => setShowBulkSmsModal(true)} 
+                className="min-h-[44px] touch-target px-4 py-2 bg-accent text-black font-extrabold text-sm rounded-lg hover:bg-accent/90 transition-colors shadow shadow-accent/20"
+              >
                 Send Bulk SMS ({selectedBulkSmsCustomers.length})
               </button>
             )}
-            <button onClick={fetchMemberships} className="p-2 bg-bg-surface border border-border-theme rounded hover:bg-border-theme transition-colors">
+            <button 
+              onClick={fetchMemberships} 
+              className="min-h-[44px] min-w-[44px] touch-target p-2.5 bg-bg-surface border border-border-theme rounded-lg hover:bg-border-theme transition-colors flex items-center justify-center ml-auto sm:ml-0"
+              aria-label="Refresh Directory"
+            >
               <svg className="w-4 h-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
             </button>
           </div>
         </div>
+
+        {/* Mobile Member Card List (Visible on screens < 768px) */}
+        <div className="md:hidden divide-y divide-border-theme/60">
+          {isMembershipsLoading ? (
+            <div className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading directory...</div>
+          ) : memberships.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</div>
+          ) : (
+            memberships.map((m, i) => (
+              <div key={i} className="p-4 flex flex-col gap-3 bg-bg-card hover:bg-bg-surface/40 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      checked={m.mobile ? selectedBulkSmsCustomers.includes(m.mobile) : false}
+                      onChange={(e) => {
+                        if (!m.mobile) return;
+                        if (e.target.checked) setSelectedBulkSmsCustomers([...selectedBulkSmsCustomers, m.mobile]);
+                        else setSelectedBulkSmsCustomers(selectedBulkSmsCustomers.filter(phone => phone !== m.mobile));
+                      }}
+                      className="w-5 h-5 rounded border-border-theme text-accent focus:ring-accent" 
+                    />
+                    <div className="w-9 h-9 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-black text-accent shrink-0">
+                      {m.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-text-primary">{m.name}</p>
+                      {m.mobile && (
+                        <a href={`tel:${m.mobile}`} className="text-xs font-mono text-accent hover:underline flex items-center gap-1">
+                          📞 {m.mobile}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>
+                    {m.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 bg-bg-surface p-2.5 rounded-lg border border-border-theme/60 text-xs">
+                  <div>
+                    <span className="text-[10px] text-text-secondary block">Tier</span>
+                    <span className="font-bold text-accent text-[11px] truncate block">
+                      {membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-text-secondary block">Spend</span>
+                    <span className="font-mono font-bold text-text-primary text-[11px] block">₹{m.total_spend || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-text-secondary block">Points</span>
+                    <span className="font-mono font-bold text-accent text-[11px] block">{m.loyalty_points || 0}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div>
+                    {m.verification_method === 'MANUAL_OWNER_VERIFICATION' ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMemberProfile(m)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left shadow-sm min-h-[36px]"
+                      >
+                        <span>🛡️</span>
+                        <span>Owner Approved</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMemberProfile(m)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left shadow-sm min-h-[36px]"
+                      >
+                        <span>📱</span>
+                        <span>OTP Verified</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setSelectedMemberProfile(m)}
+                      className="min-h-[44px] min-w-[44px] touch-target flex items-center justify-center p-2 text-text-secondary hover:text-accent hover:bg-accent/10 rounded-lg transition-colors border border-border-theme"
+                      aria-label="View Profile"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteMembership(m.id, m.name)}
+                      className="min-h-[44px] min-w-[44px] touch-target flex items-center justify-center p-2 text-text-secondary hover:text-danger hover:bg-danger/10 rounded-lg transition-colors border border-border-theme"
+                      aria-label="Delete Profile"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
         
-        <div className="overflow-x-auto">
+        {/* Desktop Table (Hidden on screens < 768px) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
@@ -2896,14 +3076,15 @@ function DashboardContent() {
                 <th className="p-5 font-bold">{t('loyalty_points', 'Points')}</th>
                 <th className="p-5 font-bold">{t('total_spend', 'Spend')}</th>
                 <th className="p-5 font-bold">{t('expiry_date', 'Expiry Date')}</th>
+                <th className="p-5 font-bold">Verification</th>
                 <th className="p-5 font-bold">{t('status', 'Status')}</th>
               </tr>
             </thead>
             <tbody>
               {isMembershipsLoading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading directory...</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-text-secondary text-sm animate-pulse">Loading directory...</td></tr>
               ) : memberships.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
               ) : (
                 memberships.map((m, i) => (
                   <tr key={i} className="border-b border-border-theme/50 hover:bg-bg-surface/50 transition-colors">
@@ -2922,7 +3103,7 @@ function DashboardContent() {
                     <td className="p-5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-xs font-bold text-accent">
-                          {m.name.substring(0,2).toUpperCase()}
+                          {m.name.substring(0, 2).toUpperCase()}
                         </div>
                         <p className="text-sm font-bold">{m.name}</p>
                       </div>
@@ -2932,18 +3113,49 @@ function DashboardContent() {
                       <p className="text-[10px] text-text-secondary mt-0.5">{m.email || 'No email'}</p>
                     </td>
                     <td className="p-5">
-                      <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{membershipPlans.find((p:any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}</span>
+                      <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}</span>
                     </td>
                     <td className="p-5"><span className="text-sm font-mono font-bold text-accent">{m.loyalty_points || 0}</span></td>
                     <td className="p-5"><span className="text-sm font-mono">₹{m.total_spend || 0}</span></td>
                     <td className="p-5"><span className="text-sm font-mono text-text-primary">{m.expiry_date ? m.expiry_date.split('T')[0] : 'N/A'}</span></td>
                     <td className="p-5">
-                      <div className="flex items-center gap-3">
+                      {m.verification_method === 'MANUAL_OWNER_VERIFICATION' ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMemberProfile(m)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left shadow-sm min-h-[32px]"
+                          title="Manually approved by owner (Phone unverified). Click for audit info."
+                        >
+                          <span>🛡️</span>
+                          <span>Owner Approved</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMemberProfile(m)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left shadow-sm min-h-[32px]"
+                          title="Verified via Phone OTP. Click for details."
+                        >
+                          <span>📱</span>
+                          <span>OTP Verified</span>
+                        </button>
+                      )}
+                    </td>
+                    <td className="p-5">
+                      <div className="flex items-center gap-2">
                         <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
+                        <Tooltip text="View Profile & Audit Details">
+                          <button 
+                            onClick={() => setSelectedMemberProfile(m)}
+                            className="p-2 min-h-[36px] min-w-[36px] touch-target flex items-center justify-center text-text-secondary hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                          </button>
+                        </Tooltip>
                         <Tooltip text="Delete Profile">
                           <button 
                             onClick={() => handleDeleteMembership(m.id, m.name)}
-                            className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                            className="p-2 min-h-[36px] min-w-[36px] touch-target flex items-center justify-center text-text-secondary hover:text-danger hover:bg-danger/10 rounded-lg transition-colors"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                           </button>
@@ -2959,22 +3171,23 @@ function DashboardContent() {
       </div>
 
       {showBulkSmsModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowBulkSmsModal(false)}>
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6 border-b border-border-theme flex justify-between items-center bg-bg-primary/50">
-              <h3 className="text-xl font-bold text-text-primary">Send Bulk SMS</h3>
-              <button onClick={() => setShowBulkSmsModal(false)} className="text-text-secondary hover:text-text-primary">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowBulkSmsModal(false)}>
+          <div className="bg-bg-card border border-border-theme rounded-t-2xl sm:rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl max-h-[90dvh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-border-theme rounded-full mx-auto my-2 sm:hidden shrink-0" />
+            <div className="p-4 sm:p-6 border-b border-border-theme flex justify-between items-center bg-bg-primary/50 shrink-0">
+              <h3 className="text-lg sm:text-xl font-bold text-text-primary">Send Bulk SMS</h3>
+              <button onClick={() => setShowBulkSmsModal(false)} className="min-h-[44px] min-w-[44px] touch-target flex items-center justify-center text-text-secondary hover:text-text-primary">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-text-secondary mb-2">DLT Template ID</label>
                 <input 
                   type="text" 
                   value={bulkSmsTemplateId} 
                   onChange={e => setBulkSmsTemplateId(e.target.value)} 
-                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm font-mono" 
+                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm font-mono" 
                   placeholder="e.g. promo_v1" 
                 />
               </div>
@@ -2983,7 +3196,7 @@ function DashboardContent() {
                 <textarea 
                   value={bulkSmsMessage} 
                   onChange={e => setBulkSmsMessage(e.target.value)} 
-                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm h-32" 
+                  className="w-full p-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm h-32" 
                   placeholder="Hi {{name}}, enjoy 10% off today!" 
                 />
                 <p className="text-xs text-text-secondary mt-1">Placeholders: `{"{{"}name{"}}"}`</p>
@@ -2992,8 +3205,8 @@ function DashboardContent() {
                 Sending to {selectedBulkSmsCustomers.length} customers
               </div>
             </div>
-            <div className="p-4 border-t border-border-theme flex justify-end gap-3 bg-bg-surface">
-              <button onClick={() => setShowBulkSmsModal(false)} className="px-5 py-2.5 rounded-lg text-sm font-bold text-text-secondary hover:bg-bg-primary transition-colors">Cancel</button>
+            <div className="p-4 border-t border-border-theme flex justify-end gap-3 bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <button onClick={() => setShowBulkSmsModal(false)} className="min-h-[44px] touch-target px-5 py-2.5 rounded-lg text-sm font-bold text-text-secondary hover:bg-bg-primary transition-colors">Cancel</button>
               <button 
                 onClick={async () => {
                   setIsSendingBulkSms(true);
@@ -3015,7 +3228,7 @@ function DashboardContent() {
                   setIsSendingBulkSms(false);
                 }} 
                 disabled={isSendingBulkSms || !bulkSmsMessage || !bulkSmsTemplateId}
-                className="px-5 py-2.5 rounded-lg text-sm font-extrabold bg-accent text-black hover:bg-accent/90 transition-colors disabled:opacity-50"
+                className="min-h-[44px] touch-target px-5 py-2.5 rounded-lg text-sm font-extrabold bg-accent text-black hover:bg-accent/90 transition-colors disabled:opacity-50"
               >
                 {isSendingBulkSms ? 'Sending...' : 'Send Now'}
               </button>
@@ -3024,84 +3237,429 @@ function DashboardContent() {
         </div>
       )}
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-        <h2 className="text-2xl font-bold mb-6">Register New Member</h2>
-        
-        {registrationStep === 1 && (
-          <form onSubmit={handleSendOtp} className="max-w-xl grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number <span className="text-danger">*</span></label>
-              <input required type="tel" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: formatPhoneInput(e.target.value)})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono" placeholder="9876543210" />
-            </div>
-            <button type="submit" disabled={isSendingOtp} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
-              {isSendingOtp ? 'Sending OTP...' : 'Send OTP'}
+      {/* Register New Member Section */}
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-border-theme/60">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold">Register New Member</h2>
+            <p className="text-text-secondary text-xs mt-1">Activate customer membership with phone verification or owner approval</p>
+          </div>
+          
+          {/* Two Clear Choices: Verify via OTP vs Owner Approval */}
+          <div className="flex items-center p-1 bg-bg-primary rounded-xl border border-border-theme shadow-inner w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => { setVerificationMode('otp'); setRegistrationStep(1); }}
+              className={`flex-1 sm:flex-initial min-h-[44px] touch-target flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-black transition-all ${
+                verificationMode === 'otp'
+                  ? 'bg-accent text-black shadow-sm ring-1 ring-accent/30'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <span>📱</span> Verify via OTP
             </button>
-          </form>
+            {isAuthorized && (
+              <button
+                type="button"
+                onClick={() => { setVerificationMode('manual'); }}
+                className={`flex-1 sm:flex-initial min-h-[44px] touch-target flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                  verificationMode === 'manual'
+                    ? 'bg-amber-500 text-black shadow-sm font-black ring-1 ring-amber-400/50'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+                title="Only authenticated owners/permitted staff can approve members manually"
+              >
+                <span>🛡️</span> Owner Approval
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* METHOD 1: STANDARD CUSTOMER OTP VERIFICATION */}
+        {verificationMode === 'otp' && (
+          <div>
+            {/* Step Indicators */}
+            <div className="flex items-center gap-2 mb-6 max-w-xl">
+              <div className={`flex items-center gap-2 text-xs font-bold ${registrationStep === 1 ? 'text-accent' : 'text-text-secondary'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${registrationStep === 1 ? 'bg-accent text-black font-black' : 'bg-bg-surface border border-border-theme'}`}>1</span>
+                Phone
+              </div>
+              <div className="flex-1 h-0.5 bg-border-theme"></div>
+              <div className={`flex items-center gap-2 text-xs font-bold ${registrationStep === 2 ? 'text-accent' : 'text-text-secondary'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${registrationStep === 2 ? 'bg-accent text-black font-black' : 'bg-bg-surface border border-border-theme'}`}>2</span>
+                OTP Code
+              </div>
+              <div className="flex-1 h-0.5 bg-border-theme"></div>
+              <div className={`flex items-center gap-2 text-xs font-bold ${registrationStep === 3 ? 'text-accent' : 'text-text-secondary'}`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${registrationStep === 3 ? 'bg-accent text-black font-black' : 'bg-bg-surface border border-border-theme'}`}>3</span>
+                Details
+              </div>
+            </div>
+
+            {registrationStep === 1 && (
+              <form onSubmit={handleSendOtp} className="max-w-xl grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Mobile Number <span className="text-danger">*</span></label>
+                  <input 
+                    required 
+                    type="tel" 
+                    value={newMember.mobile} 
+                    onChange={e => setNewMember({...newMember, mobile: formatPhoneInput(e.target.value)})} 
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm font-mono min-h-[44px]" 
+                    placeholder="9876543210" 
+                    maxLength={10}
+                  />
+                  <p className="text-[11px] text-text-secondary mt-1.5">A 6-digit verification code will be dispatched to this number via SMS.</p>
+                </div>
+
+                <button type="submit" disabled={isSendingOtp} className="w-full bg-accent text-black font-black py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2 flex items-center justify-center gap-2 shadow-sm min-h-[44px] touch-target">
+                  {isSendingOtp ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                      <span>Sending OTP...</span>
+                    </>
+                  ) : (
+                    <span>Send Verification OTP</span>
+                  )}
+                </button>
+
+                {isAuthorized && (
+                  <div className="p-3 bg-bg-surface rounded-lg border border-border-theme/60 text-xs text-text-secondary flex justify-between items-center">
+                    <span>Customer known to you in person?</span>
+                    <button 
+                      type="button" 
+                      onClick={() => setVerificationMode('manual')}
+                      className="text-amber-400 font-bold hover:underline min-h-[44px] flex items-center"
+                    >
+                      Verify Manually as Owner →
+                    </button>
+                  </div>
+                )}
+              </form>
+            )}
+
+            {registrationStep === 2 && (
+              <form onSubmit={handleVerifyOtp} className="max-w-xl grid grid-cols-1 gap-4">
+                <div className="bg-accent/5 border border-accent/20 rounded-lg p-3 text-xs text-text-secondary">
+                  Enter the 6-digit verification code sent to <strong className="text-text-primary font-mono">{newMember.mobile}</strong>.
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Enter 6-Digit OTP <span className="text-danger">*</span></label>
+                  <input 
+                    required 
+                    type="text" 
+                    value={otp} 
+                    onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-xl font-mono text-center tracking-[0.5em] font-bold min-h-[48px]" 
+                    placeholder="••••••" 
+                    maxLength={6} 
+                    autoFocus
+                  />
+                  <div className="flex justify-between items-center text-xs text-text-secondary mt-2">
+                    <button type="button" onClick={() => setRegistrationStep(1)} className="text-accent hover:underline min-h-[44px] flex items-center">
+                      ← Change mobile number
+                    </button>
+                    <div>
+                      {otpCooldown > 0 ? (
+                        <span className="text-text-secondary">Resend in <strong className="text-accent font-mono">{otpCooldown}s</strong></span>
+                      ) : (
+                        <button type="button" onClick={() => handleSendOtp()} className="text-accent font-bold hover:underline min-h-[44px] flex items-center">
+                          Resend Code
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button type="submit" disabled={isVerifyingOtp || otp.length !== 6} className="w-full bg-accent text-black font-black py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2 flex items-center justify-center gap-2 shadow-sm min-h-[44px] touch-target">
+                  {isVerifyingOtp ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                      <span>Verifying Code...</span>
+                    </>
+                  ) : (
+                    <span>Verify Code & Continue</span>
+                  )}
+                </button>
+
+                {isAuthorized && (
+                  <div className="pt-2 text-center">
+                    <button 
+                      type="button" 
+                      onClick={() => setVerificationMode('manual')}
+                      className="text-xs text-amber-400 font-bold hover:underline min-h-[44px] inline-flex items-center"
+                    >
+                      Customer having trouble with SMS? Verify Manually as Owner →
+                    </button>
+                  </div>
+                )}
+              </form>
+            )}
+
+            {registrationStep === 3 && (
+              <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
+                <div className="col-span-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between text-xs text-emerald-400">
+                  <span className="flex items-center gap-2 font-bold">
+                    <span>✓</span> Mobile verified successfully via OTP
+                  </span>
+                  <span className="font-mono text-text-primary">{newMember.mobile}</span>
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name <span className="text-danger">*</span></label>
+                  <input required type="text" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm min-h-[44px]" placeholder="John Doe" />
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number (Verified)</label>
+                  <input disabled type="tel" value={newMember.mobile} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg opacity-60 cursor-not-allowed outline-none text-base sm:text-sm font-mono min-h-[44px]" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email Address (Optional)</label>
+                  <input type="email" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm min-h-[44px]" placeholder="john@example.com" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Membership Plan <span className="text-danger">*</span></label>
+                  <select required value={newMember.plan_id} onChange={e => setNewMember({...newMember, plan_id: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm font-bold text-accent min-h-[44px]">
+                    <option value="" disabled>Select a plan...</option>
+                    {membershipPlans.filter((p: any) => p.status === 'Active').map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name} - ₹{p.price} ({p.duration_months} Months)</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2 mt-2">
+                  <button type="submit" disabled={isCreatingMember} className="w-full bg-accent text-black font-black py-3.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2 flex items-center justify-center gap-2 shadow-sm min-h-[44px] touch-target">
+                    {isCreatingMember ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                        <span>Registering Member...</span>
+                      </>
+                    ) : (
+                      <span>Complete Registration</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
 
-        {registrationStep === 2 && (
-          <form onSubmit={handleVerifyOtp} className="max-w-xl grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Enter OTP <span className="text-danger">*</span></label>
-              <input required type="text" value={otp} onChange={e => setOtp(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-mono text-center tracking-widest" placeholder="123456" maxLength={6} />
-              <p className="text-xs text-text-secondary mt-2">OTP sent to {newMember.mobile}. <button type="button" onClick={() => setRegistrationStep(1)} className="text-accent hover:underline">Change number</button></p>
-            </div>
-            <button type="submit" disabled={isVerifyingOtp} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
-              {isVerifyingOtp ? 'Verifying...' : 'Verify OTP'}
-            </button>
-          </form>
-        )}
-
-        {registrationStep === 3 && (
+        {/* METHOD 2: BUSINESS OWNER MANUAL VERIFICATION */}
+        {verificationMode === 'manual' && isAuthorized && (
           <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
-            <div className="col-span-2 md:col-span-1">
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Full Name <span className="text-danger">*</span></label>
-              <input required type="text" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="John Doe" />
+            {/* Audit & Compliance Disclosure Banner */}
+            <div className="col-span-2 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                <span>🛡️</span>
+                <span>Verify Manually — Customer Known to Owner</span>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                You are approving this membership without sending a customer OTP. The member will be activated with verification method <strong className="text-text-primary font-mono text-[11px]">MANUAL_OWNER_VERIFICATION</strong>. Your approval will be recorded in the audit log, and the phone number will <strong className="text-amber-400">NOT</strong> be marked as OTP-verified.
+              </p>
             </div>
+
             <div className="col-span-2 md:col-span-1">
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number (Verified)</label>
-              <input disabled type="tel" value={newMember.mobile} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg opacity-50 cursor-not-allowed outline-none text-sm font-mono" />
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Full Name <span className="text-danger">*</span></label>
+              <input 
+                required 
+                type="text" 
+                value={newMember.name} 
+                onChange={e => setNewMember({...newMember, name: e.target.value})} 
+                className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm min-h-[44px]" 
+                placeholder="John Doe" 
+              />
             </div>
+
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Mobile Number <span className="text-danger">*</span></label>
+              <input 
+                required 
+                type="tel" 
+                value={newMember.mobile} 
+                onChange={e => setNewMember({...newMember, mobile: formatPhoneInput(e.target.value)})} 
+                className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm font-mono min-h-[44px]" 
+                placeholder="9876543210" 
+                maxLength={10} 
+              />
+            </div>
+
             <div className="col-span-2">
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email (Optional)</label>
-              <input type="email" value={newMember.email} onChange={e => setNewMember({...newMember, email: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm" placeholder="john@example.com" />
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email Address (Optional)</label>
+              <input 
+                type="email" 
+                value={newMember.email} 
+                onChange={e => setNewMember({...newMember, email: e.target.value})} 
+                className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm min-h-[44px]" 
+                placeholder="john@example.com" 
+              />
             </div>
+
             <div className="col-span-2">
               <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Select Membership Plan <span className="text-danger">*</span></label>
-              <select required value={newMember.plan_id} onChange={e => setNewMember({...newMember, plan_id: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm font-bold text-accent">
+              <select 
+                required 
+                value={newMember.plan_id} 
+                onChange={e => setNewMember({...newMember, plan_id: e.target.value})} 
+                className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm font-bold text-accent min-h-[44px]"
+              >
                 <option value="" disabled>Select a plan...</option>
-                {membershipPlans.filter((p:any) => p.status === 'Active').map((p:any) => (
+                {membershipPlans.filter((p: any) => p.status === 'Active').map((p: any) => (
                   <option key={p.id} value={p.id}>{p.name} - ₹{p.price} ({p.duration_months} Months)</option>
                 ))}
               </select>
             </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Approval Reason / Audit Notes (Optional)</label>
+              <input 
+                type="text" 
+                value={manualApprovalNotes} 
+                onChange={e => setManualApprovalNotes(e.target.value)} 
+                className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm min-h-[44px]" 
+                placeholder="e.g. Regular club player known to owner" 
+              />
+            </div>
+
             <div className="col-span-2 mt-2">
-              <button type="submit" disabled={isCreatingMember} className="w-full bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 mt-2">
-                {isCreatingMember ? 'Registering...' : 'Complete Registration'}
+              <button 
+                type="submit" 
+                disabled={isCreatingMember} 
+                className="w-full bg-amber-500 text-black font-extrabold py-3.5 rounded-lg hover:bg-amber-400 transition-colors disabled:opacity-50 shadow-md flex items-center justify-center gap-2 min-h-[44px] touch-target"
+              >
+                {isCreatingMember ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                    <span>Approving Member...</span>
+                  </>
+                ) : (
+                  <span>🛡️ Confirm & Approve Membership</span>
+                )}
               </button>
             </div>
           </form>
         )}
-
       </div>
+
+      {/* Member Profile & Verification Audit Modal */}
+      {selectedMemberProfile && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setSelectedMemberProfile(null)}>
+          <div className="bg-bg-card border border-border-theme rounded-t-2xl sm:rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1.5 bg-border-theme rounded-full mx-auto my-2 sm:hidden shrink-0" />
+            <div className="p-4 sm:p-6 border-b border-border-theme flex justify-between items-center bg-bg-primary/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-sm font-bold text-accent">
+                  {selectedMemberProfile.name?.substring(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-text-primary">{selectedMemberProfile.name}</h3>
+                  <p className="text-xs text-text-secondary font-mono">{selectedMemberProfile.mobile}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedMemberProfile(null)} className="text-text-secondary hover:text-text-primary p-2 min-h-[44px] min-w-[44px] touch-target flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
+              {/* Verification Audit Status Card */}
+              <div className={`p-4 rounded-xl border ${
+                selectedMemberProfile.verification_method === 'MANUAL_OWNER_VERIFICATION' 
+                  ? 'bg-amber-500/10 border-amber-500/30' 
+                  : 'bg-emerald-500/10 border-emerald-500/30'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Verification Method</span>
+                  {selectedMemberProfile.verification_method === 'MANUAL_OWNER_VERIFICATION' ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      🛡️ Owner Approved
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      📱 Phone OTP Verified
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Phone Number Status:</span>
+                    <span className="font-semibold text-text-primary">
+                      {selectedMemberProfile.is_phone_verified ? '✓ Verified via SMS' : '⚠️ Unverified (Owner Override)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Verified / Approved By:</span>
+                    <span className="font-semibold text-text-primary font-mono">{selectedMemberProfile.verified_by || 'Owner'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Timestamp:</span>
+                    <span className="text-text-primary">{selectedMemberProfile.verified_at ? new Date(selectedMemberProfile.verified_at).toLocaleString() : 'N/A'}</span>
+                  </div>
+                  {selectedMemberProfile.audit_info?.approval_notes && (
+                    <div className="pt-2 border-t border-border-theme/40">
+                      <span className="text-text-secondary block mb-0.5">Approval Note:</span>
+                      <p className="italic text-text-primary bg-bg-surface p-2 rounded border border-border-theme">{selectedMemberProfile.audit_info.approval_notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Membership Summary Grid */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                  <span className="text-text-secondary block mb-1">Plan Tier</span>
+                  <span className="font-bold text-accent uppercase truncate block">
+                    {membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(selectedMemberProfile.tier).toLowerCase())?.name || selectedMemberProfile.tier || 'Standard'}
+                  </span>
+                </div>
+                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                  <span className="text-text-secondary block mb-1">Status</span>
+                  <span className="font-bold text-text-primary uppercase">{selectedMemberProfile.status || 'Active'}</span>
+                </div>
+                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                  <span className="text-text-secondary block mb-1">Total Spend</span>
+                  <span className="font-mono font-bold text-text-primary">₹{selectedMemberProfile.total_spend || 0}</span>
+                </div>
+                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                  <span className="text-text-secondary block mb-1">Loyalty Points</span>
+                  <span className="font-mono font-bold text-accent">{selectedMemberProfile.loyalty_points || 0}</span>
+                </div>
+                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme col-span-2 flex justify-between">
+                  <span className="text-text-secondary">Expiry Date:</span>
+                  <span className="font-mono font-bold text-text-primary">
+                    {selectedMemberProfile.expiry_date ? selectedMemberProfile.expiry_date.split('T')[0] : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-border-theme flex justify-end bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <button 
+                onClick={() => setSelectedMemberProfile(null)}
+                className="min-h-[44px] touch-target px-5 py-2 rounded-lg text-sm font-bold bg-bg-primary border border-border-theme text-text-primary hover:bg-border-theme transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
   const renderSettings = () => (
-    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4 pb-20">
+    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4 pb-20 px-3 sm:px-6 md:px-0">
       <div className="mb-2">
-        <h1 className="text-3xl font-black tracking-tight mb-2">{t('settings', 'Settings')}</h1>
-        <p className="text-text-secondary text-sm">Configure your business profile, language preferences, pricing rules, and security preferences.</p>
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">{t('settings', 'Settings')}</h1>
+        <p className="text-text-secondary text-xs sm:text-sm">Configure your business profile, language preferences, pricing rules, and security preferences.</p>
       </div>
 
       {/* Language & Regional Preferences */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2.5">
+            <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
               <span>🌐</span> {t('language', 'Language')} & Regional Preferences
             </h2>
-            <p className="text-text-secondary text-sm mt-1">
+            <p className="text-text-secondary text-xs sm:text-sm mt-1">
               Choose your preferred interface language. Changes reflect across the dashboard and bot immediately.
             </p>
           </div>
@@ -3112,7 +3670,7 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setLanguage('en')}
-            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between min-h-[44px] touch-target ${
               language === 'en'
                 ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
                 : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
@@ -3129,7 +3687,7 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setLanguage('hi')}
-            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between min-h-[44px] touch-target ${
               language === 'hi'
                 ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
                 : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
@@ -3146,7 +3704,7 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setLanguage('mr')}
-            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
+            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between min-h-[44px] touch-target ${
               language === 'mr'
                 ? 'border-accent bg-accent/10 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-2 ring-accent'
                 : 'border-border-theme bg-bg-surface hover:border-border-light hover:bg-bg-surface/80'
@@ -3163,11 +3721,11 @@ function DashboardContent() {
       </div>
 
       {/* Business Profile Configuration */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2.5">Business Profile</h2>
-            <p className="text-text-secondary text-sm mt-1">Update your basic business information.</p>
+            <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">Business Profile</h2>
+            <p className="text-text-secondary text-xs sm:text-sm mt-1">Update your basic business information.</p>
           </div>
         </div>
         <form onSubmit={async (e) => {
@@ -3182,22 +3740,22 @@ function DashboardContent() {
           };
           await handleSaveConfig(undefined, undefined, undefined, profile);
           setData(prev => prev ? { ...prev, businessName: profile.business_name as string, ownerName: profile.owner_name as string, contact_number: profile.contact_number as string, address: profile.address as string, business_type: profile.business_type as string } : prev);
-        }} className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        }} className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Club Name</label>
-            <input type="text" name="business_name" defaultValue={data?.businessName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+            <input type="text" name="business_name" defaultValue={data?.businessName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Owner Name</label>
-            <input type="text" name="owner_name" defaultValue={data?.ownerName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+            <input type="text" name="owner_name" defaultValue={data?.ownerName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Contact Number</label>
-            <input type="text" name="contact_number" defaultValue={(data as any)?.contact_number || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+            <input type="text" name="contact_number" defaultValue={(data as any)?.contact_number || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Business Type</label>
-            <select name="business_type" defaultValue={(data as any)?.business_type || 'Pool/Snooker Club'} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary">
+            <select name="business_type" defaultValue={(data as any)?.business_type || 'Pool/Snooker Club'} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]">
               <option value="Pool/Snooker Club">Pool / Snooker Club</option>
               <option value="Gaming Cafe / PS5">Gaming Cafe / PS5</option>
               <option value="Turf / Sports Arena">Turf / Sports Arena</option>
@@ -3206,10 +3764,10 @@ function DashboardContent() {
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Address</label>
-            <textarea name="address" defaultValue={(data as any)?.address || ''} rows={2} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary"></textarea>
+            <textarea name="address" defaultValue={(data as any)?.address || ''} rows={2} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary"></textarea>
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" disabled={isUpdatingConfig} className="w-full md:w-auto px-8 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={isUpdatingConfig} className="w-full sm:w-auto px-8 bg-accent text-black font-extrabold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
               {isUpdatingConfig ? 'Saving...' : 'Save Profile'}
             </button>
           </div>
@@ -3217,18 +3775,18 @@ function DashboardContent() {
       </div>
 
       {/* Google Sheets Integration */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2.5">
+            <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
               Google Sheets Database
             </h2>
-            <p className="text-text-secondary text-sm mt-1">
+            <p className="text-text-secondary text-xs sm:text-sm mt-1">
               Connect a Google Sheet to sync all your operational sessions, member records, bookings, and F&B orders in real-time.
             </p>
           </div>
           {data?.google_sheet_id && (
-            <a href={`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`} target="_blank" rel="noreferrer" className="px-4 py-2 bg-green-500/10 text-green-500 font-bold text-sm rounded-lg border border-green-500/20 hover:bg-green-500/20 transition-colors">
+            <a href={`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`} target="_blank" rel="noreferrer" className="px-4 py-2.5 bg-green-500/10 text-green-500 font-bold text-xs sm:text-sm rounded-lg border border-green-500/20 hover:bg-green-500/20 transition-colors min-h-[44px] touch-target inline-flex items-center">
               Open Live Sheet ↗
             </a>
           )}
@@ -3247,10 +3805,10 @@ function DashboardContent() {
         }} className="max-w-md flex flex-col gap-4">
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Google Sheet ID or URL</label>
-            <input type="text" name="google_sheet_id" defaultValue={data?.google_sheet_id || ''} placeholder="e.g. 1Fyz4aSQyzjvY..." className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
+            <input type="text" name="google_sheet_id" defaultValue={data?.google_sheet_id || ''} placeholder="e.g. 1Fyz4aSQyzjvY..." className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div className="flex flex-col sm:flex-row gap-2 mt-2">
-            <button type="submit" disabled={isUpdatingConfig} className="flex-1 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={isUpdatingConfig} className="flex-1 bg-accent text-black font-extrabold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
               {isUpdatingConfig ? 'Saving...' : 'Connect Sheet'}
             </button>
             {data?.google_sheet_id && (
@@ -3273,7 +3831,7 @@ function DashboardContent() {
                       toast.error('Error refreshing structure.', { id: toastId });
                     }
                   }}
-                  className="flex-1 bg-bg-primary text-text-primary border border-border-light font-bold py-3 rounded-lg hover-lift smooth-transition hover:border-accent transition-colors disabled:opacity-50 text-xs"
+                  className="flex-1 bg-bg-primary text-text-primary border border-border-light font-bold py-3.5 rounded-lg hover-lift smooth-transition hover:border-accent transition-colors disabled:opacity-50 text-xs min-h-[44px] touch-target"
                 >
                   Refresh Structure
                 </button>
@@ -3300,7 +3858,7 @@ function DashboardContent() {
                       toast.error(`Reconciliation error: ${e.message}`, { id: toastId });
                     }
                   }}
-                  className="flex-1 bg-accent/10 text-accent border border-accent/20 font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/20 transition-colors disabled:opacity-50 text-xs"
+                  className="flex-1 bg-accent/10 text-accent border border-accent/20 font-bold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/20 transition-colors disabled:opacity-50 text-xs min-h-[44px] touch-target"
                 >
                   Reconcile Month
                 </button>
@@ -3315,9 +3873,9 @@ function DashboardContent() {
       </div>
 
       {/* UPI Payment Configuration */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-        <h2 className="text-2xl font-bold mb-2">UPI Payment</h2>
-        <p className="text-text-secondary text-sm mb-6">Configure your business UPI ID to dynamically generate payment QR codes when sessions end.</p>
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
+        <h2 className="text-xl sm:text-2xl font-bold mb-2">UPI Payment</h2>
+        <p className="text-text-secondary text-xs sm:text-sm mb-6">Configure your business UPI ID to dynamically generate payment QR codes when sessions end.</p>
         
         <div className="max-w-md flex flex-col gap-4">
           <div>
@@ -3337,7 +3895,7 @@ function DashboardContent() {
                     handleUpdatePreference('business_upi_id', val);
                   }
                 }}
-                className="w-full pl-10 pr-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" 
+                className="w-full pl-10 pr-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" 
               />
               <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-50 text-base">₹</span>
             </div>
@@ -3350,41 +3908,41 @@ function DashboardContent() {
         </div>
       </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-              <h2 className="text-2xl font-bold mb-6">Business Goals</h2>
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                if (!businessId) return;
-                const formData = new FormData(e.currentTarget as HTMLFormElement);
-                const goals = {
-                  daily_revenue: Number(formData.get('daily_revenue')),
-                  daily_sessions: Number(formData.get('daily_sessions'))
-                };
-                try {
-                  const res = await fetch('/api/update-goals', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ business_id: businessId, goals })
-                  });
-                  if (res.ok) {
-                    toast.success('✓ Settings updated.');
-                  } else {
-                    const errJson = await res.json().catch(() => ({}));
-                    toast.error(errJson.error || "Failed to save goals.");
-                  }
-                } catch(err: any) { toast.error(err?.message || "Failed to save goals."); }
-              }} className="max-w-md flex flex-col gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
-                  <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
-                </div>
-                <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors">
-                  Save Goals
-                </button>
-              </form>
-            </div>
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">
+        <h2 className="text-xl sm:text-2xl font-bold mb-6">Business Goals</h2>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (!businessId) return;
+          const formData = new FormData(e.currentTarget as HTMLFormElement);
+          const goals = {
+            daily_revenue: Number(formData.get('daily_revenue')),
+            daily_sessions: Number(formData.get('daily_sessions'))
+          };
+          try {
+            const res = await fetch('/api/update-goals', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ business_id: businessId, goals })
+            });
+            if (res.ok) {
+              toast.success('✓ Settings updated.');
+            } else {
+              const errJson = await res.json().catch(() => ({}));
+              toast.error(errJson.error || "Failed to save goals.");
+            }
+          } catch(err: any) { toast.error(err?.message || "Failed to save goals."); }
+        }} className="max-w-md flex flex-col gap-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Revenue Target (₹)</label>
+            <input type="number" name="daily_revenue" defaultValue={data.goals?.daily_revenue || 0} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
+          </div>
+          <button type="submit" className="w-full mt-2 bg-accent text-black font-extrabold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors min-h-[44px] touch-target shadow-sm">
+            Save Goals
+          </button>
+        </form>
+      </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
                   <div>
                     <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
@@ -3398,7 +3956,7 @@ function DashboardContent() {
                     <button
                       onClick={handleEnablePS5}
                       disabled={isUpdatingConfig}
-                      className="px-5 py-3 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 shrink-0 min-h-[44px]"
+                      className="px-5 py-3 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 shrink-0 min-h-[44px] touch-target"
                     >
                       + Enable PS5 Support
                     </button>
@@ -3419,7 +3977,7 @@ function DashboardContent() {
                           <button
                             key={game}
                             onClick={() => setSelectedGameRule(game)}
-                            className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 outline-none whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent ${
+                            className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold capitalize transition-all duration-200 outline-none whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent min-h-[44px] touch-target ${
                               isActive 
                                 ? 'bg-accent/10 text-accent border border-accent/30 ring-1 ring-accent/50 shadow-sm' 
                                 : 'text-text-secondary hover:text-text-primary hover:bg-bg-primary/50 border border-transparent'
@@ -3438,7 +3996,7 @@ function DashboardContent() {
                     {(() => {
                       const currentRule = data?.pricingRules?.rules?.[selectedGameRule] || { type: 'fixed', rate: 200, multiplayer_mode: 'none' };
                       return (
-                        <div className="p-5 rounded-xl border border-border-theme bg-bg-primary flex flex-col gap-4">
+                        <div className="p-4 sm:p-5 rounded-xl border border-border-theme bg-bg-primary flex flex-col gap-4">
                           <div className="flex justify-between items-center">
                             <span className="text-sm font-bold capitalize font-mono text-accent">{selectedGameRule} Rule Configuration</span>
                             <span className="text-[10px] uppercase tracking-widest font-bold text-text-secondary bg-bg-surface px-2 py-0.5 rounded border border-border-theme">Dynamic Engine</span>
@@ -3457,7 +4015,7 @@ function DashboardContent() {
                                   {value: "fixed", label: "Flat Rate (Fixed ₹/hr)"},
                                   {value: "time_based", label: "Schedule / Time Slots (Day & Evening)"}
                                 ]}
-                                className="py-2.5 min-h-[40px] text-xs font-bold"
+                                className="py-2.5 min-h-[44px] text-xs font-bold"
                               />
                             </div>
                             <div>
@@ -3474,7 +4032,7 @@ function DashboardContent() {
                                   {value: "multiply", label: "Multiply Rate by Players"},
                                   {value: "base_plus_extra", label: "Base Rate + Extra per Additional Player"}
                                 ]}
-                                className="py-2.5 min-h-[40px] text-xs font-bold"
+                                className="py-2.5 min-h-[44px] text-xs font-bold"
                               />
                             </div>
                             {currentRule.type === 'fixed' ? (
@@ -3490,7 +4048,7 @@ function DashboardContent() {
                                     const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                     handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                   }}
-                                  className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                  className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                 />
                               </div>
                             ) : (
@@ -3506,7 +4064,7 @@ function DashboardContent() {
                                       const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                       handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                     }}
-                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                   />
                                 </div>
                                 <div>
@@ -3520,7 +4078,7 @@ function DashboardContent() {
                                       const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                       handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                     }}
-                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                   />
                                 </div>
                                 <div>
@@ -3534,7 +4092,7 @@ function DashboardContent() {
                                       const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                       handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                     }}
-                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                   />
                                 </div>
                                 <div>
@@ -3548,7 +4106,7 @@ function DashboardContent() {
                                       const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                       handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                     }}
-                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                    className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                   />
                                 </div>
                               </>
@@ -3565,7 +4123,7 @@ function DashboardContent() {
                                     const newRules = { ...data?.pricingRules?.rules, [selectedGameRule]: updated };
                                     handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                                   }}
-                                  className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                                  className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                                 />
                               </div>
                             )}
@@ -3578,7 +4136,7 @@ function DashboardContent() {
                             const keys = Object.keys(newRules);
                             if (keys.length > 0) setSelectedGameRule(keys[0]);
                             handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
-                          }} className="mt-2 w-fit px-4 py-2 bg-error/10 text-error rounded hover:bg-error/20 transition-colors text-xs font-bold tracking-widest uppercase">
+                          }} className="mt-2 w-fit px-4 py-2.5 bg-error/10 text-error rounded hover:bg-error/20 transition-colors text-xs font-bold tracking-widest uppercase min-h-[44px] touch-target flex items-center">
                             Delete Category
                           </button>
                         </div>
@@ -3598,21 +4156,21 @@ function DashboardContent() {
                       handleSaveConfig({ ...data?.pricingRules, rules: newRules }, undefined);
                       setSelectedGameRule(newCat);
                       (e.target as HTMLFormElement).reset();
-                    }} className="flex gap-2">
-                      <input type="text" name="new_category" placeholder="Add new game category (e.g. Snooker)" className="flex-1 px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-sm text-text-primary" />
-                      <button type="submit" disabled={isUpdatingConfig} className="px-6 bg-accent text-white font-bold rounded-lg hover:bg-accent/90 transition-colors">Add</button>
+                    }} className="flex flex-col sm:flex-row gap-2">
+                      <input type="text" name="new_category" placeholder="Add new game category (e.g. Snooker)" className="flex-1 px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
+                      <button type="submit" disabled={isUpdatingConfig} className="px-6 py-3 bg-accent text-black font-extrabold rounded-lg hover:bg-accent/90 transition-colors min-h-[44px] touch-target shadow-sm">Add Category</button>
                     </form>
                   </div>
       </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-visible p-6 sm:p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-visible p-4 sm:p-6 md:p-8">
         <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
-          Stations & Tables Configuration
+          Stations &amp; Tables Configuration
         </h2>
         {/* Station Management */}
-                  <div className="flex flex-col gap-4 pt-6">
+                  <div className="flex flex-col gap-4 pt-2">
                     <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">Stations &amp; Tables</h3>
-                    <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="flex flex-col gap-2 max-h-[260px] overflow-y-auto custom-scrollbar pr-2">
                       {data?.tables?.map((t: any) => (
                         <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-bg-primary border border-border-theme text-xs">
                           <div>
@@ -3628,7 +4186,7 @@ function DashboardContent() {
                               <button
                                 type="button"
                                 onClick={() => confirmDeleteStation(t)}
-                                className="p-1 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded"
+                                className="p-2 text-text-secondary hover:text-red-500 transition-colors bg-bg-surface border border-border-theme hover:border-red-500 rounded min-h-[36px] min-w-[36px] flex items-center justify-center touch-target"
                                 aria-label="Delete Station"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -3641,14 +4199,14 @@ function DashboardContent() {
         
                     <form onSubmit={handleAddStation} className="p-4 rounded-xl border border-border-theme bg-bg-primary/60 flex flex-col gap-3 mt-auto">
                       <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Add New Station / Table</span>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <input
                           type="text"
                           placeholder="ID (e.g. PS5-1)"
                           required
                           value={newStationId}
                           onChange={e => setNewStationId(e.target.value.toUpperCase())}
-                          className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                         />
                         <input
                           type="text"
@@ -3656,14 +4214,14 @@ function DashboardContent() {
                           required
                           value={newStationName}
                           onChange={e => setNewStationName(e.target.value)}
-                          className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                          className="px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                         />
                       </div>
                       <CustomSelect
                         value={newStationType}
                         onChange={v => setNewStationType(v)}
                         options={Object.keys(data?.pricingRules?.rules || { snooker: {}, pool: {}, ps5: {} }).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
-                        className="py-2 min-h-[40px] text-xs font-bold capitalize"
+                        className="py-2.5 min-h-[44px] text-xs font-bold capitalize"
                       />
                       {newStationType === 'ps5' && (
                         <div>
@@ -3675,21 +4233,21 @@ function DashboardContent() {
                             required
                             value={newStationMaxPlayers}
                             onChange={e => setNewStationMaxPlayers(e.target.value)}
-                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[40px]"
+                            className="w-full px-3 py-2 bg-bg-card border border-border-theme rounded-lg text-base sm:text-xs font-bold text-text-primary outline-none focus:border-accent min-h-[44px]"
                             placeholder="e.g. 4"
                           />
                         </div>
                       )}
-                      <button type="submit" disabled={isUpdatingConfig || !newStationId} className="w-full bg-accent text-black font-extrabold py-2.5 rounded-lg hover:bg-accent/90 transition-colors text-xs uppercase shadow-md shadow-accent/10 min-h-[42px]">
+                      <button type="submit" disabled={isUpdatingConfig || !newStationId} className="w-full bg-accent text-black font-extrabold py-3 rounded-lg hover:bg-accent/90 transition-colors text-xs uppercase shadow-md shadow-accent/10 min-h-[44px] touch-target">
                         {isUpdatingConfig ? 'Adding...' : '+ Create Station'}
                       </button>
                     </form>
                   </div>
       </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-              <h2 className="text-2xl font-bold mb-6">Launch Promotion</h2>
-              <form onSubmit={handleSavePromo} className="max-w-md flex flex-col gap-4">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
+              <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-border-theme pb-4">Launch Promotion</h2>
+              <form onSubmit={handleSavePromo} className="max-w-2xl flex flex-col gap-4">
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Promotion Title <span className="text-danger">*</span></label>
                   <input 
@@ -3697,7 +4255,7 @@ function DashboardContent() {
                     required
                     value={promoTitle}
                     onChange={e => setPromoTitle(e.target.value)}
-                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     placeholder="e.g. Afternoon Elite"
                     list="promo-suggestions"
                   />
@@ -3720,17 +4278,17 @@ function DashboardContent() {
                     type="text" 
                     value={promoDescription}
                     onChange={e => setPromoDescription(e.target.value)}
-                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     placeholder="e.g. valid only for members"
                   />
                 </div>
                 
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Promotion Type <span className="text-danger">*</span></label>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setPromoType('percentage')} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${promoType === 'percentage' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Percentage (%)</button>
-                    <button type="button" onClick={() => setPromoType('fixed_price')} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${promoType === 'fixed_price' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Fixed Rate (₹)</button>
-                    <button type="button" onClick={() => setPromoType('fixed_amount')} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${promoType === 'fixed_amount' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Discount (₹)</button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button type="button" onClick={() => setPromoType('percentage')} className={`py-3 px-3 rounded-lg text-xs font-bold border transition-colors min-h-[44px] touch-target flex items-center justify-center ${promoType === 'percentage' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Percentage (%)</button>
+                    <button type="button" onClick={() => setPromoType('fixed_price')} className={`py-3 px-3 rounded-lg text-xs font-bold border transition-colors min-h-[44px] touch-target flex items-center justify-center ${promoType === 'fixed_price' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Fixed Rate (₹)</button>
+                    <button type="button" onClick={() => setPromoType('fixed_amount')} className={`py-3 px-3 rounded-lg text-xs font-bold border transition-colors min-h-[44px] touch-target flex items-center justify-center ${promoType === 'fixed_amount' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}>Discount (₹)</button>
                   </div>
                 </div>
 
@@ -3738,12 +4296,12 @@ function DashboardContent() {
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount Percent (%) <span className="text-danger">*</span></label>
                     <input 
-                      type="number" 
-                      required min="1" max="100"
-                      value={promoDiscount}
-                      onChange={e => setPromoDiscount(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
-                    />
+                    type="number" 
+                    required min="1" max="100"
+                    value={promoDiscount}
+                    onChange={e => setPromoDiscount(e.target.value)}
+                    className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
+                  />
                   </div>
                 )}
 
@@ -3755,7 +4313,7 @@ function DashboardContent() {
                       required min="1"
                       value={promoFixedPrice}
                       onChange={e => setPromoFixedPrice(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                       placeholder="e.g. 150"
                     />
                   </div>
@@ -3769,7 +4327,7 @@ function DashboardContent() {
                       required min="1"
                       value={promoFixedAmount}
                       onChange={e => setPromoFixedAmount(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                       placeholder="e.g. 50"
                     />
                   </div>
@@ -3782,14 +4340,14 @@ function DashboardContent() {
                       <button 
                         key={game} type="button"
                         onClick={() => setPromoGames(prev => prev.includes(game) ? prev.filter(g => g !== game) : [...prev, game])}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors capitalize ${promoGames.includes(game) ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}
+                        className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-colors capitalize min-h-[40px] touch-target ${promoGames.includes(game) ? 'bg-accent/20 border-accent text-accent' : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'}`}
                       >
                         {game}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Date <span className="text-danger">*</span></label>
                     <input 
@@ -3797,7 +4355,7 @@ function DashboardContent() {
                       required
                       value={promoStartDate}
                       onChange={e => setPromoStartDate(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     />
                   </div>
                   <div>
@@ -3807,11 +4365,11 @@ function DashboardContent() {
                       required
                       value={promoStartTime}
                       onChange={e => setPromoStartTime(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">End Date <span className="text-danger">*</span></label>
                     <input 
@@ -3819,7 +4377,7 @@ function DashboardContent() {
                       required
                       value={promoEndDate}
                       onChange={e => setPromoEndDate(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     />
                   </div>
                   <div>
@@ -3829,14 +4387,14 @@ function DashboardContent() {
                       required
                       value={promoEndTime}
                       onChange={e => setPromoEndTime(e.target.value)}
-                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                      className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                     />
                   </div>
                 </div>
                 
                 {/* Specific Time Slot Toggle */}
                 <div className="bg-bg-surface border border-border-theme p-4 rounded-lg">
-                  <label className="flex items-center gap-3 cursor-pointer mb-2">
+                  <label className="flex items-center gap-3 cursor-pointer mb-2 min-h-[40px]">
                     <input 
                       type="checkbox" 
                       checked={promoTimeSlotEnabled}
@@ -3847,7 +4405,7 @@ function DashboardContent() {
                   </label>
                   
                   {promoTimeSlotEnabled && (
-                    <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                       <div>
                         <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Daily Start Time</label>
                         <input 
@@ -3855,7 +4413,7 @@ function DashboardContent() {
                           required
                           value={promoTimeSlotStart}
                           onChange={e => setPromoTimeSlotStart(e.target.value)}
-                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                         />
                       </div>
                       <div>
@@ -3865,7 +4423,7 @@ function DashboardContent() {
                           required
                           value={promoTimeSlotEnd}
                           onChange={e => setPromoTimeSlotEnd(e.target.value)}
-                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                          className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                         />
                       </div>
                     </div>
@@ -3915,7 +4473,7 @@ function DashboardContent() {
                   })()}
                 </div>
                 <div className="flex gap-4 mt-2">
-                  <button type="submit" disabled={isUpdatingPromo} className="flex-1 bg-accent text-white font-bold py-3 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50">
+                  <button type="submit" disabled={isUpdatingPromo} className="flex-1 bg-accent text-black font-extrabold py-3.5 rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
                     {isUpdatingPromo ? 'Saving...' : 'Launch Promo'}
                   </button>
                 </div>
@@ -3924,7 +4482,7 @@ function DashboardContent() {
               {/* Active / Scheduled Promotions List */}
               {data?.activePromotions && data.activePromotions.length > 0 && (
                 <div className="mt-8 border-t border-border-theme pt-6">
-                  <h3 className="text-lg font-bold mb-4">Current & Past Promotions</h3>
+                  <h3 className="text-lg font-bold mb-4">Current &amp; Past Promotions</h3>
                   <div className="flex flex-col gap-3">
                     {data.activePromotions.map(promo => {
                       let displayStatus = promo.status;
@@ -3960,18 +4518,18 @@ function DashboardContent() {
                           )}
                           <div className="flex flex-wrap gap-2">
                             {displayStatus === 'Scheduled' && (
-                              <button onClick={() => handleUpdatePromoStatus(promo.id, 'Cancelled')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">Cancel</button>
+                              <button onClick={() => handleUpdatePromoStatus(promo.id, 'Cancelled')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3.5 py-2 rounded hover:bg-danger/20 font-bold transition-colors min-h-[36px] touch-target flex items-center justify-center">Cancel</button>
                             )}
                             {displayStatus === 'Active' && (
                               <>
-                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Paused')} disabled={isUpdatingPromo} className="text-xs bg-warning/10 text-warning border border-warning/30 px-3 py-1.5 rounded hover:bg-warning/20 font-bold transition-colors">Pause</button>
-                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End Early</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Paused')} disabled={isUpdatingPromo} className="text-xs bg-warning/10 text-warning border border-warning/30 px-3.5 py-2 rounded hover:bg-warning/20 font-bold transition-colors min-h-[36px] touch-target flex items-center justify-center">Pause</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3.5 py-2 rounded hover:bg-danger/20 font-bold transition-colors min-h-[36px] touch-target flex items-center justify-center">End Early</button>
                               </>
                             )}
                             {displayStatus === 'Paused' && (
                               <>
-                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Active')} disabled={isUpdatingPromo} className="text-xs bg-success/10 text-success border border-success/30 px-3 py-1.5 rounded hover:bg-success/20 font-bold transition-colors">Resume</button>
-                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 rounded hover:bg-danger/20 font-bold transition-colors">End</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Active')} disabled={isUpdatingPromo} className="text-xs bg-success/10 text-success border border-success/30 px-3.5 py-2 rounded hover:bg-success/20 font-bold transition-colors min-h-[36px] touch-target flex items-center justify-center">Resume</button>
+                                <button onClick={() => handleUpdatePromoStatus(promo.id, 'Expired')} disabled={isUpdatingPromo} className="text-xs bg-danger/10 text-danger border border-danger/30 px-3.5 py-2 rounded hover:bg-danger/20 font-bold transition-colors min-h-[36px] touch-target flex items-center justify-center">End</button>
                               </>
                             )}
                           </div>
@@ -3982,14 +4540,14 @@ function DashboardContent() {
                 </div>
               )}
             </div>
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 md:p-8">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-border-theme">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="p-2 rounded-lg bg-accent/10 text-accent">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                     </span>
-                    <h2 className="text-xl md:text-2xl font-bold text-text-primary">Discounts & Table Concessions</h2>
+                    <h2 className="text-xl md:text-2xl font-bold text-text-primary">Discounts &amp; Table Concessions</h2>
                   </div>
                   <p className="text-xs md:text-sm text-text-secondary mt-1">Configure percentage or flat rupee discounts per table or club-wide. Automatically calculated by the server billing engine.</p>
                 </div>
@@ -4009,18 +4567,18 @@ function DashboardContent() {
                         { value: 'all', label: '🌟 All Tables (Global Concession)' },
                         ...(data.tables?.map(t => ({ value: t.id, label: `${t.name} (${t.type.toUpperCase()})` })) || [])
                       ]}
-                      className="font-semibold"
+                      className="font-semibold min-h-[44px]"
                     />
                   </div>
 
                   {/* Discount Type Selector */}
                   <div>
                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Discount Type <span className="text-danger">*</span></label>
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setDiscountType('percentage')}
-                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                        className={`py-3 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all min-h-[44px] touch-target ${
                           discountType === 'percentage' 
                             ? 'bg-accent/20 border-accent text-accent shadow-sm' 
                             : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'
@@ -4031,7 +4589,7 @@ function DashboardContent() {
                       <button
                         type="button"
                         onClick={() => setDiscountType('fixed')}
-                        className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                        className={`py-3 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-2 transition-all min-h-[44px] touch-target ${
                           discountType === 'fixed' 
                             ? 'bg-accent/20 border-accent text-accent shadow-sm' 
                             : 'bg-bg-primary border-border-theme text-text-secondary hover:border-accent/50'
@@ -4053,7 +4611,7 @@ function DashboardContent() {
                             min="1" max="100"
                             value={discountPercent}
                             onChange={e => setDiscountPercent(e.target.value)}
-                            className="w-full pl-4 pr-8 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono font-bold"
+                            className="w-full pl-4 pr-8 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary font-mono font-bold min-h-[44px]"
                             placeholder="e.g. 20"
                             required
                           />
@@ -4069,7 +4627,7 @@ function DashboardContent() {
                             min="1"
                             value={maxDiscountCap}
                             onChange={e => setMaxDiscountCap(e.target.value)}
-                            className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                            className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary font-mono min-h-[44px]"
                             placeholder="e.g. 100"
                           />
                         </div>
@@ -4085,7 +4643,7 @@ function DashboardContent() {
                           min="1"
                           value={discountFixedAmount}
                           onChange={e => setDiscountFixedAmount(e.target.value)}
-                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono font-bold"
+                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary font-mono font-bold min-h-[44px]"
                           placeholder="e.g. 50"
                           required
                         />
@@ -4105,7 +4663,7 @@ function DashboardContent() {
                           min="0"
                           value={minBillAmount}
                           onChange={e => setMinBillAmount(e.target.value)}
-                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary font-mono"
+                          className="w-full pl-8 pr-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary font-mono min-h-[44px]"
                           placeholder="e.g. 200"
                         />
                       </div>
@@ -4116,7 +4674,7 @@ function DashboardContent() {
                         type="text" 
                         value={discountLabel}
                         onChange={e => setDiscountLabel(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary"
+                        className="w-full px-3 py-2.5 bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]"
                         placeholder="e.g. Happy Hour / VIP"
                       />
                     </div>
@@ -4124,21 +4682,21 @@ function DashboardContent() {
 
                   {/* Apply to Food Checkbox */}
                   <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
-                    <label className="flex items-center gap-3 cursor-pointer text-xs font-semibold text-text-primary select-none">
+                    <label className="flex items-center gap-3 cursor-pointer text-xs font-semibold text-text-primary select-none min-h-[40px]">
                       <input 
                         type="checkbox" 
                         checked={applyToFood} 
                         onChange={e => setApplyToFood(e.target.checked)} 
                         className="w-4 h-4 rounded accent-accent cursor-pointer"
                       />
-                      <span>Apply discount to Food & Beverages orders as well</span>
+                      <span>Apply discount to Food &amp; Beverages orders as well</span>
                     </label>
                   </div>
 
                   <button 
                     type="submit" 
                     disabled={!selectedTable || isUpdatingDiscount} 
-                    className="w-full bg-accent text-bg-primary font-black py-3 rounded-xl hover:opacity-95 transition-opacity shadow-lg shadow-accent/10 disabled:opacity-50 text-sm mt-1"
+                    className="w-full bg-accent text-black font-extrabold py-3.5 rounded-xl hover:opacity-95 transition-opacity shadow-lg shadow-accent/10 disabled:opacity-50 text-sm mt-1 min-h-[44px] touch-target"
                   >
                     {isUpdatingDiscount ? 'Applying Concession...' : 'Apply Table Discount'}
                   </button>
@@ -4178,7 +4736,7 @@ function DashboardContent() {
                             </div>
                             {applyToFood && (
                               <div className="flex justify-between text-text-secondary">
-                                <span>F&B Orders:</span>
+                                <span>F&amp;B Orders:</span>
                                 <span className="font-mono text-text-primary">₹{sampleFoodCost}</span>
                               </div>
                             )}
@@ -4229,7 +4787,7 @@ function DashboardContent() {
                           handleRemoveDiscount('all');
                         }
                       }}
-                      className="text-xs font-bold text-danger hover:underline"
+                      className="text-xs font-bold text-danger hover:underline min-h-[36px] flex items-center touch-target"
                     >
                       Clear All
                     </button>
@@ -4265,7 +4823,7 @@ function DashboardContent() {
                             type="button"
                             onClick={() => handleRemoveDiscount(tableId)} 
                             title={`Remove discount for ${tableName}`}
-                            className="p-1.5 text-text-disabled hover:text-danger hover:bg-danger/10 rounded-lg transition-colors shrink-0 ml-2"
+                            className="p-2 text-text-disabled hover:text-danger hover:bg-danger/10 rounded-lg transition-colors shrink-0 ml-2 min-h-[36px] min-w-[36px] flex items-center justify-center touch-target"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                           </button>
@@ -4277,11 +4835,11 @@ function DashboardContent() {
               </div>
             </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-              <h2 className="text-2xl font-bold mb-6">Payment Collection</h2>
-              <div className="border border-border-theme rounded-xl p-6 bg-bg-surface max-w-xl">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
+              <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-border-theme pb-4">Payment Collection</h2>
+              <div className="border border-border-theme rounded-xl p-4 sm:p-6 bg-bg-surface max-w-xl">
                 <h3 className="text-lg font-bold mb-2">Business Payment QR</h3>
-                <p className="text-sm text-text-secondary mb-4">Customers can scan this QR to pay your business directly via UPI. (Requires manual confirmation of payment)</p>
+                <p className="text-xs sm:text-sm text-text-secondary mb-4">Customers can scan this QR to pay your business directly via UPI. (Requires manual confirmation of payment)</p>
                 
                 {((data as any)?.payment_qr_config)?.enabled && ((data as any)?.payment_qr_config)?.qr_url ? (
                   <div className="mb-6 flex flex-col items-center">
@@ -4289,7 +4847,7 @@ function DashboardContent() {
                       <img src={((data as any)?.payment_qr_config).qr_url} alt="Business QR" className="w-full h-full object-contain rounded-lg" />
                     </div>
                     <div className="flex gap-4">
-                      <label className="px-4 py-2 bg-accent/10 text-accent font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20">
+                      <label className="px-4 py-2 bg-accent/10 text-accent font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-accent/20 transition-colors cursor-pointer border border-accent/20 min-h-[44px] touch-target inline-flex items-center justify-center">
                         Replace QR
                         <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
                           const file = e.target.files?.[0];
@@ -4318,19 +4876,19 @@ function DashboardContent() {
                           if (res.ok) { toast.success('QR removed successfully.'); /* fetchData removed for instant UI */ }
                           else { toast.error('Failed to remove QR.'); }
                         } catch { toast.error('Error removing QR.'); }
-                      }} className="px-4 py-2 bg-danger/10 text-danger font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-danger/20 transition-colors border border-danger/20">
+                      }} className="px-4 py-2 bg-danger/10 text-danger font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-danger/20 transition-colors border border-danger/20 min-h-[44px] touch-target inline-flex items-center justify-center">
                         Remove
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed border-border-theme rounded-xl p-8 text-center bg-bg-primary/50 hover:bg-bg-primary transition-colors">
+                  <div className="border-2 border-dashed border-border-theme rounded-xl p-6 sm:p-8 text-center bg-bg-primary/50 hover:bg-bg-primary transition-colors">
                     <div className="w-16 h-16 bg-accent/10 text-accent rounded-full flex items-center justify-center mx-auto mb-4">
                       <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                     </div>
                     <h4 className="text-sm font-bold text-text-primary mb-1">Upload QR Code</h4>
                     <p className="text-xs text-text-secondary mb-4">PNG, JPG up to 5MB</p>
-                    <label className="px-6 py-3 bg-accent text-white font-bold text-sm rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors shadow-lg cursor-pointer inline-block">
+                    <label className="px-6 py-3 bg-accent text-black font-extrabold text-sm rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors shadow-lg cursor-pointer inline-flex items-center justify-center min-h-[44px] touch-target">
                       Select File
                       <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
                         const file = e.target.files?.[0];
@@ -4352,11 +4910,11 @@ function DashboardContent() {
               </div>
             </div>
 
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-              <h2 className="text-2xl font-bold mb-6">Integrations & Insights</h2>
-              <div className="border border-border-theme rounded-xl p-6 bg-bg-surface max-w-xl mb-6">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
+              <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-border-theme pb-4">Integrations &amp; Insights</h2>
+              <div className="border border-border-theme rounded-xl p-4 sm:p-6 bg-bg-surface max-w-xl mb-6">
                 <h3 className="text-lg font-bold mb-2">Qpulse Insights</h3>
-                <p className="text-sm text-text-secondary mb-4">Receive motivational and business insights to stay on top of your game.</p>
+                <p className="text-xs sm:text-sm text-text-secondary mb-4">Receive motivational and business insights to stay on top of your game.</p>
                 <div className="bg-bg-primary/50 p-4 rounded-xl border border-border-theme">
                   <form onSubmit={async (e) => {
                     e.preventDefault();
@@ -4380,17 +4938,17 @@ function DashboardContent() {
                       toast.error('Failed to update Qpulse settings.', { id: 'qpulse-save' });
                     }
                   }}>
-                    <div className="flex gap-4 mb-4">
-                      <div className="flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                      <div>
                         <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block mb-2">Qpulse Status</label>
-                        <select name="enabled" defaultValue={((data as any)?.qpulse_config)?.enabled === false ? "false" : "true"} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium">
+                        <select name="enabled" defaultValue={((data as any)?.qpulse_config)?.enabled === false ? "false" : "true"} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-base sm:text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium min-h-[44px]">
                           <option value="true">Enabled</option>
                           <option value="false">Disabled</option>
                         </select>
                       </div>
-                      <div className="flex-1">
+                      <div>
                         <label className="text-xs font-bold text-text-secondary uppercase tracking-widest block mb-2">Frequency</label>
-                        <select name="frequency" defaultValue={((data as any)?.qpulse_config)?.frequency || 'Every 3 days'} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium">
+                        <select name="frequency" defaultValue={((data as any)?.qpulse_config)?.frequency || 'Every 3 days'} className="w-full bg-bg-surface border border-border-theme p-3 rounded-lg text-base sm:text-sm text-text-primary outline-none focus:border-accent transition-colors appearance-none font-medium min-h-[44px]">
                           <option value="Daily">Daily</option>
                           <option value="Every 3 days">Every 3 days</option>
                           <option value="Weekly">Weekly</option>
@@ -4398,7 +4956,7 @@ function DashboardContent() {
                         </select>
                       </div>
                     </div>
-                    <button type="submit" className="w-full mt-2 bg-accent text-white font-bold py-3 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors">
+                    <button type="submit" className="w-full mt-2 bg-accent text-black font-extrabold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors min-h-[44px] touch-target shadow-sm">
                       Save Qpulse
                     </button>
                   </form>
@@ -4409,58 +4967,58 @@ function DashboardContent() {
       
       
       {/* SIMPLE MODE / BUSINESS CUSTOMIZATION */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8 mb-8">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
-            <h2 className="text-2xl font-bold flex items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-3">
               QControl Customization
               {isUpdatingPreferences && <span className="text-xs font-normal text-text-secondary animate-pulse">Saving...</span>}
             </h2>
-            <p className="text-sm text-text-secondary mt-1">Configure how QControl looks and works for your business.</p>
+            <p className="text-xs sm:text-sm text-text-secondary mt-1">Configure how QControl looks and works for your business.</p>
           </div>
           <button 
             onClick={() => handleUpdatePreference('simple_mode', !preferences.simple_mode)}
-            className={`px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${preferences.simple_mode ? 'bg-success text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-bg-surface text-text-secondary border border-border-theme hover:border-accent'}`}
+            className={`px-6 py-3 rounded-xl font-black text-xs sm:text-sm uppercase tracking-widest transition-all min-h-[44px] touch-target flex items-center justify-center shrink-0 ${preferences.simple_mode ? 'bg-success text-white shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-bg-surface text-text-secondary border border-border-theme hover:border-accent'}`}
           >
             {preferences.simple_mode ? 'Simple Mode ON' : 'Simple Mode OFF'}
           </button>
         </div>
 
         {!preferences.simple_mode && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-bg-surface p-4 sm:p-6 rounded-xl border border-border-theme/50">
             <div>
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Workflow Features</h3>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean(preferences.require_customer_name)} onChange={(e) => handleUpdatePreference('require_customer_name', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Require Customer Name for Sessions</span>
               </label>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean(preferences.enable_memberships)} onChange={(e) => handleUpdatePreference('enable_memberships', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Enable Memberships System</span>
               </label>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean(preferences.enable_qkhata)} onChange={(e) => handleUpdatePreference('enable_qkhata', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Enable QKhata (Credit) System</span>
               </label>
             </div>
             <div>
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Display Preferences</h3>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean(preferences.show_pricing_on_dashboard)} onChange={(e) => handleUpdatePreference('show_pricing_on_dashboard', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Live Pricing on Active Sessions</span>
               </label>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean((preferences as any).auto_qr_billing !== false)} onChange={(e) => handleUpdatePreference('auto_qr_billing', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show QR Billing Popup automatically when session ends</span>
               </label>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean(preferences.show_member_details)} onChange={(e) => handleUpdatePreference('show_member_details', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <span className="text-sm font-semibold text-text-secondary">Show Member Details in Tables</span>
               </label>
             </div>
             <div className="col-span-1 md:col-span-2 pt-4 border-t border-border-theme/50">
               <h3 className="text-sm font-bold text-text-primary mb-4 uppercase tracking-widest">Table Experience</h3>
-              <label className="flex items-center gap-3 mb-3 cursor-pointer">
+              <label className="flex items-center gap-3 mb-3 cursor-pointer min-h-[40px]">
                 <input type="checkbox" checked={Boolean((preferences as any).enhanced_tables ?? false)} onChange={(e) => handleUpdatePreference('enhanced_tables', e.target.checked)} className="w-4 h-4 rounded text-accent focus:ring-accent bg-bg-primary border-border-theme" />
                 <div>
                    <span className="text-sm font-bold text-text-primary">Enhanced Table View</span>
@@ -4477,8 +5035,8 @@ function DashboardContent() {
 
 
       {/* Membership Plans Management */}
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-8">
-        <h2 className="text-2xl font-bold mb-6">Membership Plans</h2>
+      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
+        <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-border-theme pb-4">Membership Plans</h2>
         
         <form onSubmit={handleCreatePlan} className="max-w-2xl grid grid-cols-2 gap-4 mb-8 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
           <h3 className="col-span-2 text-sm font-black uppercase tracking-widest text-text-primary mb-2">Create New Plan</h3>
@@ -4503,7 +5061,7 @@ function DashboardContent() {
             <input type="text" value={newPlan.benefits} onChange={e => setNewPlan({...newPlan, benefits: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="Free Locker, 10% off F&B" />
           </div>
           <div className="col-span-2 mt-2">
-             <button type="submit" disabled={isCreatingPlan} className="bg-accent text-white px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+             <button type="submit" disabled={isCreatingPlan} className="bg-accent text-black font-extrabold px-6 py-3 rounded-lg text-sm disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
                {isCreatingPlan ? 'Creating...' : '+ Create Plan'}
              </button>
           </div>
@@ -4518,51 +5076,85 @@ function DashboardContent() {
              </div>
              <h3 className="text-lg font-bold mb-2">No Membership Plans Yet</h3>
              <p className="text-sm text-text-secondary max-w-md mb-6">Create your own customized membership plans using the form above, or click below to generate a few industry-standard templates to get started quickly.</p>
-             <button onClick={handleLoadDummyPlans} disabled={isPlansLoading} className="px-6 py-2.5 rounded-lg border border-accent/50 text-accent font-bold text-sm hover:bg-accent/10 transition-colors shadow-sm">
+             <button onClick={handleLoadDummyPlans} disabled={isPlansLoading} className="min-h-[44px] touch-target px-6 py-2.5 rounded-lg border border-accent/50 text-accent font-bold text-sm hover:bg-accent/10 transition-colors shadow-sm">
                 Load Example Templates
              </button>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border-theme">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-bg-surface border-b border-border-theme">
-                <tr>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Plan Name</th>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Price</th>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Duration</th>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Benefits</th>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Status</th>
-                  <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-theme/50">
-                {membershipPlans.map((plan: any) => (
-                  <tr key={plan.id} className="hover:bg-bg-surface/50 transition-colors">
-                    <td className="px-5 py-4 font-bold text-text-primary">{plan.name}</td>
-                    <td className="px-5 py-4 font-mono font-bold text-accent">₹{plan.price}</td>
-                    <td className="px-5 py-4">{plan.duration_months} M</td>
-                    <td className="px-5 py-4 text-xs text-text-secondary">{(plan.benefits || []).join(', ')}</td>
-                    <td className="px-5 py-4">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
-                        {plan.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <button onClick={() => handleTogglePlanStatus(plan)} className="text-xs font-bold text-accent hover:underline">
-                        {plan.status === 'Active' ? 'Archive' : 'Activate'}
-                      </button>
-                    </td>
+          <>
+            {/* Mobile Cards for Plans (screens < 768px) */}
+            <div className="md:hidden divide-y divide-border-theme/50 rounded-xl border border-border-theme overflow-hidden bg-bg-card">
+              {membershipPlans.map((plan: any) => (
+                <div key={plan.id} className="p-4 flex flex-col gap-2.5 hover:bg-bg-surface/50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-text-primary text-base">{plan.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
+                      {plan.status}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono font-bold text-accent text-lg">₹{plan.price}</span>
+                    <span className="text-xs text-text-secondary font-medium">/ {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}</span>
+                  </div>
+                  {plan.benefits && plan.benefits.length > 0 && (
+                    <p className="text-xs text-text-secondary leading-relaxed bg-bg-surface p-2 rounded border border-border-theme/60">
+                      🎁 {(plan.benefits || []).join(', ')}
+                    </p>
+                  )}
+                  <div className="flex justify-end pt-1">
+                    <button 
+                      onClick={() => handleTogglePlanStatus(plan)} 
+                      className="min-h-[44px] touch-target px-4 py-1.5 text-xs font-bold text-accent hover:underline flex items-center justify-center rounded-lg border border-border-theme"
+                    >
+                      {plan.status === 'Active' ? 'Archive Plan' : 'Activate Plan'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table (screens >= 768px) */}
+            <div className="hidden md:block overflow-x-auto rounded-xl border border-border-theme">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-bg-surface border-b border-border-theme">
+                  <tr>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Plan Name</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Price</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Duration</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Benefits</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Status</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border-theme/50">
+                  {membershipPlans.map((plan: any) => (
+                    <tr key={plan.id} className="hover:bg-bg-surface/50 transition-colors">
+                      <td className="px-5 py-4 font-bold text-text-primary">{plan.name}</td>
+                      <td className="px-5 py-4 font-mono font-bold text-accent">₹{plan.price}</td>
+                      <td className="px-5 py-4">{plan.duration_months} M</td>
+                      <td className="px-5 py-4 text-xs text-text-secondary">{(plan.benefits || []).join(', ')}</td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
+                          {plan.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <button onClick={() => handleTogglePlanStatus(plan)} className="text-xs font-bold text-accent hover:underline min-h-[32px] inline-flex items-center">
+                          {plan.status === 'Active' ? 'Archive' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
 
       {/* Change PIN UI */}
-            <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-6 sm:p-8">
+            <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
               <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 mb-6 border-b border-border-theme pb-4">
                 Security Settings
               </h2>
@@ -4571,8 +5163,8 @@ function DashboardContent() {
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Current Admin PIN</label>
                   <div className="relative">
-                    <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-                    <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                    <input type={showCurrentPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={currentPassword} onChange={e => setCurrentPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-12 py-3 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal min-h-[44px]" placeholder="••••" required />
+                    <button type="button" onClick={() => setShowCurrentPin(!showCurrentPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none min-h-[44px] min-w-[44px] touch-target justify-center" aria-label={showCurrentPin ? "Hide PIN" : "Show PIN"}>
                       {showCurrentPin ? <IconEyeOff /> : <IconEye />}
                     </button>
                   </div>
@@ -4580,8 +5172,8 @@ function DashboardContent() {
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">New Admin PIN</label>
                   <div className="relative">
-                    <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-                    <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                    <input type={showNewPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={newPassword} onChange={e => setNewPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-12 py-3 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal min-h-[44px]" placeholder="••••" required />
+                    <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none min-h-[44px] min-w-[44px] touch-target justify-center" aria-label={showNewPin ? "Hide PIN" : "Show PIN"}>
                       {showNewPin ? <IconEyeOff /> : <IconEye />}
                     </button>
                   </div>
@@ -4590,13 +5182,13 @@ function DashboardContent() {
                 <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Confirm New PIN</label>
                   <div className="relative">
-                    <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-10 py-2.5 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal" placeholder="••••" required />
-                    <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none">
+                    <input type={showConfirmPin ? "text" : "password"} maxLength={4} pattern="\d{4}" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value.replace(/\D/g, ''))} className="w-full pl-3 pr-12 py-3 bg-bg-surface border border-border-theme rounded-lg text-lg text-text-primary outline-none focus:border-accent font-mono tracking-[0.5em] placeholder-text-disabled placeholder:tracking-normal min-h-[44px]" placeholder="••••" required />
+                    <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-text-primary transition-colors focus:outline-none min-h-[44px] min-w-[44px] touch-target justify-center" aria-label={showConfirmPin ? "Hide PIN" : "Show PIN"}>
                       {showConfirmPin ? <IconEyeOff /> : <IconEye />}
                     </button>
                   </div>
                 </div>
-                <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20">
+                <button type="submit" disabled={isChangingPassword || newPassword.length !== 4} className="mt-2 px-5 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-lg hover:bg-accent/90 transition-colors shadow-lg shadow-accent/20 min-h-[44px] touch-target">
                   {isChangingPassword ? 'Updating...' : 'Change PIN'}
                 </button>
               </form>
@@ -5232,115 +5824,341 @@ function DashboardContent() {
         </div>
       )}
       
-      {/* Sidebar (Desktop) */}
-      <aside className="w-64 hidden lg:flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative">
-        <div className="p-8 pb-4">
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight mb-1">QControl</h1>
-          <p className="text-[10px] uppercase tracking-widest text-text-secondary font-semibold italic">Powered by Scan-n-Bill</p>
+      {/* Sidebar (Desktop & Tablet Rail) */}
+      <aside className={`${isSidebarCollapsed ? 'w-[72px]' : 'w-64'} hidden md:flex flex-col border-r border-border-theme bg-bg-surface shrink-0 z-20 relative transition-all duration-300`}>
+        {/* Brand Header */}
+        <div className={`p-4 border-b border-border-theme/40 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+          {!isSidebarCollapsed ? (
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-text-primary tracking-tight leading-none">QControl</h1>
+              <p className="text-[9px] uppercase tracking-widest text-text-secondary font-semibold italic mt-1 truncate">Powered by Scan-n-Bill</p>
+            </div>
+          ) : (
+            <button
+              onClick={toggleSidebarCollapse}
+              className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent font-black text-sm hover:scale-105 active:scale-95 transition-transform"
+              title="Expand Sidebar"
+              aria-label="Expand Sidebar"
+            >
+              QC
+            </button>
+          )}
+          {!isSidebarCollapsed && (
+            <button
+              onClick={toggleSidebarCollapse}
+              className="touch-target w-8 h-8 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors flex items-center justify-center shrink-0"
+              title="Collapse to Rail"
+              aria-label="Collapse to Rail"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
         </div>
 
-        <nav className="flex-1 px-4 py-6 flex flex-col gap-2">
-          <button onClick={() => setSidebarTab('overview')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'overview' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconOverview /> {t('dashboard', 'Overview')}
+        {/* Navigation Items */}
+        <nav className={`flex-1 ${isSidebarCollapsed ? 'px-2' : 'px-3'} py-3 flex flex-col gap-1 overflow-y-auto custom-scrollbar`}>
+          {/* 1. Daily Operations: Dashboard / Overview */}
+          <button 
+            onClick={() => setSidebarTab('overview')} 
+            title={isSidebarCollapsed ? t('dashboard', 'Overview') : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'overview' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'overview' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'overview' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconOverview />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">{t('dashboard', 'Overview')}</span>}
           </button>
-          <button onClick={() => setSidebarTab('tables')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'tables' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconTables /> {t('tables', 'Tables')}
+          
+          {/* 1. Daily Operations: Tables Floor */}
+          <button 
+            onClick={() => setSidebarTab('tables')} 
+            title={isSidebarCollapsed ? t('tables', 'Tables Floor') : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'tables' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'tables' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'tables' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconTables />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">{t('tables', 'Tables Floor')}</span>}
           </button>
-          <button onClick={() => setSidebarTab('bookings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'bookings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconBookings /> {t('bookings', 'Bookings')}
+
+          {/* 1. Daily Operations: Bookings */}
+          <button 
+            onClick={() => setSidebarTab('bookings')} 
+            title={isSidebarCollapsed ? t('bookings', 'Bookings') : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'bookings' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'bookings' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'bookings' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconBookings />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">{t('bookings', 'Bookings')}</span>}
           </button>
+
+          {/* Section Divider */}
+          <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+
+          {/* 2. Orders & Finance: Payments */}
+          <button 
+            onClick={() => setSidebarTab('payments')} 
+            title={isSidebarCollapsed ? 'Payments' : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'payments' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'payments' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'payments' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'payments' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconPayments />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">Payments</span>}
+          </button>
+
+          {/* 2. Orders & Finance: Food & Beverages */}
           {!preferences.simple_mode && (
-            <button onClick={() => setSidebarTab('reports')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'reports' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-              <IconBookings /> {t('reports', 'Reports')}
+            <button 
+              onClick={() => setSidebarTab('menu')} 
+              title={isSidebarCollapsed ? 'Food & Beverages' : undefined}
+              className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'menu' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+            >
+              {sidebarTab === 'menu' && !isSidebarCollapsed && (
+                <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              {sidebarTab === 'menu' && isSidebarCollapsed && (
+                <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'menu' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                <IconMenu />
+              </span>
+              {!isSidebarCollapsed && <span className="truncate">Food & Beverages</span>}
             </button>
           )}
+
+          {/* Section Divider */}
+          {((!preferences.simple_mode || true) && (preferences.enable_memberships || preferences.enable_qkhata) || !preferences.simple_mode) && (
+            <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+          )}
+
+          {/* 3. Customers & Members: Members */}
           {(!preferences.simple_mode || true) && preferences.enable_memberships && (
-            <button onClick={() => setSidebarTab('customers')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'customers' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-              <IconCustomers /> {t('members', 'Members')}
+            <button 
+              onClick={() => setSidebarTab('customers')} 
+              title={isSidebarCollapsed ? t('members', 'Members') : undefined}
+              className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'customers' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+            >
+              {sidebarTab === 'customers' && !isSidebarCollapsed && (
+                <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              {sidebarTab === 'customers' && isSidebarCollapsed && (
+                <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'customers' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                <IconCustomers />
+              </span>
+              {!isSidebarCollapsed && <span className="truncate">{t('members', 'Members')}</span>}
             </button>
           )}
-          
-          {!preferences.simple_mode && (
-            <button onClick={() => setSidebarTab('menu')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'menu' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-              <IconMenu /> Food & Beverages
-            </button>
-          )}
-          
+
+          {/* 3. Customers & Members: QKhata */}
           {(!preferences.simple_mode || true) && preferences.enable_qkhata && (
-            <button onClick={() => setSidebarTab('qkhata')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> 
-              {t('qkhata', 'QKhata')}
+            <button 
+              onClick={() => setSidebarTab('qkhata')} 
+              title={isSidebarCollapsed ? t('qkhata', 'QKhata') : undefined}
+              className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'qkhata' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+            >
+              {sidebarTab === 'qkhata' && !isSidebarCollapsed && (
+                <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              {sidebarTab === 'qkhata' && isSidebarCollapsed && (
+                <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'qkhata' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                <IconQKhata />
+              </span>
+              {!isSidebarCollapsed && <span className="truncate">{t('qkhata', 'QKhata')}</span>}
             </button>
           )}
 
+          {/* 3. Customers & Members: Messaging */}
           {!preferences.simple_mode && (
-            <button onClick={() => setSidebarTab('messaging')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'messaging' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-              Messaging
+            <button 
+              onClick={() => setSidebarTab('messaging')} 
+              title={isSidebarCollapsed ? 'Messaging' : undefined}
+              className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'messaging' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+            >
+              {sidebarTab === 'messaging' && !isSidebarCollapsed && (
+                <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              {sidebarTab === 'messaging' && isSidebarCollapsed && (
+                <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              )}
+              <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'messaging' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                <IconMessaging />
+              </span>
+              {!isSidebarCollapsed && <span className="truncate">Messaging</span>}
             </button>
           )}
 
-          <button onClick={() => setSidebarTab('payments')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'payments' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 
-            Payments
-          </button>
+          {/* 4. Analytics: Reports */}
+          {!preferences.simple_mode && (
+            <>
+              <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+              <button 
+                onClick={() => setSidebarTab('reports')} 
+                title={isSidebarCollapsed ? t('reports', 'Reports') : undefined}
+                className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2.5 w-full'} rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'reports' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'reports' && !isSidebarCollapsed && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                {sidebarTab === 'reports' && isSidebarCollapsed && (
+                  <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+                  <IconReports />
+                </span>
+                {!isSidebarCollapsed && <span className="truncate">{t('reports', 'Reports')}</span>}
+              </button>
+            </>
+          )}
         </nav>
 
-        <div className="p-4 flex flex-col gap-2 border-t border-border-theme/50">
-          <button onClick={() => setIsManualModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2 shadow-[0_0_15px_rgba(240,165,0,0.3)] btn-premium">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-            {t('new_session')}
+        {/* 5. Bottom Actions & Administration */}
+        <div className={`p-3 border-t border-border-theme/40 flex flex-col gap-1.5 shrink-0 bg-bg-surface/50`}>
+          <button 
+            onClick={() => setIsManualModalOpen(true)} 
+            title={isSidebarCollapsed ? t('new_session') : undefined}
+            className={`touch-target flex items-center justify-center gap-2 w-full ${isSidebarCollapsed ? 'w-10 h-10 mx-auto p-0' : 'py-2.5 px-3'} bg-secondary hover:bg-sky-400 text-white font-bold rounded-xl text-sm shadow-[0_0_15px_rgba(56,189,248,0.25)] hover:shadow-[0_0_20px_rgba(56,189,248,0.4)] active:scale-98 transition-all btn-premium`}
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+            {!isSidebarCollapsed && <span className="font-bold tracking-tight">{t('new_session')}</span>}
           </button>
 
-          <button onClick={() => setSidebarTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconSettings /> {t('settings', 'Settings')}
+          <div className="my-0.5 mx-2 h-px bg-border-theme/30 shrink-0" />
+
+          {/* Settings */}
+          <button 
+            onClick={() => setSidebarTab('settings')} 
+            title={isSidebarCollapsed ? t('settings', 'Settings') : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2 w-full'} rounded-xl font-medium text-xs transition-all duration-150 ${sidebarTab === 'settings' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'settings' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-1.5 bottom-1.5 w-1 bg-accent rounded-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'settings' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-accent rounded-r-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'settings' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconSettings />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">{t('settings', 'Settings')}</span>}
           </button>
 
-          <button onClick={() => setSidebarTab('subscription')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'subscription' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-            Subscription & Billing
+          {/* Subscription */}
+          <button 
+            onClick={() => setSidebarTab('subscription')} 
+            title={isSidebarCollapsed ? 'Subscription & Billing' : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2 w-full'} rounded-xl font-medium text-xs transition-all duration-150 ${sidebarTab === 'subscription' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'subscription' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-1.5 bottom-1.5 w-1 bg-accent rounded-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'subscription' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-accent rounded-r-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'subscription' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconSubscription />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">Subscription</span>}
           </button>
-          <button onClick={() => setSidebarTab('support')} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent border border-accent/20' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card'}`}>
-            <IconSupport /> Support
+          
+          {/* Support */}
+          <button 
+            onClick={() => setSidebarTab('support')} 
+            title={isSidebarCollapsed ? 'Support' : undefined}
+            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2 w-full'} rounded-xl font-medium text-xs transition-all duration-150 ${sidebarTab === 'support' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+          >
+            {sidebarTab === 'support' && !isSidebarCollapsed && (
+              <span className="absolute left-1 top-1.5 bottom-1.5 w-1 bg-accent rounded-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            {sidebarTab === 'support' && isSidebarCollapsed && (
+              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-accent rounded-r-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            )}
+            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'support' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
+              <IconSupport />
+            </span>
+            {!isSidebarCollapsed && <span className="truncate">Support</span>}
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-bg-primary pb-20 lg:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-bg-primary pb-24 md:pb-0 scroll-pt-16">
         
         {/* Header */}
-        <header className="px-6 lg:px-10 py-4 lg:py-6 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-10">
-          <div className="flex items-center gap-4">
-            {/* Mobile Hamburger Menu */}
+        <header className="px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-20">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            {/* Mobile Hamburger Menu (< 768px) */}
             <button 
-              className="lg:hidden p-2 text-text-secondary hover:text-text-primary"
+              className="md:hidden touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card transition-colors shrink-0"
               onClick={() => setIsMobileMenuOpen(true)}
+              aria-label="Open mobile menu"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
-            <div>
+            {/* Tablet & Desktop Sidebar Collapse Toggle */}
+            <button
+              className="hidden md:flex touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card transition-colors shrink-0"
+              onClick={toggleSidebarCollapse}
+              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isSidebarCollapsed ? "M13 5l7 7-7 7M5 5l7 7-7 7" : "M11 19l-7-7 7-7m8 14l-7-7 7-7"} />
+              </svg>
+            </button>
+            <div className="min-w-0">
               {sidebarTab === 'overview' ? (
                 <div>
-                  <h2 className="text-xl lg:text-2xl font-black text-text-primary">
-                    {data?.has_logged_in === false ? `Welcome to Qcontrol, ${data?.ownerName?.split(' ')[0] || ''}` : `Welcome back, ${data?.ownerName?.split(' ')[0] || ''}`}
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-black text-text-primary tracking-tight truncate">
+                    {data?.has_logged_in === false ? `Welcome to QControl, ${data?.ownerName?.split(' ')[0] || ''}` : `Welcome back, ${data?.ownerName?.split(' ')[0] || ''}`}
                   </h2>
-                  <p className="text-xs lg:text-sm text-text-secondary mt-1 hidden sm:block">Complete control over your business. Everything you need, all in one place.</p>
+                  <p className="text-xs text-text-secondary mt-0.5 hidden sm:block truncate">Complete control over your gaming club. Everything you need in one place.</p>
                 </div>
               ) : (
-                <h2 className="text-lg lg:text-xl font-bold text-text-primary capitalize">
+                <h2 className="text-base sm:text-lg lg:text-xl font-bold text-text-primary capitalize truncate">
                   {sidebarTab === 'qkhata' ? t('qkhata') : sidebarTab === 'tables' ? t('tables') : sidebarTab === 'bookings' ? t('bookings') : sidebarTab === 'reports' ? t('reports') : sidebarTab === 'customers' ? t('members') : sidebarTab === 'settings' ? t('settings') : sidebarTab === 'menu' ? 'Food & Beverages' : sidebarTab}
                 </h2>
               )}
-              <p className="text-[10px] lg:text-xs text-text-secondary font-mono mt-1 uppercase tracking-widest">
+              <p className="text-[10px] lg:text-xs text-text-secondary font-mono mt-0.5 uppercase tracking-widest">
                 {toReadableIST(now)}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-4 lg:gap-6">
+          <div className="flex items-center gap-2 sm:gap-4 lg:gap-5 shrink-0">
             {/* Multi-language Selector Pill */}
             <FancyLanguageToggle />
-            <div className="flex gap-4 text-text-secondary items-center">
+            <div className="flex gap-1.5 sm:gap-2 text-text-secondary items-center">
               <Tooltip text="Open Google Sheet">
                 <button
                   onClick={() => {
@@ -5350,7 +6168,8 @@ function DashboardContent() {
                     }
                     window.open(`https://docs.google.com/spreadsheets/d/${data.google_sheet_id}/edit`, '_blank');
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-green-500 transition-colors hover-lift smooth-transition"
+                  className="touch-target relative p-2 rounded-lg text-text-secondary hover:text-green-500 hover:bg-bg-card transition-colors hover-lift smooth-transition"
+                  aria-label="Open Google Sheet"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 </button>
@@ -5366,7 +6185,8 @@ function DashboardContent() {
                     const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'Qcontr01_bot';
                     window.open(`https://t.me/${botUsername}`, '_blank');
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-[#0088cc] transition-colors hover-lift smooth-transition"
+                  className="touch-target relative p-2 rounded-lg text-text-secondary hover:text-[#0088cc] hover:bg-bg-card transition-colors hover-lift smooth-transition"
+                  aria-label="Open Telegram Bot"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                 </button>
@@ -5374,7 +6194,8 @@ function DashboardContent() {
               <Tooltip text="Quick Scan">
                 <button
                   onClick={() => setIsQRModalOpen(true)}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-accent transition-colors hover-lift smooth-transition"
+                  className="touch-target relative p-2 rounded-lg text-text-secondary hover:text-accent hover:bg-bg-card transition-colors hover-lift smooth-transition"
+                  aria-label="Quick Scan"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
                 </button>
@@ -5382,7 +6203,8 @@ function DashboardContent() {
               <Tooltip text="Toggle Privacy Mode">
                 <button
                   onClick={togglePrivacy}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift smooth-transition"
+                  className="touch-target relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors hover-lift smooth-transition"
+                  aria-label="Toggle Privacy Mode"
                 >
                   {isPrivacyMode ? <IconEyeOff /> : <IconEye />}
                 </button>
@@ -5414,7 +6236,8 @@ function DashboardContent() {
                       switchTheme();
                     });
                   }}
-                  className="relative p-1.5 rounded-full outline-none focus:outline-none text-text-secondary hover:text-text-primary transition-colors hover-lift smooth-transition"
+                  className="touch-target relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors hover-lift smooth-transition"
+                  aria-label="Toggle Theme"
                 >
                   <svg className="w-5 h-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -5426,7 +6249,7 @@ function DashboardContent() {
               </Tooltip>
               {businessId && <NotificationBell businessId={businessId} />}
             </div>
-            <div className="h-8 w-px bg-border-theme"></div>
+            <div className="h-6 w-px bg-border-theme"></div>
             <div className="relative" ref={profileDropdownRef}>
               <button 
                 onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
@@ -5478,7 +6301,23 @@ function DashboardContent() {
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
           {sidebarTab === 'bookings' && <BookingsTab businessId={businessId} bookings={data?.bookings || []} tables={data?.tables || []} onRefresh={fetchData} />}
-          {sidebarTab === 'reports' && renderReports()}
+          {sidebarTab === 'reports' && (
+            useLegacyReports ? (
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setUseLegacyReports(false)}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent/90 transition-colors shadow-sm"
+                  >
+                    ✨ Switch to Redesigned Reports
+                  </button>
+                </div>
+                {renderReports()}
+              </div>
+            ) : (
+              <ReportsTab onToggleLegacy={() => setUseLegacyReports(true)} isPrivacyMode={isPrivacyMode} />
+            )
+          )}
           {sidebarTab === 'customers' && renderCustomers()}
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'subscription' && <SubscriptionTab businessId={businessId!} />}
@@ -5507,28 +6346,34 @@ function DashboardContent() {
       
       {/* New Session Modal (Admin) */}
       {isManualModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-xl my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-entrance flex flex-col">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-4 overflow-hidden">
+          <div className="bg-bg-card border-t md:border border-border-theme rounded-t-2xl md:rounded-2xl w-full max-w-xl shadow-2xl relative max-h-[90dvh] md:max-h-[85vh] animate-sheet-up md:animate-entrance flex flex-col overflow-hidden">
+            {/* Mobile Drag Handle */}
+            <div className="md:hidden flex justify-center pt-2.5 pb-1 shrink-0">
+              <div className="w-10 h-1 bg-border-theme rounded-full opacity-60" />
+            </div>
+
             <button 
               onClick={() => {
                 setIsManualModalOpen(false);
                 setSelectedQkhataMember(null);
                 setShowQkhataPopover(false);
               }}
-              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors z-10"
+              className="absolute top-3.5 md:top-6 right-4 md:right-6 w-9 h-9 md:w-10 md:h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors z-10 touch-target"
+              aria-label="Close dialog"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div className="p-6 pr-20 sm:p-8 sm:pr-24 border-b border-border-theme">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-4 sm:p-6 pr-14 sm:pr-24 border-b border-border-theme shrink-0 bg-bg-surface">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold">{t('new_session', 'New Session')}</h2>
-                  <p className="text-text-secondary mt-1 text-sm">{t('new_session_subtitle', 'Start a session for walk-ins without QR.')}</p>
+                  <h2 className="text-xl sm:text-2xl font-bold">{t('new_session', 'New Session')}</h2>
+                  <p className="text-text-secondary mt-0.5 text-xs sm:text-sm">{t('new_session_subtitle', 'Start a session for walk-ins without QR.')}</p>
                 </div>
-                <div className="flex items-center gap-3 bg-bg-surface px-4 py-2 border border-border-theme rounded-xl shrink-0">
-                   <div className="flex flex-col text-right">
-                     <span className="text-xs font-bold text-text-primary uppercase tracking-wider">{t('lazy_mode', 'Lazy Mode')}</span>
-                     <span className="text-[10px] text-text-secondary">{t('instant_start', 'Instant Start')}</span>
+                <div className="flex items-center gap-3 bg-bg-card px-3 py-1.5 sm:px-4 sm:py-2 border border-border-theme rounded-xl shrink-0 self-start sm:self-auto">
+                   <div className="flex flex-col text-left sm:text-right">
+                     <span className="text-[11px] sm:text-xs font-bold text-text-primary uppercase tracking-wider">{t('lazy_mode', 'Lazy Mode')}</span>
+                     <span className="text-[9px] sm:text-[10px] text-text-secondary">{t('instant_start', 'Instant Start')}</span>
                    </div>
                    <button type="button" onClick={toggleLazyMode} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isLazyModeEnabled ? 'bg-accent' : 'bg-bg-primary border border-border-theme'}`}>
                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isLazyModeEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -5537,7 +6382,8 @@ function DashboardContent() {
               </div>
             </div>
             
-            <form onSubmit={handleManualStart} className="p-6 sm:p-8 flex flex-col gap-6">
+            <form onSubmit={handleManualStart} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-4 sm:p-6 flex flex-col gap-5 overflow-y-auto custom-scrollbar flex-1">
               
               {/* Customer Name Section */}
               <div className={`transition-all duration-300 ease-in-out ${isLazyModeEnabled ? 'max-h-0 opacity-0 overflow-hidden m-0' : 'max-h-[500px] opacity-100 overflow-visible'}`}>
@@ -5690,19 +6536,24 @@ function DashboardContent() {
                 </div>
               )}
               
-              <button type="submit" disabled={isStartingManual || !manualTable} className="w-full mt-2 bg-accent text-white font-bold py-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_15px_rgba(var(--accent),0.4)] flex items-center justify-center gap-2 btn-premium">
-                {isStartingManual ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                    {t('starting', 'Starting...')}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    {t('start_session', 'Start Session')}
-                  </>
-                )}
-              </button>
+              </div>
+
+              {/* Sticky Submit Footer */}
+              <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-5">
+                <button type="submit" disabled={isStartingManual || !manualTable} className="w-full bg-accent text-black font-black py-3.5 px-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_15px_rgba(var(--accent),0.4)] flex items-center justify-center gap-2 btn-premium min-h-[44px] touch-target uppercase tracking-wider text-xs">
+                  {isStartingManual ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                      {t('starting', 'Starting...')}
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      {t('start_session', 'Start Session')}
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -5710,20 +6561,27 @@ function DashboardContent() {
 
       {/* Manual Booking Modal (Additive) */}
       {isBookingModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className={`bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-200 ease-out ${isClosingBooking ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-entrance'}`}>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-4 overflow-hidden">
+          <div className={`bg-bg-card border-t md:border border-border-theme rounded-t-2xl md:rounded-2xl w-full max-w-md shadow-2xl relative max-h-[90dvh] md:max-h-[85vh] flex flex-col overflow-hidden transition-all duration-200 ease-out ${isClosingBooking ? 'opacity-0 scale-95 translate-y-4' : 'opacity-100 scale-100 animate-sheet-up md:animate-entrance'}`}>
+            {/* Mobile Drag Handle */}
+            <div className="md:hidden flex justify-center pt-2.5 pb-1 shrink-0">
+              <div className="w-10 h-1 bg-border-theme rounded-full opacity-60" />
+            </div>
+
             <button 
               onClick={() => setIsBookingModalOpen(false)}
-              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              className="absolute top-3.5 md:top-6 right-4 md:right-6 w-9 h-9 md:w-10 md:h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors touch-target z-10"
+              aria-label="Close dialog"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div className="p-8 border-b border-border-theme">
-              <h2 className="text-2xl font-bold">{t('new_booking')}</h2>
-              <p className="text-text-secondary mt-1 text-sm">{t('schedule_booking')}</p>
+            <div className="p-4 sm:p-6 pr-14 sm:pr-20 border-b border-border-theme shrink-0 bg-bg-surface">
+              <h2 className="text-xl sm:text-2xl font-bold">{t('new_booking')}</h2>
+              <p className="text-text-secondary mt-0.5 text-xs sm:text-sm">{t('schedule_booking')}</p>
             </div>
-            <form onSubmit={handleCreateManualBooking} className="p-8 flex flex-col gap-5">
-              {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
+            <form onSubmit={handleCreateManualBooking} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-4 sm:p-6 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1">
+                {bookingError && <div className="text-danger text-sm font-bold bg-danger/10 p-3 rounded-lg border border-danger/20">{bookingError}</div>}
               
               <div className="flex gap-4 w-full">
                 <div className="flex-1">
@@ -5770,7 +6628,7 @@ function DashboardContent() {
                           type="button"
                           disabled={occupied}
                           onClick={() => setBookingStartTime(slot)}
-                          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-bold border transition-all duration-200 ${isSelected ? 'bg-accent text-white border-accent shadow-md shadow-accent/20' : occupied ? 'bg-bg-primary/50 text-text-secondary border-border-theme/50 opacity-50 cursor-not-allowed' : 'bg-bg-surface text-text-primary border-border-theme hover:border-accent/50'}`}
+                          className={`shrink-0 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all duration-200 touch-target min-h-[38px] ${isSelected ? 'bg-accent text-black font-black border-accent shadow-md shadow-accent/20' : occupied ? 'bg-bg-primary/50 text-text-secondary border-border-theme/50 opacity-50 cursor-not-allowed' : 'bg-bg-surface text-text-primary border-border-theme hover:border-accent/50'}`}
                         >
                           {displayTime}
                         </button>
@@ -5780,13 +6638,13 @@ function DashboardContent() {
                 </div>
               )}
 
-              <div className="flex gap-4 w-full">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full">
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('customer_name')}</label>
-                  <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" placeholder="Optional" />
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">{t('customer_name')}</label>
+                  <input type="text" value={bookingCustomer} onChange={e => setBookingCustomer(e.target.value)} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary h-[44px] input-premium" placeholder="Optional" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('duration')} <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">{t('duration')} <span className="text-danger">*</span></label>
                   <CustomSelect 
                     value={bookingDuration} 
                     onChange={v => setBookingDuration(v)} 
@@ -5803,7 +6661,7 @@ function DashboardContent() {
 
               {bookingGame === 'ps5' && (
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">{t('players')} <span className="text-danger">*</span></label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">{t('players')} <span className="text-danger">*</span></label>
                   <CustomSelect 
                     value={bookingPlayers} 
                     onChange={v => setBookingPlayers(v)} 
@@ -5812,10 +6670,14 @@ function DashboardContent() {
                   />
                 </div>
               )}
+              </div>
               
-              <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full mt-2 bg-accent text-white font-bold py-3.5 rounded-lg disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium">
-                {isCreatingBooking ? t('loading') : t('confirm_booking')}
-              </button>
+              {/* Sticky Submit Footer */}
+              <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-5">
+                <button type="submit" disabled={isCreatingBooking || !bookingTable || !bookingDate || !bookingStartTime} className="w-full bg-accent text-black font-black py-3 px-4 rounded-xl disabled:opacity-50 disabled:shadow-none shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium min-h-[44px] touch-target uppercase tracking-wider text-xs">
+                  {isCreatingBooking ? t('loading') : t('confirm_booking')}
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -5823,34 +6685,46 @@ function DashboardContent() {
 
       {/* Edit Session Modal */}
       {editSession && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar animate-entrance">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-4 overflow-hidden">
+          <div className="bg-bg-card border-t md:border border-border-theme rounded-t-2xl md:rounded-2xl w-full max-w-[95%] sm:max-w-md my-auto shadow-2xl relative max-h-[90dvh] md:max-h-[85vh] flex flex-col overflow-hidden animate-sheet-up md:animate-entrance">
+            {/* Mobile Drag Handle */}
+            <div className="md:hidden flex justify-center pt-2.5 pb-1 shrink-0">
+              <div className="w-10 h-1 bg-border-theme rounded-full opacity-60" />
+            </div>
+
             <button 
               onClick={() => setEditSession(null)}
-              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              className="absolute top-3.5 md:top-6 right-4 md:right-6 w-9 h-9 md:w-10 md:h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors touch-target z-10"
+              aria-label="Close dialog"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div className="p-8 border-b border-border-theme">
-              <h2 className="text-2xl font-bold">Edit Session</h2>
-              <p className="text-text-secondary mt-1 text-sm">Update customer details or correct start time.</p>
+            <div className="p-4 sm:p-6 pr-14 sm:pr-20 border-b border-border-theme shrink-0 bg-bg-surface">
+              <h2 className="text-xl sm:text-2xl font-bold">Edit Session</h2>
+              <p className="text-text-secondary mt-0.5 text-xs sm:text-sm">Update customer details or correct start time.</p>
             </div>
-            <form onSubmit={handleEditSessionSubmit} className="p-8 flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Customer Name</label>
-                <input type="text" required value={editCustomer} onChange={e => setEditCustomer(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
+            <form onSubmit={handleEditSessionSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-4 sm:p-6 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Customer Name</label>
+                  <input type="text" required value={editCustomer} onChange={e => setEditCustomer(e.target.value)} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Start Time</label>
+                  <input type="datetime-local" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-1.5">Notes</label>
+                  <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Start Time</label>
-                <input type="datetime-local" required value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
+
+              {/* Sticky Safe-Area Footer */}
+              <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-5">
+                <button type="submit" className="w-full bg-accent text-black font-black py-3 px-4 rounded-xl shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium min-h-[44px] touch-target uppercase tracking-wider text-xs">
+                  Save Changes
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Notes</label>
-                <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-lg outline-none text-sm text-text-primary input-premium" />
-              </div>
-              <button type="submit" className="w-full mt-4 bg-accent text-white font-bold py-3 rounded-lg shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium">
-                Save Changes
-              </button>
             </form>
           </div>
         </div>
@@ -5858,29 +6732,30 @@ function DashboardContent() {
 
       {/* QR Codes Modal */}
       {isQRModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] lg:max-w-5xl my-auto shadow-2xl relative max-h-[90vh] flex flex-col animate-entrance">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-8 overflow-y-auto">
+          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-[95%] lg:max-w-5xl my-auto shadow-2xl relative max-h-[90vh] flex flex-col animate-entrance overflow-hidden">
             <button 
               onClick={() => setIsQRModalOpen(false)}
-              className="absolute top-6 right-6 w-10 h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              className="absolute top-4 sm:top-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-bg-surface border border-border-theme rounded-full flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors touch-target z-10"
+              aria-label="Close dialog"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div className="p-8 border-b border-border-theme">
-              <h2 className="text-3xl font-bold">Table QR Codes</h2>
-              <p className="text-text-secondary mt-2">Print these and place them on the corresponding tables.</p>
+            <div className="p-5 sm:p-8 pr-16 border-b border-border-theme bg-bg-surface shrink-0">
+              <h2 className="text-xl sm:text-3xl font-bold">Table QR Codes</h2>
+              <p className="text-text-secondary mt-1 text-xs sm:text-sm">Print these and place them on the corresponding tables.</p>
             </div>
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-h-[70vh] overflow-y-auto">
+            <div className="p-4 sm:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
               {data.tables?.map(t => {
                 const url = `${window.location.origin}/qr/${businessId}/${encodeURIComponent(t.id)}`;
                 return (
-                  <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-6 flex flex-col items-center text-center">
-                    <h3 className="text-xl font-bold font-mono mb-1">{t.name}</h3>
-                    <p className="text-[10px] text-text-secondary uppercase tracking-widest font-bold mb-4">{t.type}</p>
+                  <div key={t.id} className="bg-bg-surface border border-border-theme rounded-xl p-5 sm:p-6 flex flex-col items-center text-center">
+                    <h3 className="text-lg sm:text-xl font-bold font-mono mb-1">{t.name}</h3>
+                    <p className="text-[10px] text-text-secondary uppercase tracking-widest font-bold mb-3">{t.type}</p>
                     <div className="bg-white p-3 rounded-xl shadow-inner mb-4 w-full aspect-square flex items-center justify-center">
                       <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`} alt="QR Code" className="w-full h-full object-contain" />
                     </div>
-                    <a href={`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(url)}`} download className="text-xs font-bold text-accent hover:underline">Download High-Res</a>
+                    <a href={`https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&data=${encodeURIComponent(url)}`} download className="text-xs font-bold text-accent hover:underline touch-target py-1">Download High-Res</a>
                   </div>
                 );
               })}
@@ -5888,38 +6763,185 @@ function DashboardContent() {
           </div>
         </div>
       )}
-      {/* Mobile Menu Drawer */}
+      {/* Mobile Menu Drawer (< 768px) */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 lg:hidden flex justify-end">
-          <div className="bg-bg-surface w-64 h-full flex flex-col shadow-2xl relative animate-slide-in-right">
-            <div className="p-6 border-b border-border-theme flex justify-between items-center">
-              <h2 className="font-bold text-lg">Menu</h2>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 -mr-2 text-text-secondary hover:text-text-primary">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 md:hidden flex justify-end" onClick={() => setIsMobileMenuOpen(false)}>
+          <div className="bg-bg-surface w-72 h-full flex flex-col shadow-2xl relative animate-slide-in-right border-l border-border-theme" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-border-theme flex justify-between items-center bg-bg-surface/90">
+              <div>
+                <h2 className="font-bold text-lg text-text-primary">QControl</h2>
+                <p className="text-[10px] text-text-secondary uppercase font-mono tracking-widest">{data?.businessName || 'Club Hub'}</p>
+              </div>
+              <button onClick={() => setIsMobileMenuOpen(false)} aria-label="Close menu" className="touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-              <button onClick={() => { setSidebarTab('overview'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'overview' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconOverview /> {t('dashboard', 'Overview')}
+            
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-1 custom-scrollbar">
+              {/* 1. Daily Operations */}
+              <button 
+                onClick={() => { setSidebarTab('overview'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'overview' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'overview' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconOverview /></span>
+                <span>{t('dashboard', 'Overview')}</span>
               </button>
-              <button onClick={() => { setSidebarTab('tables'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'tables' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconTables /> {t('tables', 'Tables')}
+
+              <button 
+                onClick={() => { setSidebarTab('tables'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'tables' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'tables' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconTables /></span>
+                <span>{t('tables', 'Tables Floor')}</span>
               </button>
-              <button onClick={() => { setSidebarTab('bookings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'bookings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconBookings /> {t('bookings', 'Bookings')}
+
+              <button 
+                onClick={() => { setSidebarTab('bookings'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'bookings' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'bookings' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconBookings /></span>
+                <span>{t('bookings', 'Bookings')}</span>
               </button>
-              <button onClick={() => { setSidebarTab('qkhata'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'qkhata' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                {t('qkhata', 'QKhata')}
+              
+              {/* Section Divider */}
+              <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+
+              {/* 2. Orders & Finance */}
+              <button 
+                onClick={() => { setSidebarTab('payments'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'payments' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'payments' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'payments' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconPayments /></span>
+                <span>Payments</span>
               </button>
-              <button onClick={() => { setSidebarTab('settings'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'settings' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconSettings /> {t('settings', 'Settings')}
+
+              {!preferences.simple_mode && (
+                <button 
+                  onClick={() => { setSidebarTab('menu'); setIsMobileMenuOpen(false); }} 
+                  className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'menu' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+                >
+                  {sidebarTab === 'menu' && (
+                    <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  )}
+                  <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'menu' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconMenu /></span>
+                  <span>Food & Beverages</span>
+                </button>
+              )}
+
+              {/* Section Divider */}
+              {((!preferences.simple_mode || true) && (preferences.enable_memberships || preferences.enable_qkhata) || !preferences.simple_mode) && (
+                <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+              )}
+
+              {/* 3. Customers & Members */}
+              {(!preferences.simple_mode || true) && preferences.enable_memberships && (
+                <button 
+                  onClick={() => { setSidebarTab('customers'); setIsMobileMenuOpen(false); }} 
+                  className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'customers' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+                >
+                  {sidebarTab === 'customers' && (
+                    <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  )}
+                  <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'customers' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconCustomers /></span>
+                  <span>{t('members', 'Members')}</span>
+                </button>
+              )}
+              {(!preferences.simple_mode || true) && preferences.enable_qkhata && (
+                <button 
+                  onClick={() => { setSidebarTab('qkhata'); setIsMobileMenuOpen(false); }} 
+                  className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'qkhata' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+                >
+                  {sidebarTab === 'qkhata' && (
+                    <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  )}
+                  <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'qkhata' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconQKhata /></span>
+                  <span>{t('qkhata', 'QKhata')}</span>
+                </button>
+              )}
+              {!preferences.simple_mode && (
+                <button 
+                  onClick={() => { setSidebarTab('messaging'); setIsMobileMenuOpen(false); }} 
+                  className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'messaging' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+                >
+                  {sidebarTab === 'messaging' && (
+                    <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  )}
+                  <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'messaging' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconMessaging /></span>
+                  <span>Messaging</span>
+                </button>
+              )}
+
+              {/* 4. Analytics: Reports */}
+              {!preferences.simple_mode && (
+                <>
+                  <div className="my-1.5 mx-2 h-px bg-border-theme/35 shrink-0" />
+                  <button 
+                    onClick={() => { setSidebarTab('reports'); setIsMobileMenuOpen(false); }} 
+                    className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'reports' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+                  >
+                    {sidebarTab === 'reports' && (
+                      <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                    )}
+                    <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconReports /></span>
+                    <span>{t('reports', 'Reports')}</span>
+                  </button>
+                </>
+              )}
+
+              {/* Section Divider */}
+              <div className="my-2 mx-1 h-px bg-border-theme/40 shrink-0" />
+
+              {/* 5. Settings & Administrative */}
+              <button 
+                onClick={() => { setSidebarTab('settings'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'settings' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'settings' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'settings' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconSettings /></span>
+                <span>{t('settings', 'Settings')}</span>
               </button>
-              <button onClick={() => { setSidebarTab('support'); setIsMobileMenuOpen(false); }} className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${sidebarTab === 'support' ? 'bg-accent/10 text-accent' : 'text-text-secondary'}`}>
-                <IconSupport /> Support
+              <button 
+                onClick={() => { setSidebarTab('subscription'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'subscription' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'subscription' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'subscription' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconSubscription /></span>
+                <span>Subscription</span>
               </button>
-              <div className="my-4 border-t border-border-theme/50"></div>
-              <button onClick={() => { setIsManualModalOpen(true); setIsMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full py-3 bg-secondary text-white font-bold rounded-lg text-sm mb-2">
-                {t('new_session')}
+              <button 
+                onClick={() => { setSidebarTab('support'); setIsMobileMenuOpen(false); }} 
+                className={`group relative touch-target flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${sidebarTab === 'support' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
+              >
+                {sidebarTab === 'support' && (
+                  <span className="absolute left-1 top-2 bottom-2 w-1 bg-accent rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'support' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}><IconSupport /></span>
+                <span>Support</span>
+              </button>
+
+              <div className="my-2 border-t border-border-theme/40 shrink-0"></div>
+              <button 
+                onClick={() => { setIsManualModalOpen(true); setIsMobileMenuOpen(false); }} 
+                className="touch-target flex items-center justify-center gap-2 w-full py-3 bg-secondary hover:bg-sky-400 text-white font-bold rounded-xl text-sm mb-2 shadow-md hover:shadow-lg active:scale-98 transition-all btn-premium"
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                <span>{t('new_session')}</span>
               </button>
             </div>
           </div>
@@ -6066,33 +7088,86 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg-surface/80 backdrop-blur-xl border-t border-border-theme z-40 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-        <div className="flex justify-around items-center h-[72px]">
-          <button onClick={() => setSidebarTab('overview')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'overview' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
-            {sidebarTab === 'overview' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
-            <IconOverview />
-            <span className="text-[10px] font-bold tracking-wide">{t('dashboard', 'Overview')}</span>
-          </button>
-          <button onClick={() => setSidebarTab('tables')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'tables' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
-            {sidebarTab === 'tables' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
+      {/* Mobile Bottom Navigation (Phones < 768px) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-bg-surface/95 backdrop-blur-xl border-t border-border-theme z-30 pb-safe shadow-[0_-10px_35px_rgba(0,0,0,0.12)]">
+        <div className="flex justify-around items-center h-[56px] px-1">
+          {/* 1. Floor (Tables / Overview) */}
+          <button 
+            onClick={() => setSidebarTab('tables')} 
+            className={`touch-target flex flex-col items-center justify-center flex-1 h-full gap-1 relative ${sidebarTab === 'tables' || sidebarTab === 'overview' ? 'text-accent font-bold' : 'text-text-secondary hover:text-text-primary transition-colors'}`}
+          >
+            {(sidebarTab === 'tables' || sidebarTab === 'overview') && (
+              <div className="absolute top-0 w-8 h-0.5 bg-accent rounded-b-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
             <IconTables />
-            <span className="text-[10px] font-bold tracking-wide">{t('tables', 'Tables')}</span>
+            <span className="text-[10px] tracking-tight">{t('tables', 'Floor')}</span>
           </button>
-          <button onClick={() => setSidebarTab('bookings')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'bookings' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
-            {sidebarTab === 'bookings' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
+
+          {/* 2. Bookings */}
+          <button 
+            onClick={() => setSidebarTab('bookings')} 
+            className={`touch-target flex flex-col items-center justify-center flex-1 h-full gap-1 relative ${sidebarTab === 'bookings' ? 'text-accent font-bold' : 'text-text-secondary hover:text-text-primary transition-colors'}`}
+          >
+            {sidebarTab === 'bookings' && (
+              <div className="absolute top-0 w-8 h-0.5 bg-accent rounded-b-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
             <IconBookings />
-            <span className="text-[10px] font-bold tracking-wide">{t('bookings', 'Bookings')}</span>
+            <span className="text-[10px] tracking-tight">{t('bookings', 'Bookings')}</span>
           </button>
-          {!preferences.simple_mode && (
-            <button onClick={() => setSidebarTab('reports')} className={`flex flex-col items-center justify-center w-full h-full gap-1.5 relative ${sidebarTab === 'reports' ? 'text-accent' : 'text-text-secondary hover:text-text-primary transition-colors'}`}>
-              {sidebarTab === 'reports' && <div className="absolute top-0 w-8 h-1 bg-accent rounded-b-full"></div>}
-              <IconBookings />
-              <span className="text-[10px] font-bold tracking-wide">{t('reports', 'Reports')}</span>
-            </button>
-          )}
+
+          {/* 3. Payments */}
+          <button 
+            onClick={() => setSidebarTab('payments')} 
+            className={`touch-target flex flex-col items-center justify-center flex-1 h-full gap-1 relative ${sidebarTab === 'payments' ? 'text-accent font-bold' : 'text-text-secondary hover:text-text-primary transition-colors'}`}
+          >
+            {sidebarTab === 'payments' && (
+              <div className="absolute top-0 w-8 h-0.5 bg-accent rounded-b-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <IconPayments />
+            <span className="text-[10px] tracking-tight">Payments</span>
+          </button>
+
+          {/* 4. Members & QKhata */}
+          <button 
+            onClick={() => setSidebarTab('customers')} 
+            className={`touch-target flex flex-col items-center justify-center flex-1 h-full gap-1 relative ${sidebarTab === 'customers' || sidebarTab === 'qkhata' ? 'text-accent font-bold' : 'text-text-secondary hover:text-text-primary transition-colors'}`}
+          >
+            {(sidebarTab === 'customers' || sidebarTab === 'qkhata') && (
+              <div className="absolute top-0 w-8 h-0.5 bg-accent rounded-b-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <IconCustomers />
+            <span className="text-[10px] tracking-tight">{t('members', 'Members')}</span>
+          </button>
+
+          {/* 5. More (Opens MobileMoreSheet) */}
+          <button 
+            onClick={() => setIsMoreSheetOpen(true)} 
+            className={`touch-target flex flex-col items-center justify-center flex-1 h-full gap-1 relative ${['reports', 'menu', 'messaging', 'settings', 'subscription', 'support'].includes(sidebarTab) ? 'text-accent font-bold' : 'text-text-secondary hover:text-text-primary transition-colors'}`}
+          >
+            {['reports', 'menu', 'messaging', 'settings', 'subscription', 'support'].includes(sidebarTab) && (
+              <div className="absolute top-0 w-8 h-0.5 bg-accent rounded-b-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            )}
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span className="text-[10px] tracking-tight">More</span>
+          </button>
         </div>
       </div>
+
+      {/* Mobile More Sheet */}
+      <MobileMoreSheet
+        isOpen={isMoreSheetOpen}
+        onClose={() => setIsMoreSheetOpen(false)}
+        activeTab={sidebarTab}
+        onSelectTab={setSidebarTab}
+        preferences={preferences}
+        businessName={data?.businessName}
+        ownerName={data?.ownerName}
+        onOpenManualModal={() => setIsManualModalOpen(true)}
+        onOpenQRModal={() => setIsQRModalOpen(true)}
+        onLogoutClick={() => setIsLogoutModalOpen(true)}
+      />
 
       {/* First Login Celebration Modal */}
       {showCelebration && data?.ownerName && (

@@ -259,7 +259,7 @@ export default function PaymentsTab() {
                 <p className="text-sm text-text-secondary max-w-md mb-6">{error}</p>
                 <button
                     onClick={() => fetchData(false)}
-                    className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-white rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2"
+                    className="px-5 py-2.5 bg-accent hover:bg-accent/90 text-black font-black rounded-lg text-sm shadow-md transition-all flex items-center gap-2 min-h-[44px] touch-target"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -281,7 +281,7 @@ export default function PaymentsTab() {
                     </p>
                 </div>
                 
-                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
+                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto custom-scrollbar pb-1 sm:pb-0 no-scrollbar">
                     {/* Time Period Filter */}
                     <div className="bg-bg-surface p-1 border border-border-theme rounded-lg flex gap-1 overflow-x-auto max-w-full">
                         {[
@@ -294,7 +294,7 @@ export default function PaymentsTab() {
                             <button
                                 key={f.id}
                                 onClick={() => setTimeFilter(f.id as TimeFilter)}
-                                className={`px-4 py-2 rounded-md text-xs font-bold whitespace-nowrap transition-all ${
+                                className={`px-3.5 py-2 rounded-md text-xs font-bold whitespace-nowrap transition-all touch-target shrink-0 flex items-center justify-center ${
                                     timeFilter === f.id 
                                     ? 'bg-bg-card border border-border-theme text-text-primary shadow-sm' 
                                     : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/50'
@@ -310,7 +310,7 @@ export default function PaymentsTab() {
                         onClick={() => fetchData(true)}
                         disabled={isRefreshing}
                         title="Refresh financial data"
-                        className="p-2.5 bg-bg-surface border border-border-theme hover:bg-bg-card rounded-lg text-text-secondary hover:text-text-primary transition-all disabled:opacity-50"
+                        className="min-w-[40px] min-h-[40px] p-2.5 bg-bg-surface border border-border-theme hover:bg-bg-card rounded-lg text-text-secondary hover:text-text-primary transition-all disabled:opacity-50 touch-target flex items-center justify-center shrink-0"
                     >
                         <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-accent' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -473,8 +473,84 @@ export default function PaymentsTab() {
                         </select>
                     </div>
                 </div>
-                
-                <div className="overflow-x-auto">
+                 {/* Mobile Card List (< md) */}
+                <div className="md:hidden divide-y divide-border-theme">
+                    {paginatedTransactions.length === 0 ? (
+                        <div className="p-8 text-center">
+                            <div className="flex flex-col items-center">
+                                <svg className="w-10 h-10 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <p className="text-text-secondary text-sm font-bold">No transactions found</p>
+                                <p className="text-text-disabled text-xs mt-1">
+                                    {searchQuery || statusFilter !== 'all' || methodFilter !== 'all' 
+                                        ? 'Try adjusting your search or filters' 
+                                        : `No financial transactions recorded for ${timeFilterLabel.toLowerCase()}`}
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        paginatedTransactions.map((p: any) => {
+                            const isSplit = Boolean(p.is_split || p.metadata?.split);
+                            const tableLabel = p.table_id || p.sessions?.table_id;
+                            const customerDisplayName = p.customer_name || p.customers?.name || 'Walk-in Customer';
+
+                            return (
+                                <div key={p.id} className="p-4 hover:bg-bg-surface/50 transition-colors">
+                                    <div className="flex items-start justify-between gap-3 mb-2">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-bold text-sm text-text-primary truncate">
+                                                    {customerDisplayName}
+                                                </span>
+                                                {tableLabel && (
+                                                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-bg-surface border border-border-theme text-text-secondary">
+                                                        {tableLabel}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-xs text-text-secondary font-mono mt-0.5 block">
+                                                {formatDateTime(p.created_at)}
+                                            </span>
+                                        </div>
+
+                                        <div className="text-right shrink-0">
+                                            <span className="text-base font-black text-text-primary font-mono tabular-nums block">
+                                                ₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border mt-1 shadow-sm ${
+                                                p.status === 'Paid' 
+                                                    ? 'border-success/50 text-success bg-success/10' : 
+                                                p.status === 'Pending' 
+                                                    ? 'border-warning/50 text-warning bg-warning/10' : 
+                                                p.status === 'Billed' 
+                                                    ? 'border-amber-500/50 text-amber-400 bg-amber-500/10' : 
+                                                p.status === 'Refunded' 
+                                                    ? 'border-purple-500/50 text-purple-400 bg-purple-500/10' :
+                                                    'border-error/50 text-error bg-error/10'
+                                            }`}>
+                                                {p.status}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-xs pt-2 border-t border-border-theme/40">
+                                        <span className="text-text-secondary text-[11px]">Payment Method:</span>
+                                        <div className="inline-flex items-center gap-1.5 bg-bg-surface border border-border-theme text-text-secondary text-[11px] px-2.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                            {isSplit && (
+                                                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" title="Split Payment" />
+                                            )}
+                                            <span>{p.payment_method || 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+
+                {/* Desktop Table View (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[800px]">
                         <thead>
                             <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
@@ -543,7 +619,7 @@ export default function PaymentsTab() {
                                                     p.status === 'Pending' 
                                                         ? 'border-warning/50 text-warning bg-warning/10' : 
                                                     p.status === 'Billed' 
-                                                        ? 'border-amber-500/50 text-amber-400 bg-amber-500/10' :
+                                                        ? 'border-amber-500/50 text-amber-400 bg-amber-500/10' : 
                                                     p.status === 'Refunded' 
                                                         ? 'border-purple-500/50 text-purple-400 bg-purple-500/10' :
                                                         'border-error/50 text-error bg-error/10'
@@ -562,7 +638,7 @@ export default function PaymentsTab() {
                 {/* Pagination Controls */}
                 {filtered.length > 0 && (
                     <div className="p-4 border-t border-border-theme bg-bg-primary/30 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-text-secondary">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
                             <span>Showing {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filtered.length)} of {filtered.length} transactions</span>
                             <span className="text-text-disabled">|</span>
                             <span>Per page:</span>
@@ -572,7 +648,7 @@ export default function PaymentsTab() {
                                     setItemsPerPage(Number(e.target.value));
                                     setCurrentPage(1);
                                 }}
-                                className="bg-bg-surface border border-border-theme rounded px-2 py-1 text-xs text-text-primary outline-none"
+                                className="bg-bg-surface border border-border-theme rounded px-2.5 py-1 text-xs text-text-primary outline-none"
                             >
                                 <option value={15}>15</option>
                                 <option value={25}>25</option>
@@ -581,21 +657,21 @@ export default function PaymentsTab() {
                             </select>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                                 disabled={safeCurrentPage <= 1}
-                                className="px-3 py-1.5 rounded bg-bg-surface border border-border-theme text-text-primary hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-all"
+                                className="min-h-[44px] px-4 py-2 rounded-lg bg-bg-surface border border-border-theme text-text-primary hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-all touch-target flex items-center justify-center"
                             >
                                 Previous
                             </button>
-                            <span className="px-2 font-mono text-text-primary font-bold">
+                            <span className="px-3 font-mono text-text-primary font-bold">
                                 {safeCurrentPage} / {totalPages}
                             </span>
                             <button
                                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                                 disabled={safeCurrentPage >= totalPages}
-                                className="px-3 py-1.5 rounded bg-bg-surface border border-border-theme text-text-primary hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-all"
+                                className="min-h-[44px] px-4 py-2 rounded-lg bg-bg-surface border border-border-theme text-text-primary hover:bg-bg-card disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-all touch-target flex items-center justify-center"
                             >
                                 Next
                             </button>

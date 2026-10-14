@@ -31,6 +31,32 @@
   --danger: #ef4444;
   --info: #0ea5e9;
   --disabled: #e2e8f0;
+
+  /* Spacing Scale Tokens */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Standardized Radius Scale */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* Standardized Z-Index Layers */
+  --z-content: 0;
+  --z-sticky-header: 20;
+  --z-bottom-nav: 30;
+  --z-dropdown: 40;
+  --z-modal-backdrop: 50;
+  --z-modal-surface: 60;
+  --z-toast-alert: 100;
 }
 
 .dark {
@@ -244,7 +270,71 @@ body {
   }
   
   .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Responsive Content Containers to prevent extreme stretching on large displays */
+  .content-container-fluid {
+    width: 100%;
+    max-width: 1600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .content-container-narrow {
+    width: 100%;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Touch Target Standard (WCAG 2.5.5 / Apple HIG: 44px min) */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Tabular Numerals for currency and live timers */
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Mobile Bottom Sheet Animations */
+@keyframes slide-up-sheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-sheet-up {
+  animation: slide-up-sheet 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* Enforce 16px font-size for touch inputs on mobile to prevent iOS Safari auto-zoom */
+@media (max-width: 767px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="search"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }
 

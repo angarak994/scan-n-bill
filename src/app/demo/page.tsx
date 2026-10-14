@@ -18,6 +18,26 @@ export default function StaticDemoSandbox() {
             if (url.includes('/api/dashboard-data')) {
                 return new Response(JSON.stringify(mockDashboardData), { status: 200, headers: { 'Content-Type': 'application/json' }});
             }
+            if (url.includes('/api/reports/summary')) {
+                const { mockReportsSummary } = require('@/lib/demo/mockData');
+                return new Response(JSON.stringify(mockReportsSummary), { status: 200, headers: { 'Content-Type': 'application/json' }});
+            }
+            if (url.includes('/api/reports/transactions')) {
+                const { mockReportsTransactions } = require('@/lib/demo/mockData');
+                return new Response(JSON.stringify(mockReportsTransactions), { status: 200, headers: { 'Content-Type': 'application/json' }});
+            }
+            if (url.includes('/api/reports/drilldown')) {
+                const { mockReportsTransactions } = require('@/lib/demo/mockData');
+                return new Response(JSON.stringify({
+                    metric: 'revenue',
+                    rows: [
+                        { name: "Rahul", details: "Pool at Table 1", date: "14 Oct", time: "8:41 pm", amount: 370 },
+                        { name: "Sneha", details: "Snooker at VIP 1", date: "14 Oct", time: "7:55 pm", amount: 600 }
+                    ],
+                    totalCount: 2,
+                    totalValue: 970
+                }), { status: 200, headers: { 'Content-Type': 'application/json' }});
+            }
             if (url.includes('/api/reports-kpis')) {
                 return new Response(JSON.stringify(mockReportsData), { status: 200, headers: { 'Content-Type': 'application/json' }});
             }

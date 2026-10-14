@@ -221,7 +221,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-accent hover:bg-accent-hover text-bg-surface font-bold py-2 px-6 rounded-lg btn-premium flex items-center gap-2 shadow-lg shadow-accent/20"
+            className="w-full sm:w-auto min-h-[44px] bg-accent hover:bg-accent-hover text-bg-surface font-bold py-2.5 px-6 rounded-lg btn-premium flex items-center justify-center gap-2 shadow-lg shadow-accent/20 touch-target transition-all"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
             {t(language, 'new_booking')}
@@ -233,12 +233,12 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
       {selectedIds.size > 0 && (
         <div className="mb-4 p-3 sm:p-4 bg-bg-card border-2 border-accent/40 rounded-xl shadow-xl flex flex-wrap items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-3">
-            <span className="bg-accent/20 text-accent font-mono font-bold text-xs px-3 py-1.5 rounded-lg border border-accent/30">
+            <span className="bg-accent/20 text-accent font-mono font-bold text-xs px-3 py-1.5 rounded-lg border border-accent/30 shrink-0">
               {selectedIds.size} Selected
             </span>
             <button
               onClick={handleClearSelection}
-              className="text-xs text-text-secondary hover:text-text-primary font-bold underline transition-colors"
+              className="text-xs text-text-secondary hover:text-text-primary font-bold underline transition-colors touch-target py-1 px-2"
             >
               Clear All
             </button>
@@ -249,7 +249,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
             <button
               disabled={isPerformingBulk}
               onClick={() => executeBulkAction('status_update', 'confirmed')}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-success/15 hover:bg-success/25 text-success border border-success/30 transition-all flex items-center gap-1.5"
+              className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-bold bg-success/15 hover:bg-success/25 text-success border border-success/30 transition-all flex items-center justify-center gap-1.5 touch-target"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
               Mark Confirmed
@@ -259,7 +259,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
             <button
               disabled={isPerformingBulk}
               onClick={() => executeBulkAction('status_update', 'completed')}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-all flex items-center gap-1.5"
+              className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-all flex items-center justify-center gap-1.5 touch-target"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               Mark Completed
@@ -269,13 +269,13 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
             <button
               disabled={isPerformingBulk}
               onClick={() => executeBulkAction('status_update', 'no_show')}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all flex items-center gap-1.5"
+              className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 touch-target"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               Mark No-Show
             </button>
 
-            {/* Cancel (Destructive - Confirmation) */}
+            {/* Cancel */}
             <button
               disabled={isPerformingBulk}
               onClick={() => setConfirmModal({
@@ -285,13 +285,13 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                 message: `Are you sure you want to cancel ${selectedIds.size} selected booking(s)? This will mark them as cancelled.`,
                 isDestructive: false
               })}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 border border-orange-500/30 transition-all flex items-center gap-1.5"
+              className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-500/15 hover:bg-orange-500/25 text-orange-400 border border-orange-500/30 transition-all flex items-center justify-center gap-1.5 touch-target"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              Cancel Bookings
+              Cancel
             </button>
 
-            {/* Delete (Destructive - Confirmation) */}
+            {/* Delete */}
             <button
               disabled={isPerformingBulk}
               onClick={() => setConfirmModal({
@@ -301,7 +301,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                 message: `Are you sure you want to permanently delete ${selectedIds.size} booking(s)? This action cannot be reversed.`,
                 isDestructive: true
               })}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 transition-all flex items-center gap-1.5"
+              className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-bold bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 transition-all flex items-center justify-center gap-1.5 touch-target"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               Delete
@@ -355,83 +355,50 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
              ))}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[850px]">
-              <thead>
-                <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
-                  {/* Select All Checkbox */}
-                  <th className="p-5 w-12 text-center">
-                    <input 
-                      type="checkbox"
-                      checked={isAllSelected}
-                      ref={input => {
-                        if (input) input.indeterminate = isPartiallySelected;
-                      }}
-                      onChange={handleToggleSelectAll}
-                      className="w-4 h-4 rounded border-border-theme bg-bg-surface accent-accent cursor-pointer"
-                      title={isAllSelected ? "Clear All" : "Select All"}
-                    />
-                  </th>
-                  <th className="p-5">{t(language, 'booking_date')} & {t(language, 'booking_time')}</th>
-                  <th className="p-5">{t(language, 'client')}</th>
-                  <th className="p-5">{t(language, 'table')}</th>
-                  <th className="p-5 text-center">{t(language, 'duration')}</th>
-                  <th className="p-5 text-center">Source</th>
-                  <th className="p-5 text-center">{t(language, 'status')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredBookings.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-12 text-center text-text-secondary">
-                      {searchQuery || statusFilter !== 'all' ? (
-                        <div className="flex flex-col items-center">
-                          <svg className="w-10 h-10 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                          <p className="text-sm font-bold text-text-primary">No bookings match the filters</p>
-                          <p className="text-xs text-text-secondary mt-1">Try resetting the status filter or search query</p>
-                        </div>
-                      ) : (
-                        t(language, 'schedule_booking_empty')
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredBookings.map((b) => {
-                    const isSelected = selectedIds.has(b.id);
-                    const statusLower = b.status?.toLowerCase();
-                    return (
-                      <tr 
-                        key={b.id} 
-                        className={`border-b border-border-theme/50 transition-colors ${
-                          isSelected ? 'bg-accent/5' : 'hover:bg-bg-surface/50'
-                        }`}
-                      >
-                        {/* Row Checkbox */}
-                        <td className="p-5 text-center">
-                          <input 
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelectRow(b.id)}
-                            className="w-4 h-4 rounded border-border-theme bg-bg-surface accent-accent cursor-pointer"
-                          />
-                        </td>
-                        <td className="p-5 text-sm text-text-secondary font-mono">
-                          {b.booking_date} <span className="font-bold text-text-primary">{b.start_time.substring(0, 5)}</span>
-                        </td>
-                        <td className="p-5 text-sm font-bold text-text-primary">
-                          {b.customer_name}
-                          <div className="text-xs text-text-secondary font-normal font-mono">{b.customer_phone || 'No phone'}</div>
-                        </td>
-                        <td className="p-5 text-sm font-bold text-accent font-mono uppercase">{b.table_id}</td>
-                        <td className="p-5 text-sm text-center text-text-secondary font-mono">{b.duration_minutes}m</td>
-                        <td className="p-5 text-center">
-                          <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded ${b.source === 'whatsapp' ? 'bg-[#25D366]/10 text-[#25D366]' : 'bg-accent/10 text-accent'}`}>
-                            {b.source}
+          <>
+            {/* Mobile Card List (md:hidden) */}
+            <div className="md:hidden divide-y divide-border-theme">
+              {filteredBookings.length === 0 ? (
+                <div className="p-8 text-center text-text-secondary">
+                  {searchQuery || statusFilter !== 'all' ? (
+                    <div className="flex flex-col items-center">
+                      <svg className="w-10 h-10 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                      <p className="text-sm font-bold text-text-primary">No bookings match the filters</p>
+                      <p className="text-xs text-text-secondary mt-1">Try resetting the status filter or search query</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm">{t(language, 'schedule_booking_empty')}</p>
+                  )}
+                </div>
+              ) : (
+                filteredBookings.map((b) => {
+                  const isSelected = selectedIds.has(b.id);
+                  const statusLower = b.status?.toLowerCase();
+                  return (
+                    <div
+                      key={b.id}
+                      className={`p-4 transition-colors flex items-start gap-3 ${
+                        isSelected ? 'bg-accent/5' : 'hover:bg-bg-surface/50'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <div className="pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectRow(b.id)}
+                          className="w-5 h-5 rounded border-border-theme bg-bg-surface accent-accent cursor-pointer touch-target"
+                          aria-label={`Select booking for ${b.customer_name}`}
+                        />
+                      </div>
+                      {/* Booking Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-bold text-sm text-text-primary truncate">
+                            {b.customer_name}
                           </span>
-                        </td>
-                        <td className="p-5 text-center">
-                          <span className={`px-3 py-1.5 rounded-md text-[10px] font-bold tracking-widest border uppercase shadow-sm ${
-                            statusLower === 'confirmed' ? 'border-success/50 text-success bg-success/10' : 
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shrink-0 ${
+                            statusLower === 'confirmed' ? 'border-success/50 text-success bg-success/10' :
                             statusLower === 'active' ? 'border-accent/50 text-accent bg-accent/10' :
                             statusLower === 'completed' ? 'border-blue-500/50 text-blue-400 bg-blue-500/10' :
                             statusLower === 'no_show' ? 'border-amber-500/50 text-amber-400 bg-amber-500/10' :
@@ -439,14 +406,135 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                           }`}>
                             {b.status}
                           </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs text-text-secondary font-mono mb-2">
+                          <span>{b.booking_date}</span>
+                          <span>•</span>
+                          <span className="font-bold text-text-primary">{b.start_time.substring(0, 5)}</span>
+                          <span>•</span>
+                          <span>{b.duration_minutes}m</span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-accent font-mono uppercase bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
+                              {b.table_id}
+                            </span>
+                            <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded ${b.source === 'whatsapp' ? 'bg-[#25D366]/10 text-[#25D366]' : 'bg-bg-surface text-text-secondary border border-border-theme'}`}>
+                              {b.source}
+                            </span>
+                          </div>
+                          {b.customer_phone && (
+                            <a
+                              href={`tel:${b.customer_phone}`}
+                              className="text-xs font-mono text-text-secondary hover:text-accent flex items-center gap-1 touch-target py-1 px-1.5 rounded"
+                            >
+                              📞 {b.customer_phone}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Table View (hidden md:block) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[850px]">
+                <thead>
+                  <tr className="bg-bg-primary/30 text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-border-theme">
+                    {/* Select All Checkbox */}
+                    <th className="p-5 w-12 text-center">
+                      <input 
+                        type="checkbox"
+                        checked={isAllSelected}
+                        ref={input => {
+                          if (input) input.indeterminate = isPartiallySelected;
+                        }}
+                        onChange={handleToggleSelectAll}
+                        className="w-4 h-4 rounded border-border-theme bg-bg-surface accent-accent cursor-pointer"
+                        title={isAllSelected ? "Clear All" : "Select All"}
+                      />
+                    </th>
+                    <th className="p-5">{t(language, 'booking_date')} & {t(language, 'booking_time')}</th>
+                    <th className="p-5">{t(language, 'client')}</th>
+                    <th className="p-5">{t(language, 'table')}</th>
+                    <th className="p-5 text-center">{t(language, 'duration')}</th>
+                    <th className="p-5 text-center">Source</th>
+                    <th className="p-5 text-center">{t(language, 'status')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBookings.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-12 text-center text-text-secondary">
+                        {searchQuery || statusFilter !== 'all' ? (
+                          <div className="flex flex-col items-center">
+                            <svg className="w-10 h-10 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <p className="text-sm font-bold text-text-primary">No bookings match the filters</p>
+                            <p className="text-xs text-text-secondary mt-1">Try resetting the status filter or search query</p>
+                          </div>
+                        ) : (
+                          t(language, 'schedule_booking_empty')
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredBookings.map((b) => {
+                      const isSelected = selectedIds.has(b.id);
+                      const statusLower = b.status?.toLowerCase();
+                      return (
+                        <tr 
+                          key={b.id} 
+                          className={`border-b border-border-theme/50 transition-colors ${
+                            isSelected ? 'bg-accent/5' : 'hover:bg-bg-surface/50'
+                          }`}
+                        >
+                          {/* Row Checkbox */}
+                          <td className="p-5 text-center">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectRow(b.id)}
+                              className="w-4 h-4 rounded border-border-theme bg-bg-surface accent-accent cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-5 text-sm text-text-secondary font-mono">
+                            {b.booking_date} <span className="font-bold text-text-primary">{b.start_time.substring(0, 5)}</span>
+                          </td>
+                          <td className="p-5 text-sm font-bold text-text-primary">
+                            {b.customer_name}
+                            <div className="text-xs text-text-secondary font-normal font-mono">{b.customer_phone || 'No phone'}</div>
+                          </td>
+                          <td className="p-5 text-sm font-bold text-accent font-mono uppercase">{b.table_id}</td>
+                          <td className="p-5 text-sm text-center text-text-secondary font-mono">{b.duration_minutes}m</td>
+                          <td className="p-5 text-center">
+                            <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded ${b.source === 'whatsapp' ? 'bg-[#25D366]/10 text-[#25D366]' : 'bg-accent/10 text-accent'}`}>
+                              {b.source}
+                            </span>
+                          </td>
+                          <td className="p-5 text-center">
+                            <span className={`px-3 py-1.5 rounded-md text-[10px] font-bold tracking-widest border uppercase shadow-sm ${
+                              statusLower === 'confirmed' ? 'border-success/50 text-success bg-success/10' : 
+                              statusLower === 'active' ? 'border-accent/50 text-accent bg-accent/10' :
+                              statusLower === 'completed' ? 'border-blue-500/50 text-blue-400 bg-blue-500/10' :
+                              statusLower === 'no_show' ? 'border-amber-500/50 text-amber-400 bg-amber-500/10' :
+                              'border-error/50 text-error bg-error/10'
+                            }`}>
+                              {b.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -473,7 +561,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                   type="button"
                   disabled={isPerformingBulk}
                   onClick={() => setConfirmModal(null)}
-                  className="flex-1 py-2.5 bg-bg-surface text-text-secondary hover:text-text-primary font-bold text-xs uppercase rounded-xl border border-border-theme transition-colors"
+                  className="flex-1 min-h-[44px] py-2.5 bg-bg-surface text-text-secondary hover:text-text-primary font-bold text-xs uppercase rounded-xl border border-border-theme transition-colors touch-target flex items-center justify-center"
                 >
                   Cancel
                 </button>
@@ -481,7 +569,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                   type="button"
                   disabled={isPerformingBulk}
                   onClick={() => executeBulkAction(confirmModal.action, confirmModal.targetStatus)}
-                  className={`flex-1 py-2.5 font-bold text-xs uppercase rounded-xl text-white transition-all shadow-md ${
+                  className={`flex-1 min-h-[44px] py-2.5 font-bold text-xs uppercase rounded-xl text-white transition-all shadow-md touch-target flex items-center justify-center ${
                     confirmModal.isDestructive 
                       ? 'bg-danger hover:bg-red-600 shadow-danger/20' 
                       : 'bg-warning text-black hover:bg-yellow-500 shadow-warning/20'
@@ -495,97 +583,116 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
         </div>
       )}
 
-      {/* New Booking Modal */}
+      {/* New Booking Modal / Mobile Sheet */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-bg-card border border-border-theme rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-border-theme flex justify-between items-center bg-bg-surface">
-              <h3 className="text-lg font-bold text-text-primary">{t(language, 'schedule_booking')}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-text-secondary hover:text-text-primary">
+        <div 
+          className="fixed inset-0 z-50 flex flex-col justify-end md:justify-center md:items-center p-0 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div 
+            className="bg-bg-card border-t md:border border-border-theme rounded-t-2xl md:rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[90dvh] md:max-h-[85vh] animate-sheet-up md:animate-entrance overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Mobile Drag Handle */}
+            <div className="md:hidden flex justify-center pt-2.5 pb-1 shrink-0">
+              <div className="w-10 h-1 bg-border-theme rounded-full opacity-60" />
+            </div>
+
+            <div className="px-5 py-4 border-b border-border-theme flex justify-between items-center bg-bg-surface shrink-0">
+              <h3 className="text-base sm:text-lg font-bold text-text-primary">{t(language, 'schedule_booking')}</h3>
+              <button 
+                type="button"
+                onClick={() => setIsModalOpen(false)} 
+                className="touch-target w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors shrink-0"
+                aria-label="Close dialog"
+              >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             
-            <form onSubmit={handleCreateBooking} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'customer_name')}</label>
-                <input 
-                  type="text" 
-                  required
-                  value={formData.customer_name} 
-                  onChange={e => setFormData({...formData, customer_name: e.target.value})}
-                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium" 
-                  placeholder="e.g. John Doe" 
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'phone_number')} (Optional)</label>
-                <input 
-                  type="tel" 
-                  value={formData.customer_phone} 
-                  onChange={e => setFormData({...formData, customer_phone: e.target.value})}
-                  className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium" 
-                  placeholder="10 digit number" 
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleCreateBooking} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1">
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'table')}</label>
-                  <select 
-                    value={formData.table_id} 
-                    onChange={e => setFormData({...formData, table_id: e.target.value})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none font-mono input-premium"
-                  >
-                    {tables.map(t => (
-                      <option key={t.id} value={t.id}>{t.id}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'duration_mins')}</label>
-                  <select 
-                    value={formData.duration_minutes} 
-                    onChange={e => setFormData({...formData, duration_minutes: Number(e.target.value)})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary outline-none input-premium"
-                  >
-                    <option value={30}>30 mins</option>
-                    <option value={60}>1 Hour</option>
-                    <option value={90}>1.5 Hours</option>
-                    <option value={120}>2 Hours</option>
-                    <option value={180}>3 Hours</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'booking_date')}</label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'customer_name')}</label>
                   <input 
-                    type="date" 
+                    type="text" 
                     required
-                    value={formData.booking_date} 
-                    onChange={e => setFormData({...formData, booking_date: e.target.value})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none" 
+                    value={formData.customer_name} 
+                    onChange={e => setFormData({...formData, customer_name: e.target.value})}
+                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2.5 text-text-primary outline-none input-premium text-sm" 
+                    placeholder="e.g. John Doe" 
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'booking_time')}</label>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'phone_number')} (Optional)</label>
                   <input 
-                    type="time" 
-                    required
-                    value={formData.start_time} 
-                    onChange={e => setFormData({...formData, start_time: e.target.value})}
-                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2 text-text-primary focus:border-accent outline-none" 
+                    type="tel" 
+                    value={formData.customer_phone} 
+                    onChange={e => setFormData({...formData, customer_phone: e.target.value})}
+                    className="w-full bg-bg-surface border border-border-theme rounded-lg px-4 py-2.5 text-text-primary outline-none input-premium text-sm" 
+                    placeholder="10 digit number" 
                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'table')}</label>
+                    <select 
+                      value={formData.table_id} 
+                      onChange={e => setFormData({...formData, table_id: e.target.value})}
+                      className="w-full bg-bg-surface border border-border-theme rounded-lg px-3 py-2.5 text-text-primary outline-none font-mono input-premium text-sm"
+                    >
+                      {tables.map(t => (
+                        <option key={t.id} value={t.id}>{t.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'duration_mins')}</label>
+                    <select 
+                      value={formData.duration_minutes} 
+                      onChange={e => setFormData({...formData, duration_minutes: Number(e.target.value)})}
+                      className="w-full bg-bg-surface border border-border-theme rounded-lg px-3 py-2.5 text-text-primary outline-none input-premium text-sm"
+                    >
+                      <option value={30}>30 mins</option>
+                      <option value={60}>1 Hour</option>
+                      <option value={90}>1.5 Hours</option>
+                      <option value={120}>2 Hours</option>
+                      <option value={180}>3 Hours</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'booking_date')}</label>
+                    <input 
+                      type="date" 
+                      required
+                      value={formData.booking_date} 
+                      onChange={e => setFormData({...formData, booking_date: e.target.value})}
+                      className="w-full bg-bg-surface border border-border-theme rounded-lg px-3 py-2.5 text-text-primary focus:border-accent outline-none text-sm" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">{t(language, 'booking_time')}</label>
+                    <input 
+                      type="time" 
+                      required
+                      value={formData.start_time} 
+                      onChange={e => setFormData({...formData, start_time: e.target.value})}
+                      className="w-full bg-bg-surface border border-border-theme rounded-lg px-3 py-2.5 text-text-primary focus:border-accent outline-none text-sm" 
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-border-theme mt-6">
+              {/* Sticky Footer Action */}
+              <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-5">
                 <button 
                   type="submit" 
-                  className="w-full bg-accent hover:bg-accent-hover text-bg-surface font-bold py-3 px-4 rounded-lg transition-colors flex justify-center items-center gap-2"
+                  className="w-full min-h-[44px] bg-accent hover:bg-accent-hover text-bg-surface font-bold py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2 shadow-lg shadow-accent/20 touch-target uppercase tracking-wider text-xs"
                 >
                   {t(language, 'confirm_booking')}
                 </button>

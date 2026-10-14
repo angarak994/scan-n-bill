@@ -378,7 +378,7 @@ export default function SessionCompletionModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/75 backdrop-blur-md z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/75 backdrop-blur-md z-[200] flex flex-col justify-end md:justify-center md:items-center p-0 md:p-4 overflow-hidden"
       onClick={() => {
         if (!isSubmitting) onClose();
       }}
@@ -387,11 +387,16 @@ export default function SessionCompletionModal({
       aria-labelledby="session-modal-title"
     >
       <div
-        className="bg-[#0b120e] border border-border-theme/80 rounded-2xl w-full max-w-lg md:max-w-xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_35px_rgba(16,185,129,0.08)] overflow-hidden flex flex-col my-auto max-h-[92vh] animate-entrance"
+        className="bg-bg-surface border-t md:border border-border-theme rounded-t-2xl md:rounded-2xl w-full max-w-lg md:max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh] md:max-h-[88vh] animate-sheet-up md:animate-entrance"
         onClick={e => e.stopPropagation()}
       >
+        {/* Mobile Drag Handle */}
+        <div className="md:hidden flex justify-center pt-2.5 pb-1">
+          <div className="w-10 h-1 bg-border-theme rounded-full opacity-60" />
+        </div>
+
         {/* Modal Header */}
-        <div className="bg-[#0e1713] px-5 py-4 border-b border-border-theme/70 flex items-center justify-between shrink-0">
+        <div className="bg-bg-surface px-5 py-3.5 md:py-4 border-b border-border-theme flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-mono font-bold text-sm bg-emerald-500/15 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-500/30 shrink-0 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -407,7 +412,7 @@ export default function SessionCompletionModal({
                     {customerMeta.tier}
                   </span>
                 )}
-                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-bg-surface text-text-secondary border border-border-theme shrink-0">
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-bg-card text-text-secondary border border-border-theme shrink-0">
                   {session.game_type || 'Table'}
                 </span>
               </div>
@@ -430,7 +435,7 @@ export default function SessionCompletionModal({
             onClick={onClose}
             disabled={isSubmitting}
             aria-label="Close dialog"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-surface transition-colors shrink-0 disabled:opacity-40"
+            className="touch-target w-9 h-9 rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors shrink-0 disabled:opacity-40"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -439,9 +444,9 @@ export default function SessionCompletionModal({
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-sm custom-scrollbar">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-sm custom-scrollbar flex-1">
           {/* 1. Itemized Financial Summary Card */}
-          <div className="bg-[#070c09] border border-border-theme/90 rounded-xl p-3.5 space-y-2.5">
+          <div className="bg-bg-card border border-border-theme rounded-xl p-3.5 space-y-2.5">
             <div className="flex justify-between items-center text-xs text-text-secondary">
               <span className="uppercase tracking-wider font-semibold">{t('table_fee', 'Table Session Fee')}</span>
               <span className="font-mono font-bold text-text-primary">
@@ -500,7 +505,7 @@ export default function SessionCompletionModal({
               <span className="text-[11px] text-text-secondary uppercase font-semibold tracking-wider">
                 {t('split_calculator', 'Per-Person Split:')}
               </span>
-              <div className="flex items-center gap-1 bg-[#0b1410] border border-border-theme/60 rounded-lg p-0.5">
+              <div className="flex items-center gap-1 bg-bg-surface border border-border-theme/60 rounded-lg p-0.5">
                 {[1, 2, 3, 4, 5].map(ways => (
                   <button
                     key={ways}
@@ -521,13 +526,13 @@ export default function SessionCompletionModal({
 
           {/* 2. Payment Mode Toggle (Only if registered member) */}
           {customerMeta.isMember && (
-            <div className="flex bg-[#070c09] p-1 rounded-xl border border-border-theme">
+            <div className="flex bg-bg-surface p-1 rounded-xl border border-border-theme">
               <button
                 type="button"
                 onClick={() => setPaymentMode('now')}
                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                   paymentMode === 'now'
-                    ? 'bg-[#101e16] text-emerald-400 shadow-sm border border-emerald-500/30'
+                    ? 'bg-accent/15 text-emerald-400 shadow-sm border border-emerald-500/30'
                     : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -553,7 +558,7 @@ export default function SessionCompletionModal({
           {paymentMode === 'now' ? (
             <div className="space-y-3.5">
               {/* Single vs Split Payment Segmented Tabs */}
-              <div className="flex bg-[#070c09] p-1 rounded-xl border border-border-theme">
+              <div className="flex bg-bg-surface p-1 rounded-xl border border-border-theme">
                 <button
                   type="button"
                   onClick={() => {
@@ -562,7 +567,7 @@ export default function SessionCompletionModal({
                   }}
                   className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
                     !isSplitPayment
-                      ? 'bg-[#101e16] text-text-primary shadow-sm border border-border-theme'
+                      ? 'bg-bg-card text-text-primary shadow-sm border border-border-theme'
                       : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
@@ -578,7 +583,7 @@ export default function SessionCompletionModal({
                   }}
                   className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
                     isSplitPayment
-                      ? 'bg-[#101e16] text-emerald-400 shadow-sm border border-emerald-500/30'
+                      ? 'bg-accent/15 text-emerald-400 shadow-sm border border-emerald-500/30'
                       : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
@@ -608,7 +613,7 @@ export default function SessionCompletionModal({
                           className={`py-2 px-2.5 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-1 border transition-all ${
                             paymentMethod === method.id
                               ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-sm'
-                              : 'bg-[#070c09] border-border-theme text-text-secondary hover:border-border-theme/80 hover:text-text-primary'
+                              : 'bg-bg-card border-border-theme text-text-secondary hover:border-border-theme/80 hover:text-text-primary'
                           }`}
                         >
                           <span className="text-sm">{method.icon}</span>
@@ -642,7 +647,7 @@ export default function SessionCompletionModal({
                         step="1"
                         value={amountReceived}
                         onChange={e => setAmountReceived(e.target.value)}
-                        className="w-full pl-8 pr-4 py-2.5 bg-[#070c09] border border-border-theme rounded-xl outline-none text-base font-mono tabular-nums text-text-primary focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all"
+                        className="w-full pl-8 pr-4 py-2.5 bg-bg-card border border-border-theme rounded-xl outline-none text-base font-mono tabular-nums text-text-primary focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all"
                         placeholder={String(totalCost)}
                       />
                     </div>
@@ -670,7 +675,7 @@ export default function SessionCompletionModal({
 
                   {/* Cash Tendered & Change Due Calculator (Only when Cash is selected) */}
                   {paymentMethod === 'Cash' && (
-                    <div className="p-3 bg-[#070c09] border border-border-theme rounded-xl space-y-2.5">
+                    <div className="p-3 bg-bg-card border border-border-theme rounded-xl space-y-2.5">
                       <div className="flex justify-between items-center">
                         <label className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
                           {t('cash_tendered', 'Cash Tendered (From Customer)')}
@@ -688,7 +693,7 @@ export default function SessionCompletionModal({
                             className={`px-2 py-1 text-xs font-mono font-bold rounded-lg border transition-all ${
                               numericTendered === val
                                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                                : 'bg-[#0b1410] text-text-secondary border-border-theme hover:text-text-primary'
+                                : 'bg-bg-surface text-text-secondary border-border-theme hover:text-text-primary'
                             }`}
                           >
                             ₹{val}
@@ -706,7 +711,7 @@ export default function SessionCompletionModal({
                           value={cashTendered}
                           onChange={e => setCashTendered(e.target.value)}
                           placeholder="e.g. 500"
-                          className="w-full pl-7 pr-3 py-2 bg-[#0b1410] border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
+                          className="w-full pl-7 pr-3 py-2 bg-bg-surface border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
                         />
                       </div>
 
@@ -744,7 +749,7 @@ export default function SessionCompletionModal({
                 </div>
               ) : (
                 /* SPLIT PAYMENT CONTROLS */
-                <div className="p-3.5 bg-[#070c09] border border-border-theme rounded-xl space-y-3">
+                <div className="p-3.5 bg-bg-card border border-border-theme rounded-xl space-y-3">
                   <div className="flex justify-between items-center pb-2 border-b border-border-theme/50">
                     <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">
                       {t('split_breakdown', 'Tender Breakdown')}
@@ -753,7 +758,7 @@ export default function SessionCompletionModal({
                       <button
                         type="button"
                         onClick={() => handleSplitEvenly(2)}
-                        className="text-[10px] bg-[#0e1713] border border-border-theme px-2 py-0.5 rounded text-text-secondary hover:text-emerald-400 font-bold"
+                        className="text-[10px] bg-bg-surface border border-border-theme px-2 py-0.5 rounded text-text-secondary hover:text-emerald-400 font-bold"
                       >
                         50 / 50
                       </button>
@@ -794,7 +799,7 @@ export default function SessionCompletionModal({
                         value={splitCash}
                         onChange={e => setSplitCash(e.target.value)}
                         placeholder="0"
-                        className="w-full pl-7 pr-3 py-2 bg-[#0b1410] border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
+                        className="w-full pl-7 pr-3 py-2 bg-bg-surface border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
                       />
                     </div>
                   </div>
@@ -822,7 +827,7 @@ export default function SessionCompletionModal({
                         value={splitUpi}
                         onChange={e => setSplitUpi(e.target.value)}
                         placeholder="0"
-                        className="w-full pl-7 pr-3 py-2 bg-[#0b1410] border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
+                        className="w-full pl-7 pr-3 py-2 bg-bg-surface border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
                       />
                     </div>
                   </div>
@@ -850,7 +855,7 @@ export default function SessionCompletionModal({
                         value={splitCard}
                         onChange={e => setSplitCard(e.target.value)}
                         placeholder="0"
-                        className="w-full pl-7 pr-3 py-2 bg-[#0b1410] border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
+                        className="w-full pl-7 pr-3 py-2 bg-bg-surface border border-border-theme rounded-lg text-sm font-mono text-text-primary outline-none focus:border-emerald-500/50"
                       />
                     </div>
                   </div>
@@ -912,7 +917,7 @@ export default function SessionCompletionModal({
                   type="date"
                   value={dueDate}
                   onChange={e => setDueDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#070c09] border border-amber-500/30 rounded-xl outline-none text-xs text-text-primary focus:border-amber-400"
+                  className="w-full px-3.5 py-2.5 bg-bg-card border border-amber-500/30 rounded-xl outline-none text-xs text-text-primary focus:border-amber-400"
                 />
               </div>
 
@@ -932,12 +937,12 @@ export default function SessionCompletionModal({
         </div>
 
         {/* Modal Sticky Footer */}
-        <div className="px-5 py-3.5 bg-[#09100c] border-t border-border-theme/70 flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-bg-surface border-t border-border-theme flex items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             disabled={isSubmitting}
             onClick={onClose}
-            className="flex-1 py-2.5 px-4 bg-[#0e1713] hover:bg-[#14201a] text-text-secondary hover:text-text-primary text-xs font-bold uppercase tracking-wider rounded-xl border border-border-theme transition-colors disabled:opacity-50"
+            className="flex-1 min-h-[44px] py-2.5 px-4 bg-bg-card hover:bg-bg-card-hover text-text-secondary hover:text-text-primary text-xs font-bold uppercase tracking-wider rounded-xl border border-border-theme transition-colors disabled:opacity-50 touch-target flex items-center justify-center"
           >
             {t('cancel', 'Cancel')}
           </button>
@@ -946,7 +951,7 @@ export default function SessionCompletionModal({
             type="button"
             disabled={!canSubmit || isSubmitting}
             onClick={handleSubmit}
-            className={`flex-[2] py-2.5 px-4 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+            className={`flex-[2] min-h-[44px] py-2.5 px-4 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 touch-target disabled:opacity-40 disabled:cursor-not-allowed ${
               paymentMode === 'credit'
                 ? 'bg-amber-500 text-black hover:bg-amber-400 shadow-amber-500/20'
                 : 'bg-emerald-500 text-black hover:bg-emerald-400 shadow-emerald-500/20 font-black'

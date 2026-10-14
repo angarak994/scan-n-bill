@@ -215,19 +215,19 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
       </div>
 
       {/* Summary Card */}
-      <div className="bg-gradient-to-br from-bg-surface to-bg-surface/50 border border-border-theme rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 shadow-sm relative overflow-hidden">
+      <div className="bg-gradient-to-br from-bg-surface to-bg-surface/50 border border-border-theme rounded-2xl p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 shadow-sm relative overflow-hidden">
         {/* Subtle background element */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
         
         <div className="relative z-10">
-          <div className="flex items-center gap-4 mb-3">
-            <h2 className="text-3xl font-black text-text-primary">
+          <div className="flex items-center gap-3 sm:gap-4 mb-2 sm:mb-3">
+            <h2 className="text-2xl sm:text-3xl font-black text-text-primary">
               {currentPlan?.name || 'Free Plan'}
             </h2>
             {statusBadge}
           </div>
-          <p suppressHydrationWarning className="text-text-secondary flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
+          <p suppressHydrationWarning className="text-text-secondary text-xs sm:text-sm flex items-center gap-2">
+            <Calendar className="w-4 h-4 shrink-0" />
             {currentPlan ? (
               isCancelling ? (
                 <>Access ends on <strong className="text-text-primary">{new Date(subData.current_period_end).toLocaleDateString()}</strong></>
@@ -240,9 +240,9 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
           </p>
         </div>
         <div className="flex flex-col items-start sm:items-end gap-1 relative z-10">
-           <div className="text-4xl font-black text-text-primary">₹{currentPlan?.monthly_price || 0}<span className="text-lg text-text-secondary font-medium">/month</span></div>
+           <div className="text-3xl sm:text-4xl font-black text-text-primary font-mono">₹{currentPlan?.monthly_price || 0}<span className="text-base sm:text-lg text-text-secondary font-medium">/month</span></div>
            {currentPlan && (
-             <div className="text-sm text-text-secondary mt-1">Plus applicable GST</div>
+             <div className="text-xs sm:text-sm text-text-secondary mt-1">Plus applicable GST</div>
            )}
         </div>
       </div>
@@ -256,7 +256,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-sm whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-3 rounded-lg font-bold text-xs sm:text-sm whitespace-nowrap transition-all min-h-[44px] touch-target ${
                 isActive 
                   ? 'bg-bg-base text-text-primary shadow-sm ring-1 ring-border-theme/50' 
                   : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface'
@@ -270,20 +270,20 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
       </div>
 
       {/* Tab Content Area */}
-      <div className="bg-bg-surface border border-border-theme rounded-2xl p-6 sm:p-8 min-h-[400px]">
+      <div className="bg-bg-surface border border-border-theme rounded-2xl p-4 sm:p-6 md:p-8 min-h-[400px]">
         
         {/* --- PLAN & USAGE --- */}
         {activeTab === 'plan' && (
-          <div className="space-y-8 animate-entrance">
-            <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Usage & Limits</h3>
+          <div className="space-y-6 sm:space-y-8 animate-entrance">
+            <h3 className="text-lg sm:text-xl font-bold text-text-primary border-b border-border-theme pb-4">Usage &amp; Limits</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
               {/* Limit Visualizer */}
               <div className="space-y-6">
                 <div>
                   <div className="flex justify-between items-end mb-2">
-                    <span className="font-bold text-text-primary">Active Tables</span>
-                    <span className="text-sm font-medium text-text-secondary">
+                    <span className="font-bold text-text-primary text-sm sm:text-base">Active Tables</span>
+                    <span className="text-xs sm:text-sm font-medium text-text-secondary font-mono">
                       {usage.tables} / {currentPlan?.features?.max_tables || 0}
                     </span>
                   </div>
@@ -304,22 +304,22 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
               {/* Feature List */}
               <div>
-                <h4 className="font-bold text-text-primary mb-4">Included Features</h4>
+                <h4 className="font-bold text-text-primary mb-4 text-sm sm:text-base">Included Features</h4>
                 <ul className="space-y-3">
-                  <li className="flex items-center gap-3 text-sm">
-                    {currentPlan?.features?.has_qkhata ? <Check className="w-5 h-5 text-accent" /> : <X className="w-5 h-5 text-text-secondary/50" />}
+                  <li className="flex items-center gap-3 text-xs sm:text-sm">
+                    {currentPlan?.features?.has_qkhata ? <Check className="w-5 h-5 text-accent shrink-0" /> : <X className="w-5 h-5 text-text-secondary/50 shrink-0" />}
                     <span className={currentPlan?.features?.has_qkhata ? 'text-text-primary' : 'text-text-secondary/50'}>QKhata Digital Ledger</span>
                   </li>
-                  <li className="flex items-center gap-3 text-sm">
-                    {currentPlan?.features?.has_whatsapp ? <Check className="w-5 h-5 text-accent" /> : <X className="w-5 h-5 text-text-secondary/50" />}
+                  <li className="flex items-center gap-3 text-xs sm:text-sm">
+                    {currentPlan?.features?.has_whatsapp ? <Check className="w-5 h-5 text-accent shrink-0" /> : <X className="w-5 h-5 text-text-secondary/50 shrink-0" />}
                     <span className={currentPlan?.features?.has_whatsapp ? 'text-text-primary' : 'text-text-secondary/50'}>WhatsApp Notifications</span>
                   </li>
-                  <li className="flex items-center gap-3 text-sm">
-                    {currentPlan?.features?.has_telegram ? <Check className="w-5 h-5 text-accent" /> : <X className="w-5 h-5 text-text-secondary/50" />}
+                  <li className="flex items-center gap-3 text-xs sm:text-sm">
+                    {currentPlan?.features?.has_telegram ? <Check className="w-5 h-5 text-accent shrink-0" /> : <X className="w-5 h-5 text-text-secondary/50 shrink-0" />}
                     <span className={currentPlan?.features?.has_telegram ? 'text-text-primary' : 'text-text-secondary/50'}>Telegram Bot Access</span>
                   </li>
-                  <li className="flex items-center gap-3 text-sm">
-                    {currentPlan?.features?.has_ai ? <Check className="w-5 h-5 text-accent" /> : <X className="w-5 h-5 text-text-secondary/50" />}
+                  <li className="flex items-center gap-3 text-xs sm:text-sm">
+                    {currentPlan?.features?.has_ai ? <Check className="w-5 h-5 text-accent shrink-0" /> : <X className="w-5 h-5 text-text-secondary/50 shrink-0" />}
                     <span className={currentPlan?.features?.has_ai ? 'text-text-primary' : 'text-text-secondary/50'}>AI Business Assistant</span>
                   </li>
                 </ul>
@@ -330,33 +330,33 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
         {/* --- PAYMENT & BILLING --- */}
         {activeTab === 'billing' && (
-          <div className="space-y-8 animate-entrance">
-            <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment Method & Billing Info</h3>
+          <div className="space-y-6 sm:space-y-8 animate-entrance">
+            <h3 className="text-lg sm:text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment Method &amp; Billing Info</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-bg-base border border-border-theme p-6 rounded-xl flex flex-col h-full">
+              <div className="bg-bg-base border border-border-theme p-4 sm:p-6 rounded-xl flex flex-col h-full">
                 <div className="flex items-center gap-3 mb-4 text-text-secondary">
-                  <CreditCard className="w-6 h-6" />
-                  <span className="font-bold">Primary Payment Method</span>
+                  <CreditCard className="w-6 h-6 shrink-0" />
+                  <span className="font-bold text-sm sm:text-base">Primary Payment Method</span>
                 </div>
                 <div className="flex-1 flex flex-col justify-center">
-                  <p className="text-text-primary font-medium text-lg">Razorpay Secure Checkout</p>
-                  <p className="text-sm text-text-secondary mt-1">Cards, UPI, and Netbanking supported.</p>
+                  <p className="text-text-primary font-medium text-base sm:text-lg">Razorpay Secure Checkout</p>
+                  <p className="text-xs sm:text-sm text-text-secondary mt-1">Cards, UPI, and Netbanking supported.</p>
                 </div>
-                <button className="mt-6 text-accent font-bold text-sm hover:underline self-start">Update Payment Method</button>
+                <button className="mt-6 text-accent font-bold text-sm hover:underline self-start min-h-[44px] touch-target flex items-center">Update Payment Method</button>
               </div>
               
-              <div className="bg-bg-base border border-border-theme p-6 rounded-xl flex flex-col h-full">
+              <div className="bg-bg-base border border-border-theme p-4 sm:p-6 rounded-xl flex flex-col h-full">
                 <div className="flex items-center gap-3 mb-4 text-text-secondary">
-                  <FileText className="w-6 h-6" />
-                  <span className="font-bold">Billing Address & GST</span>
+                  <FileText className="w-6 h-6 shrink-0" />
+                  <span className="font-bold text-sm sm:text-base">Billing Address &amp; GST</span>
                 </div>
                 <div className="flex-1">
-                  <p className="text-text-primary font-medium">Business Owner</p>
-                  <p className="text-sm text-text-secondary mt-1">GSTIN: Not provided</p>
-                  <p className="text-sm text-text-secondary mt-1">Tax applied at checkout based on region (18% standard).</p>
+                  <p className="text-text-primary font-medium text-sm sm:text-base">Business Owner</p>
+                  <p className="text-xs sm:text-sm text-text-secondary mt-1 font-mono">GSTIN: Not provided</p>
+                  <p className="text-xs sm:text-sm text-text-secondary mt-1">Tax applied at checkout based on region (18% standard).</p>
                 </div>
-                <button className="mt-6 text-accent font-bold text-sm hover:underline self-start">Edit Details</button>
+                <button className="mt-6 text-accent font-bold text-sm hover:underline self-start min-h-[44px] touch-target flex items-center">Edit Details</button>
               </div>
             </div>
           </div>
@@ -365,36 +365,36 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
         {/* --- INVOICES & HISTORY --- */}
         {activeTab === 'history' && (
           <div className="space-y-6 animate-entrance">
-            <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment History</h3>
+            <h3 className="text-lg sm:text-xl font-bold text-text-primary border-b border-border-theme pb-4">Payment History</h3>
             
             {history.length === 0 ? (
               <div className="text-center py-12 text-text-secondary">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                <p>No payment history found.</p>
+                <p className="text-sm">No payment history found.</p>
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-border-theme">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-bg-base text-text-secondary text-sm">
-                      <th className="p-4 font-bold border-b border-border-theme">Date</th>
-                      <th className="p-4 font-bold border-b border-border-theme">Amount</th>
-                      <th className="p-4 font-bold border-b border-border-theme">Status</th>
-                      <th className="p-4 font-bold border-b border-border-theme">Transaction ID</th>
-                      <th className="p-4 font-bold border-b border-border-theme text-right">Receipt</th>
+                    <tr className="bg-bg-base text-text-secondary text-xs sm:text-sm">
+                      <th className="p-3 sm:p-4 font-bold border-b border-border-theme">Date</th>
+                      <th className="p-3 sm:p-4 font-bold border-b border-border-theme">Amount</th>
+                      <th className="p-3 sm:p-4 font-bold border-b border-border-theme">Status</th>
+                      <th className="p-3 sm:p-4 font-bold border-b border-border-theme">Transaction ID</th>
+                      <th className="p-3 sm:p-4 font-bold border-b border-border-theme text-right">Receipt</th>
                     </tr>
                   </thead>
                   <tbody>
                     {history.map((log) => (
                       <tr key={log.id} className="border-b border-border-theme/50 hover:bg-bg-base/50 transition-colors">
-                        <td suppressHydrationWarning className="p-4 text-sm font-medium">{new Date(log.created_at).toLocaleDateString()}</td>
-                        <td className="p-4 text-sm font-bold">₹{log.amount}</td>
-                        <td className="p-4 text-sm">
+                        <td suppressHydrationWarning className="p-3 sm:p-4 text-xs sm:text-sm font-medium">{new Date(log.created_at).toLocaleDateString()}</td>
+                        <td className="p-3 sm:p-4 text-xs sm:text-sm font-bold font-mono">₹{log.amount}</td>
+                        <td className="p-3 sm:p-4 text-xs sm:text-sm">
                           <span className="bg-accent/10 text-accent text-xs px-2 py-1 rounded font-bold">{log.status}</span>
                         </td>
-                        <td className="p-4 text-sm text-text-secondary font-mono">{log.gateway_payment_id || '-'}</td>
-                        <td className="p-4 text-right">
-                          <button className="text-accent text-sm font-bold hover:underline">Download</button>
+                        <td className="p-3 sm:p-4 text-xs sm:text-sm text-text-secondary font-mono">{log.gateway_payment_id || '-'}</td>
+                        <td className="p-3 sm:p-4 text-right">
+                          <button className="text-accent text-xs sm:text-sm font-bold hover:underline min-h-[36px] touch-target inline-flex items-center">Download</button>
                         </td>
                       </tr>
                     ))}
@@ -407,17 +407,17 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
         {/* --- MANAGE SUBSCRIPTION --- */}
         {activeTab === 'manage' && (
-          <div className="space-y-8 animate-entrance">
-            <h3 className="text-xl font-bold text-text-primary border-b border-border-theme pb-4">Manage Subscription</h3>
+          <div className="space-y-6 sm:space-y-8 animate-entrance">
+            <h3 className="text-lg sm:text-xl font-bold text-text-primary border-b border-border-theme pb-4">Manage Subscription</h3>
             
             {/* Danger / Action Zone */}
             {currentPlan && !isExpired && (
-              <div className={`p-6 rounded-xl border ${isCancelling ? 'bg-bg-base border-border-theme' : 'bg-danger/5 border-danger/20'} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
+              <div className={`p-4 sm:p-6 rounded-xl border ${isCancelling ? 'bg-bg-base border-border-theme' : 'bg-danger/5 border-danger/20'} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
                 <div>
-                  <h4 className={`font-bold ${isCancelling ? 'text-text-primary' : 'text-danger'} mb-1`}>
+                  <h4 className={`font-bold text-sm sm:text-base ${isCancelling ? 'text-text-primary' : 'text-danger'} mb-1`}>
                     {isCancelling ? 'Reactivate Subscription' : 'Cancel Subscription'}
                   </h4>
-                  <p className="text-sm text-text-secondary">
+                  <p className="text-xs sm:text-sm text-text-secondary">
                     {isCancelling 
                       ? 'Your subscription is set to cancel at the end of the billing period. Reactivate to continue.' 
                       : 'Cancel your subscription. You will still have access until the end of your billing cycle.'}
@@ -426,9 +426,9 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
                 <button 
                   onClick={() => handleSubscriptionAction(isCancelling ? 'reactivate' : 'cancel')}
                   disabled={isProcessing}
-                  className={`px-5 py-2.5 rounded-lg font-bold text-sm whitespace-nowrap transition-colors ${
+                  className={`px-5 py-3 rounded-lg font-bold text-xs sm:text-sm whitespace-nowrap transition-colors min-h-[44px] touch-target flex items-center justify-center ${
                     isCancelling 
-                      ? 'bg-accent text-white hover:bg-accent/90' 
+                      ? 'bg-accent text-black font-extrabold hover:bg-accent/90' 
                       : 'bg-danger text-white hover:bg-danger/90'
                   } disabled:opacity-50`}
                 >
@@ -439,26 +439,26 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
 
             {/* Upgrade Options */}
             <div>
-              <h4 className="font-bold text-text-primary mb-4">Change Plan</h4>
+              <h4 className="font-bold text-text-primary mb-4 text-sm sm:text-base">Change Plan</h4>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {plans.map((plan) => {
                   const isCurrent = currentPlan?.id === plan.id;
                   return (
-                    <div key={plan.id} className={`bg-bg-base border ${isCurrent ? 'border-accent/50' : 'border-border-theme'} rounded-xl p-5 flex items-center justify-between gap-4 hover:border-accent/30 transition-colors`}>
+                    <div key={plan.id} className={`bg-bg-base border ${isCurrent ? 'border-accent/50' : 'border-border-theme'} rounded-xl p-4 sm:p-5 flex items-center justify-between gap-4 hover:border-accent/30 transition-colors`}>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <h5 className="font-bold text-text-primary">{plan.name}</h5>
+                          <h5 className="font-bold text-text-primary text-sm sm:text-base">{plan.name}</h5>
                           {isCurrent && <span className="bg-accent/10 text-accent text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Current</span>}
                         </div>
-                        <div className="text-text-secondary text-sm">Up to {plan.features.max_tables} tables, {plan.features.has_ai ? 'AI included' : 'Standard features'}</div>
+                        <div className="text-text-secondary text-xs sm:text-sm">Up to {plan.features.max_tables} tables, {plan.features.has_ai ? 'AI included' : 'Standard features'}</div>
                       </div>
                       <div className="flex flex-col items-end shrink-0">
-                        <div className="font-black text-lg">₹{plan.monthly_price}<span className="text-xs font-normal text-text-secondary">/mo</span></div>
+                        <div className="font-black text-base sm:text-lg font-mono">₹{plan.monthly_price}<span className="text-xs font-normal text-text-secondary">/mo</span></div>
                         {!isCurrent && (
                           <button 
                             onClick={() => handleCheckout(plan.id)}
                             disabled={isProcessing}
-                            className="text-accent text-sm font-bold flex items-center gap-1 hover:underline mt-1"
+                            className="text-accent text-xs sm:text-sm font-bold flex items-center gap-1 hover:underline mt-1 min-h-[44px] touch-target"
                           >
                             Upgrade <ArrowRight className="w-3 h-3" />
                           </button>

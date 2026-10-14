@@ -150,7 +150,7 @@ const TableCardItem = React.memo(function TableCardItem(props: TableCardItemProp
                       onChange={e => setEditName(e.target.value)}
                       onBlur={() => saveEdit(table.id)}
                       onKeyDown={e => { if(e.key === 'Enter') saveEdit(table.id); if(e.key === 'Escape') setEditingTableId(null); }}
-                      className="bg-bg-surface border border-accent rounded px-2 py-0.5 text-xl font-bold text-white outline-none w-24"
+                      className="bg-bg-surface border border-accent rounded px-2 py-0.5 text-xl font-bold text-text-primary outline-none w-24"
                       autoFocus
                    />
                 ) : (
@@ -289,19 +289,19 @@ const TableCardItem = React.memo(function TableCardItem(props: TableCardItemProp
        <div className="flex items-center gap-2 mt-2 z-10">
           {isOccupied ? (
              <>
-                <button onClick={() => handleAddFoodClick(table.id)} className="flex-[1.5] py-2.5 rounded-lg border border-border-theme text-text-primary hover:border-accent hover:text-accent bg-bg-surface hover:bg-bg-primary text-[11px] font-bold uppercase tracking-widest flex justify-center items-center gap-2 transition-all whitespace-nowrap shadow-sm">
+                <button onClick={() => handleAddFoodClick(table.id)} className="flex-[1.5] min-h-[44px] py-2.5 px-2 rounded-lg border border-border-theme text-text-primary hover:border-accent hover:text-accent bg-bg-surface hover:bg-bg-primary text-[11px] font-bold uppercase tracking-widest flex justify-center items-center gap-2 transition-all whitespace-nowrap shadow-sm touch-target">
                    {t('quick_add', '+ Quick Add')}
                 </button>
-                <button onClick={() => onEndSession(session, liveCost, liveDuration, { baseTableCost: liveBaseTableCost, foodCost: session.food_cost || 0, discountAmount: liveDiscount, discountLabel })} className="flex-[1] py-2.5 rounded-lg bg-[#EF4444] text-white hover:bg-red-600 text-[11px] font-bold uppercase tracking-widest flex justify-center items-center gap-2 transition-colors">
+                <button onClick={() => onEndSession(session, liveCost, liveDuration, { baseTableCost: liveBaseTableCost, foodCost: session.food_cost || 0, discountAmount: liveDiscount, discountLabel })} className="flex-[1] min-h-[44px] py-2.5 px-2 rounded-lg bg-[#EF4444] text-white hover:bg-red-600 text-[11px] font-bold uppercase tracking-widest flex justify-center items-center gap-2 transition-colors touch-target">
                    {t('bill', '🔴 BILL')}
                 </button>
              </>
           ) : (
              <>
-                <button onClick={() => onStartSession(table.id, table.type)} className="flex-[2] py-2.5 rounded-lg bg-accent text-black hover:bg-accent/90 text-sm font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-colors">
+                <button onClick={() => onStartSession(table.id, table.type)} className="flex-[2] min-h-[44px] py-2.5 px-2 rounded-lg bg-accent text-black hover:bg-accent/90 text-sm font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-colors touch-target">
                    {t('start', '▶ START')}
                 </button>
-                <button onClick={() => onReserveTable(table.id, table.type)} className="flex-[1] py-2.5 rounded-lg bg-bg-surface border border-border-theme text-text-secondary text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-text-primary hover:border-text-secondary">
+                <button onClick={() => onReserveTable(table.id, table.type)} className="flex-[1] min-h-[44px] py-2.5 px-2 rounded-lg bg-bg-surface border border-border-theme text-text-secondary text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-text-primary hover:border-text-secondary touch-target">
                    {t('reserve', 'Reserve')}
                 </button>
              </>
@@ -432,16 +432,16 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
   return (
     <div className="flex flex-col gap-6 animate-entrance">
       {/* Header Panel */}
-      <div className="flex justify-between items-center bg-bg-card p-4 rounded-xl border border-border-theme flex-wrap gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
-           <div className="bg-accent/10 text-accent px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest border border-border-theme">
+      <div className="flex justify-between items-center bg-bg-card p-3 sm:p-4 rounded-xl border border-border-theme flex-wrap gap-3 sm:gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap max-w-full">
+           <div className="bg-accent/10 text-accent px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest border border-border-theme shrink-0">
               {t('all_units', 'All Units')}: {tables.length}
            </div>
-           <div className="text-text-secondary text-xs font-bold tracking-widest uppercase">
+           <div className="text-text-secondary text-xs font-bold tracking-widest uppercase shrink-0">
               <span className="text-accent">{activeSessions.length}</span> {t('live', 'Live')} · <span>{tables.length - activeSessions.length}</span> {t('available', 'Available')}
            </div>
            
-           <div className="flex items-center gap-2 border-l border-border-theme pl-4 ml-2 overflow-x-auto">
+           <div className="flex items-center gap-1.5 sm:gap-2 border-l-0 sm:border-l border-border-theme pl-0 sm:pl-4 ml-0 sm:ml-2 overflow-x-auto max-w-full pb-1 sm:pb-0 no-scrollbar">
              {[
                { id: 'All', label: t('filter', 'All') },
                { id: 'Available', label: t('available', 'Available') },
@@ -453,7 +453,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                <button 
                  key={f.id}
                  onClick={() => setFilter(f.id)}
-                 className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors ${filter === f.id ? 'bg-bg-primary text-text-primary border border-border-theme shadow-sm' : 'text-text-disabled hover:text-text-primary border border-transparent'}`}
+                 className={`px-3 py-1.5 rounded-md text-[11px] sm:text-[10px] font-bold uppercase tracking-widest transition-colors shrink-0 touch-target ${filter === f.id ? 'bg-bg-primary text-text-primary border border-border-theme shadow-sm' : 'text-text-disabled hover:text-text-primary border border-transparent'}`}
                >
                  {f.label}
                </button>
@@ -497,7 +497,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                 <svg className="w-16 h-16 text-gray-700 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                <h4 className="text-xl font-bold text-white tracking-widest uppercase">{t('no_tables_found', 'No tables found')}</h4>
+                <h4 className="text-xl font-bold text-text-primary tracking-widest uppercase">{t('no_tables_found', 'No tables found')}</h4>
                 <p className="text-text-disabled text-sm mt-2 font-medium">{t('no_tables_desc', 'Try adjusting your filters or add a new unit from settings.')}</p>
               </div>
             );
@@ -587,7 +587,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                               <button onClick={() => updateCart(item.name, 1)} className="w-10 h-10 text-black bg-accent flex items-center justify-center font-bold hover:bg-accent/90 transition-colors">+</button>
                             </div>
                           ) : (
-                            <button onClick={() => updateCart(item.name, 1)} className="px-6 py-2.5 bg-bg-primary border border-border-theme text-white text-sm font-bold rounded-xl hover:border-accent hover:text-accent transition-colors shadow-sm">ADD</button>
+                            <button onClick={() => updateCart(item.name, 1)} className="px-6 py-2.5 bg-bg-surface border border-border-theme text-text-primary text-sm font-bold rounded-xl hover:border-accent hover:text-accent transition-colors shadow-sm touch-target">ADD</button>
                           )}
                         </div>
                       </div>
@@ -597,7 +597,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
               )}
             </div>
             
-            <div className="p-5 border-t border-border-theme bg-bg-primary flex flex-col gap-4">
+            <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-border-theme bg-bg-primary flex flex-col gap-4">
               <div className="flex justify-between items-center px-1">
                 <span className="text-text-secondary text-xs font-bold uppercase tracking-widest">{t('running_total', 'Running Total')}</span>
                 <span className="text-2xl font-black text-accent tabular-nums">
@@ -610,7 +610,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
               <button 
                 onClick={submitFoodOrder}
                 disabled={isSubmittingFood || Object.keys(cart).length === 0}
-                className="w-full py-4 bg-accent text-black font-black uppercase tracking-widest text-sm rounded-xl disabled:opacity-50 transition-all hover:bg-accent/90 shadow-[0_4px_20px_rgba(var(--accent-color),0.3)] disabled:shadow-none"
+                className="w-full min-h-[44px] py-4 bg-accent text-black font-black uppercase tracking-widest text-sm rounded-xl disabled:opacity-50 transition-all hover:bg-accent/90 shadow-[0_4px_20px_rgba(var(--accent-color),0.3)] disabled:shadow-none touch-target"
               >
                 {isSubmittingFood ? t('loading', 'ADDING TO BILL...') : t('add_to_session', 'ADD TO SESSION')}
               </button>

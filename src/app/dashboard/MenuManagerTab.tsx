@@ -138,14 +138,14 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl">
-      <div className="flex justify-between items-center bg-bg-surface p-6 rounded-3xl border border-border-theme shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-bg-surface p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-border-theme shadow-sm">
         <div>
-          <h2 className="text-2xl font-black text-text-primary tracking-tight">Food & Beverages</h2>
-          <p className="text-text-secondary mt-1 text-sm font-medium">Manage your customized menu for the customer QR portal</p>
+          <h2 className="text-xl sm:text-2xl font-black text-text-primary tracking-tight">Food &amp; Beverages</h2>
+          <p className="text-text-secondary mt-1 text-xs sm:text-sm font-medium">Manage your customized menu for the customer QR portal</p>
         </div>
         <button 
           onClick={handleOpenAdd}
-          className="bg-accent text-bg-primary px-6 py-3 rounded-xl font-bold shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium flex items-center gap-2"
+          className="bg-accent text-black font-extrabold px-6 py-3 rounded-xl shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium flex items-center justify-center gap-2 min-h-[44px] touch-target w-full sm:w-auto"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
           Add Item
@@ -157,20 +157,20 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
         if (catItems.length === 0) return null;
 
         return (
-          <div key={category} className="bg-bg-surface border border-border-theme rounded-3xl overflow-hidden shadow-sm mt-6">
-            <div className="px-6 py-4 border-b border-border-theme bg-bg-surface/50 flex justify-between items-center">
-              <h3 className="font-bold text-lg text-text-primary flex items-center gap-2">
+          <div key={category} className="bg-bg-surface border border-border-theme rounded-2xl sm:rounded-3xl overflow-hidden shadow-sm mt-6">
+            <div className="px-4 sm:px-6 py-4 border-b border-border-theme bg-bg-surface/50 flex justify-between items-center">
+              <h3 className="font-bold text-base sm:text-lg text-text-primary flex items-center gap-2">
                 <span className="w-2 h-6 bg-accent rounded-full inline-block"></span>
                 {category}
               </h3>
-              <span className="text-xs font-bold text-text-secondary bg-bg-primary px-3 py-1 rounded-full border border-border-theme">{catItems.length} Items</span>
+              <span className="text-xs font-bold text-text-secondary bg-bg-primary px-3 py-1 rounded-full border border-border-theme font-mono">{catItems.length} Items</span>
             </div>
             
             <div className="divide-y divide-border-theme">
               {catItems.map((item, idx) => (
-                <div key={item.id || item.name} className="p-6 flex flex-col md:flex-row gap-6 items-start md:items-center hover:bg-bg-primary/30 transition-colors">
+                <div key={item.id || item.name} className="p-4 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-6 items-start md:items-center hover:bg-bg-primary/30 transition-colors">
                   <div className="flex-shrink-0 relative group">
-                    <div className="w-20 h-20 bg-bg-primary rounded-2xl border border-border-theme overflow-hidden flex items-center justify-center shadow-inner">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-bg-primary rounded-2xl border border-border-theme overflow-hidden flex items-center justify-center shadow-inner">
                       {item.image ? (
                         <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                       ) : (
@@ -181,31 +181,33 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
-                      <h4 className={`text-lg font-bold truncate ${item.available === false ? 'text-text-secondary line-through' : 'text-text-primary'}`}>{item.name}</h4>
+                      <h4 className={`text-base sm:text-lg font-bold truncate ${item.available === false ? 'text-text-secondary line-through' : 'text-text-primary'}`}>{item.name}</h4>
                       {item.available === false && (
                         <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-danger/10 text-danger border border-danger/20">Out of Stock</span>
                       )}
                     </div>
-                    {item.description && <p className="text-sm text-text-secondary line-clamp-2 leading-relaxed mb-2 max-w-2xl">{item.description}</p>}
-                    <p className="text-accent font-black text-lg font-mono">₹{item.price}</p>
+                    {item.description && <p className="text-xs sm:text-sm text-text-secondary line-clamp-2 leading-relaxed mb-2 max-w-2xl">{item.description}</p>}
+                    <p className="text-accent font-black text-base sm:text-lg font-mono">₹{item.price}</p>
                   </div>
                   
-                  <div className="flex items-center gap-3 mt-4 md:mt-0 w-full md:w-auto justify-end">
+                  <div className="flex items-center gap-2 sm:gap-3 mt-3 md:mt-0 w-full md:w-auto justify-end">
                     <button 
                       onClick={() => toggleAvailability(item)}
-                      className={`px-4 py-2 text-sm font-bold rounded-xl transition-all border ${item.available !== false ? 'bg-bg-primary text-text-secondary border-border-theme hover:bg-bg-surface hover:text-danger' : 'bg-success/10 text-success border-success/20 hover:bg-success/20'}`}
+                      className={`flex-1 sm:flex-initial px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all border min-h-[44px] touch-target flex items-center justify-center ${item.available !== false ? 'bg-bg-primary text-text-secondary border-border-theme hover:bg-bg-surface hover:text-danger' : 'bg-success/10 text-success border-success/20 hover:bg-success/20'}`}
                     >
                       {item.available !== false ? 'Mark Out of Stock' : 'Mark Available'}
                     </button>
                     <button 
                       onClick={() => handleOpenEdit(item)}
-                      className="p-2 text-text-secondary hover:text-accent bg-bg-primary border border-border-theme rounded-xl transition-colors hover:border-accent/30"
+                      aria-label={`Edit ${item.name}`}
+                      className="p-2.5 text-text-secondary hover:text-accent bg-bg-primary border border-border-theme rounded-xl transition-colors hover:border-accent/30 min-h-[44px] min-w-[44px] touch-target flex items-center justify-center"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     </button>
                     <button 
                       onClick={() => handleDelete(item.id || item.name, !item.id)}
-                      className="p-2 text-text-secondary hover:text-danger bg-bg-primary border border-border-theme rounded-xl transition-colors hover:border-danger/30"
+                      aria-label={`Delete ${item.name}`}
+                      className="p-2.5 text-text-secondary hover:text-danger bg-bg-primary border border-border-theme rounded-xl transition-colors hover:border-danger/30 min-h-[44px] min-w-[44px] touch-target flex items-center justify-center"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
@@ -218,44 +220,45 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
       })}
 
       {menuItems.length === 0 && (
-        <div className="bg-bg-surface border border-border-theme rounded-3xl p-12 text-center shadow-sm">
-          <div className="w-20 h-20 mx-auto bg-bg-primary border border-border-theme rounded-full flex items-center justify-center mb-6">
-            <svg className="w-10 h-10 text-text-secondary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+        <div className="bg-bg-surface border border-border-theme rounded-2xl sm:rounded-3xl p-8 sm:p-12 text-center shadow-sm">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto bg-bg-primary border border-border-theme rounded-full flex items-center justify-center mb-6">
+            <svg className="w-8 h-8 sm:w-10 sm:h-10 text-text-secondary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
           </div>
-          <h3 className="text-xl font-bold text-text-primary mb-2">No Menu Items Found</h3>
-          <p className="text-text-secondary max-w-md mx-auto mb-6">Create a beautiful digital menu for your customers to order directly from the QR portal.</p>
-          <button onClick={handleOpenAdd} className="bg-accent text-bg-primary px-6 py-3 rounded-xl font-bold shadow-lg hover:opacity-90 transition-opacity">
+          <h3 className="text-lg sm:text-xl font-bold text-text-primary mb-2">No Menu Items Found</h3>
+          <p className="text-text-secondary text-xs sm:text-sm max-w-md mx-auto mb-6">Create a beautiful digital menu for your customers to order directly from the QR portal.</p>
+          <button onClick={handleOpenAdd} className="bg-accent text-black font-extrabold px-6 py-3.5 rounded-xl shadow-lg hover:opacity-90 transition-opacity min-h-[44px] touch-target inline-flex items-center justify-center">
             Create First Item
           </button>
         </div>
       )}
 
       {isAdding && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4" onClick={() => setIsAdding(false)}>
-          <div className="bg-bg-card border border-border-theme rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-entrance flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-border-theme flex justify-between items-center bg-bg-surface">
-              <h3 className="text-xl font-bold text-text-primary">{editingItem ? 'Edit Item' : 'Add Menu Item'}</h3>
-              <button onClick={() => setIsAdding(false)} className="text-text-secondary hover:text-text-primary bg-bg-primary p-2 rounded-full transition-colors border border-border-theme">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setIsAdding(false)}>
+          <div className="bg-bg-card border border-border-theme rounded-t-2xl sm:rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-sheet-up sm:animate-entrance flex flex-col max-h-[90dvh] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-0" onClick={e => e.stopPropagation()}>
+            <div className="sm:hidden w-12 h-1.5 bg-border-theme/80 rounded-full mx-auto my-2 shrink-0"></div>
+            <div className="p-4 sm:p-6 border-b border-border-theme flex justify-between items-center bg-bg-surface shrink-0">
+              <h3 className="text-lg sm:text-xl font-bold text-text-primary">{editingItem ? 'Edit Item' : 'Add Menu Item'}</h3>
+              <button onClick={() => setIsAdding(false)} aria-label="Close" className="text-text-secondary hover:text-text-primary bg-bg-primary p-2 rounded-full transition-colors border border-border-theme min-h-[36px] min-w-[36px] flex items-center justify-center">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             
-            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
-              <div className="grid grid-cols-2 gap-5">
-                <div className="col-span-2 sm:col-span-1">
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Item Name <span className="text-danger">*</span></label>
-                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-medium input-premium" placeholder="e.g. French Fries" />
+                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-base sm:text-sm outline-none text-text-primary font-medium input-premium min-h-[44px]" placeholder="e.g. French Fries" />
                 </div>
-                <div className="col-span-2 sm:col-span-1">
+                <div>
                   <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Price (₹) <span className="text-danger">*</span></label>
-                  <input type="number" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-bold font-mono input-premium" placeholder="150" />
+                  <input type="number" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-base sm:text-sm outline-none text-text-primary font-bold font-mono input-premium min-h-[44px]" placeholder="150" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Category <span className="text-danger">*</span></label>
                 <div className="relative">
-                  <input type="text" required list="categories" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-medium input-premium" placeholder="e.g. Beverages" />
+                  <input type="text" required list="categories" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-base sm:text-sm outline-none text-text-primary font-medium input-premium min-h-[44px]" placeholder="e.g. Beverages" />
                   <datalist id="categories">
                     {categories.map(c => <option key={c} value={c} />)}
                   </datalist>
@@ -264,12 +267,12 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Description</label>
-                <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none resize-none text-text-primary leading-relaxed input-premium" placeholder="Short appetizing description..."></textarea>
+                <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-base sm:text-sm outline-none resize-none text-text-primary leading-relaxed input-premium" placeholder="Short appetizing description..."></textarea>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Image URL</label>
-                <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-sm outline-none text-text-primary font-mono input-premium" placeholder="https://example.com/image.jpg" />
+                <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full px-4 py-3 bg-bg-primary border border-border-theme rounded-xl text-base sm:text-sm outline-none text-text-primary font-mono input-premium min-h-[44px]" placeholder="https://example.com/image.jpg" />
                 {formData.image && (
                   <div className="mt-3 w-full h-32 bg-bg-primary rounded-xl border border-border-theme overflow-hidden">
                     <img src={formData.image} alt="Preview" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
@@ -278,16 +281,16 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
               </div>
 
               <div className="flex items-center gap-3 pt-2">
-                <input type="checkbox" id="available" checked={formData.available} onChange={e => setFormData({...formData, available: e.target.checked})} className="w-5 h-5 rounded border-border-theme text-accent focus:ring-accent accent-accent" />
-                <label htmlFor="available" className="text-sm font-bold text-text-primary cursor-pointer">Item is Currently Available</label>
+                <input type="checkbox" id="available" checked={formData.available} onChange={e => setFormData({...formData, available: e.target.checked})} className="w-5 h-5 rounded border-border-theme text-accent focus:ring-accent accent-accent cursor-pointer" />
+                <label htmlFor="available" className="text-sm font-bold text-text-primary cursor-pointer select-none min-h-[40px] flex items-center">Item is Currently Available</label>
               </div>
             </form>
 
-            <div className="p-6 border-t border-border-theme bg-bg-surface flex gap-3">
-              <button type="button" onClick={() => setIsAdding(false)} className="flex-1 py-3.5 bg-bg-primary border border-border-theme text-text-primary font-bold rounded-xl hover:bg-bg-primary/80 transition-colors">
+            <div className="p-4 sm:p-6 border-t border-border-theme bg-bg-surface flex gap-3 shrink-0">
+              <button type="button" onClick={() => setIsAdding(false)} className="flex-1 py-3.5 bg-bg-primary border border-border-theme text-text-primary font-bold rounded-xl hover:bg-bg-primary/80 transition-colors min-h-[44px] touch-target">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-3.5 bg-accent text-bg-primary font-bold rounded-xl shadow-[0_4px_15px_rgba(var(--accent),0.4)] disabled:opacity-50 disabled:shadow-none flex justify-center items-center gap-2 btn-premium">
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-3.5 bg-accent text-black font-extrabold rounded-xl shadow-[0_4px_15px_rgba(var(--accent),0.4)] disabled:opacity-50 disabled:shadow-none flex justify-center items-center gap-2 btn-premium min-h-[44px] touch-target">
                 {saving ? 'Saving...' : (editingItem ? 'Update Item' : 'Save Item')}
               </button>
             </div>

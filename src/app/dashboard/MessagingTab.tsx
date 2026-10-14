@@ -143,36 +143,36 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
 
 
     return (
-        <div className="flex flex-col h-[calc(100vh-100px)] bg-bg-primary text-text-primary rounded-xl border border-border-theme overflow-hidden font-sans shadow-2xl">
-            <div className="bg-bg-surface p-6 border-b border-border-theme flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+        <div className="flex flex-col h-auto lg:h-[calc(100vh-120px)] min-h-[600px] bg-bg-primary text-text-primary rounded-xl border border-border-theme overflow-hidden font-sans shadow-2xl">
+            <div className="bg-bg-surface p-4 sm:p-6 border-b border-border-theme flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
                 <div>
-                    <h2 className="text-2xl font-black tracking-tight text-accent flex items-center gap-2">
-                        <svg className="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg> WhatsApp Messaging
+                    <h2 className="text-xl sm:text-2xl font-black tracking-tight text-accent flex items-center gap-2">
+                        <svg className="w-7 h-7 sm:w-8 sm:h-8 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg> WhatsApp Messaging
                     </h2>
-                    <p className="text-sm text-text-secondary mt-1">Send personalized bulk messages, promotions, or reminders to your registered members.</p>
+                    <p className="text-xs sm:text-sm text-text-secondary mt-1">Send personalized bulk messages, promotions, or reminders to your registered members.</p>
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
                 {/* Left Side: Contacts List */}
-                <div className="w-full md:w-1/2 flex flex-col border-r border-border-theme bg-bg-primary min-h-0">
-                    <div className="p-4 border-b border-border-theme flex items-center gap-3 bg-bg-surface shrink-0">
+                <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-border-theme bg-bg-primary min-h-[350px] lg:min-h-0">
+                    <div className="p-3 sm:p-4 border-b border-border-theme flex items-center gap-3 bg-bg-surface shrink-0">
                         <input 
                             type="text" 
                             placeholder="Search by name or phone..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="flex-1 bg-bg-primary border border-border-theme rounded-xl px-4 py-2 text-sm outline-none input-premium"
+                            className="flex-1 bg-bg-primary border border-border-theme rounded-xl px-4 py-2.5 text-base sm:text-sm outline-none input-premium min-h-[44px]"
                         />
                         <button 
                             onClick={selectAll}
-                            className="px-4 py-2 bg-bg-card border border-border-theme rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-border-theme transition-colors text-text-secondary hover:text-text-primary whitespace-nowrap"
+                            className="px-4 py-2.5 bg-bg-card border border-border-theme rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-border-theme transition-colors text-text-secondary hover:text-text-primary whitespace-nowrap min-h-[44px] touch-target flex items-center justify-center"
                         >
                             {selectedCustomers.size === filteredCustomers.length && filteredCustomers.length > 0 ? 'Deselect All' : 'Select All'}
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-bg-surface p-2">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-bg-surface p-2 max-h-[400px] lg:max-h-none">
                         {!isWhatsAppConnected && (
                             <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center justify-between">
                                 <div>
@@ -182,18 +182,18 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                             </div>
                         )}
                         {filteredCustomers.length === 0 ? (
-                            <div className="text-center p-8 text-text-disabled">No members found with phone numbers.</div>
+                            <div className="text-center p-8 text-text-disabled text-sm">No members found with phone numbers.</div>
                         ) : (
                             filteredCustomers.map(customer => (
                                 <div 
                                     key={customer.id} 
                                     onClick={() => toggleCustomer(customer.id)}
-                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex justify-between items-center ${selectedCustomers.has(customer.id) ? 'border-accent bg-accent/10 shadow-sm shadow-accent/5' : 'border-border-theme hover:border-accent/40 bg-bg-surface'}`}
+                                    className={`p-3 rounded-xl border cursor-pointer transition-all flex justify-between items-center min-h-[50px] mb-1.5 touch-target ${selectedCustomers.has(customer.id) ? 'border-accent bg-accent/10 shadow-sm shadow-accent/5' : 'border-border-theme hover:border-accent/40 bg-bg-surface'}`}
                                 >
                                     <div>
                                         <h4 className={`font-bold text-sm ${selectedCustomers.has(customer.id) ? 'text-accent' : 'text-text-primary'}`}>{customer.name}</h4>
                                         <div className="flex items-center gap-2 mt-0.5">
-                                            <p className="text-xs text-text-secondary">{customer.phone}</p>
+                                            <p className="text-xs text-text-secondary font-mono">{customer.phone}</p>
                                             <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${customer.type.includes('Member') ? 'bg-accent/20 text-accent' : 'bg-bg-primary text-text-secondary border border-border-theme'}`}>
                                                 {customer.type}
                                             </span>
@@ -201,11 +201,11 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                                     </div>
                                     <div className="flex items-center gap-3">
                                         {Number(customer.outstanding_balance) > 0 && (
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-2 py-0.5 rounded">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-2 py-0.5 rounded font-mono">
                                                 ₹{Number(customer.outstanding_balance).toFixed(0)} Due
                                             </span>
                                         )}
-                                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${selectedCustomers.has(customer.id) ? 'bg-accent border-accent text-bg-primary' : 'border-border-theme'}`}>
+                                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${selectedCustomers.has(customer.id) ? 'bg-accent border-accent text-bg-primary' : 'border-border-theme'}`}>
                                             {selectedCustomers.has(customer.id) && (
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                                                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -220,17 +220,17 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                 </div>
 
                 {/* Right Side: Message Composer & Logs */}
-                <div className="w-full md:w-1/2 flex flex-col bg-bg-surface p-6 min-h-0">
-                    <div className="flex border-b border-border-theme mb-6">
+                <div className="w-full lg:w-1/2 flex flex-col bg-bg-surface p-4 sm:p-6 min-h-0">
+                    <div className="flex border-b border-border-theme mb-4 sm:mb-6">
                         <button 
                             onClick={() => setActiveTab('compose')}
-                            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'compose' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-colors min-h-[44px] touch-target flex items-center ${activeTab === 'compose' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                         >
                             Compose Message
                         </button>
                         <button 
                             onClick={() => setActiveTab('logs')}
-                            className={`pb-3 px-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'logs' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-colors min-h-[44px] touch-target flex items-center ${activeTab === 'logs' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                         >
                             Delivery Logs
                         </button>
@@ -238,17 +238,17 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
 
                     {activeTab === 'compose' ? (
                         <>
-                            <div className="mb-4 shrink-0">
-                                <p className="text-xs text-text-secondary mb-3">
+                            <div className="mb-3 shrink-0">
+                                <p className="text-xs text-text-secondary mb-2">
                                     <strong>Note on Meta Policies:</strong> You can only send free-form text if the customer has messaged you in the last 24 hours. Otherwise, Meta will block the message.
                                 </p>
                             </div>
 
-                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0">
-                                <button onClick={() => setMessageTemplate("Hi {{name}}, we miss you at the club! Show this message on your next visit for 10% off your table time.")} className="px-3 py-1.5 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors">
+                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0 custom-scrollbar">
+                                <button onClick={() => setMessageTemplate("Hi {{name}}, we miss you at the club! Show this message on your next visit for 10% off your table time.")} className="px-3 py-2 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors min-h-[40px] touch-target flex items-center">
                                     Welcome Back Promo
                                 </button>
-                                <button onClick={() => setMessageTemplate("Hi {{name}}, just a quick reminder that your QKhata balance of ₹{{outstanding}} is pending. Please clear it at your earliest convenience.")} className="px-3 py-1.5 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors">
+                                <button onClick={() => setMessageTemplate("Hi {{name}}, just a quick reminder that your QKhata balance of ₹{{outstanding}} is pending. Please clear it at your earliest convenience.")} className="px-3 py-2 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors min-h-[40px] touch-target flex items-center">
                                     Payment Reminder
                                 </button>
                             </div>
@@ -257,26 +257,26 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                                 value={messageTemplate}
                                 onChange={(e) => setMessageTemplate(e.target.value)}
                                 placeholder="Type your message here... Use {{name}} to insert the customer's name, or {{outstanding}} for their due balance."
-                                className="flex-1 min-h-[150px] bg-bg-primary border border-border-theme rounded-xl p-4 text-sm outline-none resize-none input-premium mb-4 font-medium"
+                                className="flex-1 min-h-[140px] bg-bg-primary border border-border-theme rounded-xl p-4 text-base sm:text-sm outline-none resize-none input-premium mb-4 font-medium"
                             />
 
-                            <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-6 shrink-0">
+                            <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-4 sm:mb-6 shrink-0">
                                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled mb-2">Message Preview</h4>
-                                <p className="text-sm text-text-secondary italic whitespace-pre-wrap">
+                                <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap">
                                     {messageTemplate
                                         .replace(/\{\{name\}\}/g, selectedCustomers.size > 0 ? (customers.find(c => c.id === Array.from(selectedCustomers)[0])?.name || 'Customer') : 'Customer')
                                         .replace(/\{\{outstanding\}\}/g, selectedCustomers.size > 0 ? (Number(customers.find(c => c.id === Array.from(selectedCustomers)[0])?.outstanding_balance || 0).toFixed(0)) : '0')}
                                 </p>
                             </div>
 
-                            <div className="flex items-center justify-between shrink-0">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
                                 <span className="text-xs font-bold text-text-secondary">
                                     {selectedCustomers.size} recipient(s) selected
                                 </span>
                                 <button
                                     onClick={handleSendBulk}
                                     disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim() || !isWhatsAppConnected}
-                                    className="px-8 py-3.5 bg-accent text-black font-extrabold text-sm uppercase rounded-xl hover:bg-accent/90 shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    className="px-6 sm:px-8 py-3.5 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-xl hover:bg-accent/90 shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px] touch-target"
                                 >
                                     {isSending ? (
                                         <>
@@ -298,7 +298,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                             </div>
                         </>
                     ) : (
-                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 max-h-[500px] lg:max-h-none">
                             {deliveryLogs.length === 0 ? (
                                 <div className="text-center p-8 text-text-disabled text-sm">No messages sent yet.</div>
                             ) : (
@@ -307,7 +307,7 @@ export default function MessagingTab({ businessId, isWhatsAppConnected, dbCustom
                                         <div key={log.id} className="bg-bg-primary border border-border-theme p-4 rounded-xl flex flex-col gap-2">
                                             <div className="flex justify-between items-start">
                                                 <div>
-                                                    <h4 className="font-bold text-sm text-text-primary">{log.recipient_name} <span className="text-text-secondary font-normal text-xs ml-1">({log.recipient_phone})</span></h4>
+                                                    <h4 className="font-bold text-sm text-text-primary">{log.recipient_name} <span className="text-text-secondary font-normal text-xs ml-1 font-mono">({log.recipient_phone})</span></h4>
                                                     <p className="text-xs text-text-secondary mt-1">{new Date(log.created_at).toLocaleString()}</p>
                                                 </div>
                                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${
