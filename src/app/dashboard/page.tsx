@@ -805,8 +805,30 @@ function DashboardContent() {
           .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dashboard_syncs', filter: `business_id=eq.${businessId}` }, handleSync)
           .subscribe();
       }
+
+      // Heartbeat Polling & Tab Visibility Sync:
+      // Guarantees sessions started from QR codes, other devices, or background workers
+      // reflect on the dashboard even when Supabase Realtime is unavailable or disconnected.
+      const handleVisibilityChange = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          fetchRef.current(undefined, true, 'sessions');
+        }
+      };
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+      }
+
+      const heartbeatInterval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          fetchRef.current(undefined, true, 'sessions');
+        }
+      }, 4000);
       
       return () => {
+        clearInterval(heartbeatInterval);
+        if (typeof document !== 'undefined') {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }
         if (syncSubscription && supabase) supabase.removeChannel(syncSubscription);
         if (sessionDeltaSubscription && supabase) supabase.removeChannel(sessionDeltaSubscription);
       };
@@ -1095,7 +1117,7 @@ function DashboardContent() {
 
   const confirmDeleteStation = (t: any) => {
     if (!data) return;
-    const hasActiveSession = data.activeSessions?.some((s: any) => s.table_id === t.id && s.status === 'ACTIVE');
+    const hasActiveSession = data.activeSessions?.some((s: any) => String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase() && s.status === 'ACTIVE');
     if (hasActiveSession) {
       toast.error(`Cannot delete "${t.name}": Active session in progress.`);
       return;
@@ -1198,7 +1220,7 @@ function DashboardContent() {
     return (
       <div className="flex flex-col gap-3">
         {dueBookings.map((booking: any) => {
-          const isOccupied = data.activeSessions?.some((s: any) => s.table_id === booking.table_id && s.status === 'ACTIVE');
+          const isOccupied = data.activeSessions?.some((s: any) => String(s.table_id || '').trim().toLowerCase() === String(booking.table_id || '').trim().toLowerCase() && s.status === 'ACTIVE');
           const assignedTable = data.tables?.find((t: any) => t.id === booking.table_id);
           const gameDisplay = booking.game_type || assignedTable?.type || 'Table Game';
           
@@ -2266,7 +2288,7 @@ function DashboardContent() {
                     <div className="flex gap-2">
                       <button onClick={() => handleUpdateBookingStatus(booking.id, 'no_show')} className="px-2 py-1 rounded border border-danger/50 text-danger text-[10px] font-bold uppercase hover:bg-danger/10">{t('no_show')}</button>
                       {(() => {
-                        const isOccupied = data?.activeSessions?.some((s: any) => s.table_id === booking.table_id);
+                        const isOccupied = data?.activeSessions?.some((s: any) => String(s.table_id || '').trim().toLowerCase() === String(booking.table_id || '').trim().toLowerCase());
                         return (
                           <button 
                             onClick={() => !isOccupied && handleStartBooking(booking.id)} 
@@ -2493,7 +2515,7 @@ function DashboardContent() {
     }
 
     if (bookingDate === todayStr) {
-       const activeSession = data?.activeSessions?.find((s: any) => s.table_id === bookingTable && s.status === 'ACTIVE');
+       const activeSession = data?.activeSessions?.find((s: any) => String(s.table_id || '').trim().toLowerCase() === String(bookingTable || '').trim().toLowerCase() && s.status === 'ACTIVE');
        if (activeSession) {
           const [ah, am] = (activeSession.start_time || `${new Date().getHours()}:${new Date().getMinutes()}`).split(':').map(Number);
           const aStartMins = ah * 60 + am;
@@ -2569,7 +2591,7 @@ function DashboardContent() {
                   <tr><td colSpan={5} className="p-12 text-center text-text-secondary text-base">Ready to grow your business? Schedule your first booking today.</td></tr>
                 ) : (
                   (data.bookings || []).map((booking: any) => {
-                    const isOccupied = data.activeSessions?.some((s: any) => s.table_id === booking.table_id && s.status === 'ACTIVE');
+                    const isOccupied = data.activeSessions?.some((s: any) => String(s.table_id || '').trim().toLowerCase() === String(booking.table_id || '').trim().toLowerCase() && s.status === 'ACTIVE');
                     return (
                     <tr key={booking.id} className="border-b border-border-theme/50 hover:bg-bg-surface transition-all duration-200 group">
                       <td className="p-4 md:p-5">
@@ -6471,7 +6493,7 @@ function DashboardContent() {
                       }
                     }}
                     placeholder={t('choose_table', '-- Choose table --')}
-                    options={data.tables?.filter(t => !data.activeSessions.some(s => s.table_id === t.id)).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
+                    options={data.tables?.filter(t => !data.activeSessions.some(s => String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase())).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
                     className="min-h-[48px]"
                   />
                 </div>

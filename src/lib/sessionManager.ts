@@ -112,19 +112,27 @@ export async function startSession(table_id: string, game_type: GameType, custom
       throw new ApiError(400, 'A session is already active for this table');
     }
 
-    // Force game type from configuration mapping
+    // Force game type from configuration mapping and canonicalize table_id
+    let tableConfig: any = null;
     if (businessId && business) {
-      const tableConfig = business.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
+      tableConfig = business.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
       if (!tableConfig) {
         throw new ApiError(403, 'Invalid table or business mapping.');
       }
+      table_id = tableConfig.id; // Canonicalize ID casing to match exact table config
       if ((tableConfig as any).game_type) {
         game_type = (tableConfig as any).game_type as GameType;
+      } else if ((tableConfig as any).type) {
+        game_type = (tableConfig as any).type as GameType;
       }
     }
 
-    if (game_type === 'ps5' && (num_players < 1 || num_players > 4)) {
-      throw new ApiError(400, 'PS5 sessions must have between 1 and 4 players.');
+    const isConsoleGame = String(game_type).toLowerCase() === 'ps5' || String(game_type).toLowerCase() === 'playstation' || String(game_type).toLowerCase() === 'console';
+    if (isConsoleGame) {
+      const maxAllowed = tableConfig?.max_players ? parseInt(tableConfig.max_players, 10) : 4;
+      if (num_players < 1 || num_players > Math.max(4, maxAllowed)) {
+        throw new ApiError(400, `PlayStation sessions must have between 1 and ${Math.max(4, maxAllowed)} players.`);
+      }
     }
 
     // Resolve rate
@@ -553,17 +561,19 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     let paymentQrConfig = undefined;
     let maxPlayers = 4;
     let configuredGameType = 'pool';
+    let tableName = table_id;
     if (businessId) {
       const business = await businessManager.getBusiness(businessId); // Removed forceRefresh to prevent DB overload
       pricingRules = business?.pricing_rules;
       menuItems = business?.menu_items;
       discount = business?.active_discounts?.[table_id];
-      businessName = business?.business_name || businessName;
+      businessName = (business?.business_name || businessName || '').trim();
       qpayConfig = business?.qpay_config;
       paymentQrConfig = business?.payment_qr_config;
       
       const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
       if (tableConfig) {
+        tableName = tableConfig.name || tableConfig.id || table_id;
         if ((tableConfig as any).game_type) {
           configuredGameType = (tableConfig as any).game_type;
         } else if ((tableConfig as any).type) {
@@ -584,6 +594,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       date: activeSession.date,
       customer_name: activeSession.customer_name,
       table_id: activeSession.table_id,
+      tableName,
       game_type: activeSession.game_type,
       start_time: activeSession.start_time,
       pricingRules,
@@ -607,6 +618,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   let discount;
   let configuredGameType = 'pool';
   let maxPlayers = 4;
+  let tableName = table_id;
 
   let qpayConfig = undefined;
   let paymentQrConfig = undefined;
@@ -615,12 +627,13 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     pricingRules = business?.pricing_rules;
     menuItems = business?.menu_items;
     discount = business?.active_discounts?.[table_id];
-    businessName = business?.business_name || businessName;
+    businessName = (business?.business_name || businessName || '').trim();
     qpayConfig = business?.qpay_config;
     paymentQrConfig = business?.payment_qr_config;
     
     const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
     if (tableConfig) {
+      tableName = tableConfig.name || tableConfig.id || table_id;
       if ((tableConfig as any).game_type) {
         configuredGameType = (tableConfig as any).game_type;
       } else if ((tableConfig as any).type) {
@@ -638,6 +651,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
   return { 
     status: 'idle',
     table_id,
+    tableName,
     pricingRules,
     menuItems,
     discount,

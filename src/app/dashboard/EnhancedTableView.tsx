@@ -70,7 +70,7 @@ const TableCardItem = React.memo(function TableCardItem(props: TableCardItemProp
 
   const isOccupied = !!session;
   const isPaused = session?.paused_at;
-  const isPS5 = table.type.toLowerCase().includes('ps5') || table.type.toLowerCase().includes('playstation');
+  const isPS5 = table.type.toLowerCase().includes('ps5') || table.type.toLowerCase().includes('playstation') || table.type.toLowerCase().includes('console');
 
   // ISOLATED TICKING: Only subscribe to the 1-second global timer when this specific table is actively running.
   // Vacant and paused tables do NOT trigger ticking re-renders!
@@ -383,7 +383,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
 
   const submitFoodOrder = async () => {
     if (!addingFoodTableId) return;
-    const session = activeSessions.find(s => s.table_id === addingFoodTableId);
+    const session = activeSessions.find(s => String(s.table_id || '').trim().toLowerCase() === String(addingFoodTableId || '').trim().toLowerCase());
     if (!session) return;
     if (Object.keys(cart).length === 0) {
       setAddingFoodTableId(null);
@@ -485,9 +485,9 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
         {(() => {
           const filteredTables = tables.filter(t => {
             if (filter === 'All') return true;
-            if (filter === 'Available') return !activeSessions.some(s => s.table_id === t.id);
-            if (filter === 'Active') return activeSessions.some(s => s.table_id === t.id);
-            if (filter === 'PS5') return t.type.toLowerCase().includes('ps5') || t.type.toLowerCase().includes('playstation');
+            if (filter === 'Available') return !activeSessions.some(s => String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase());
+            if (filter === 'Active') return activeSessions.some(s => String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase());
+            if (filter === 'PS5') return t.type.toLowerCase().includes('ps5') || t.type.toLowerCase().includes('playstation') || t.type.toLowerCase().includes('console');
             return t.type.toLowerCase().includes(filter.toLowerCase());
           });
 
@@ -504,7 +504,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
           }
 
           return filteredTables.map(table => {
-            const session = activeSessions.find(s => s.table_id === table.id);
+            const session = activeSessions.find(s => String(s.table_id || '').trim().toLowerCase() === String(table.id || '').trim().toLowerCase());
             return (
               <TableCardItem
                 key={table.id}

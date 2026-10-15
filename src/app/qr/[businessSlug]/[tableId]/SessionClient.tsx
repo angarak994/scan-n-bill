@@ -90,7 +90,7 @@ function LiveTimer({ session }: { session: any }) {
       
       <div>
         {session.businessName && <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName}</p>}
-        <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">Table: {session.table_id}</h1>
+        <h1 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-1">{(session as any).tableName || `Table: ${session.table_id}`}</h1>
         <div className="flex flex-col gap-1 mb-4">
           <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">
             Game: {session.game_type} • {session.customer_name} {session.num_players && session.num_players > 1 ? `(${session.num_players} Players)` : ''}
@@ -155,9 +155,9 @@ function LiveTimer({ session }: { session: any }) {
 
 export type SessionState =
   | { status: 'loading' }
-  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: any; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
-  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: any; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
-  | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'idle'; table_id: string; game_type: string; pricingRules?: any; menuItems?: any; discount?: any; businessName?: string; tableName?: string; max_players?: number; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'active'; id: string; customer_name: string; table_id: string; game_type: string; date: string; start_time: string; pricingRules?: any; menuItems?: any; food_cost?: number; num_players?: number; discount?: any; businessName?: string; tableName?: string; max_players?: number; paymentQrConfig?: any; qpayConfig?: any }
+  | { status: 'prompt_end'; id: string; table_id: string; game_type: string; businessName?: string; tableName?: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'completed'; duration: string; cost: number; end_time: string; paymentQrConfig?: any; qpayConfig?: any }
   | { status: 'error'; message: string };
 
@@ -198,7 +198,19 @@ export default function SessionClient({ initialState, business_id, table_id, gam
           if (prev.status === 'active' || prev.status === 'prompt_end') {
             return { ...prev, status: 'completed' } as any;
           }
-          return { status: 'idle', table_id, game_type: data.game_type || game_type || 'unknown', pricingRules: data.pricingRules, menuItems: data.menuItems };
+          return {
+            status: 'idle',
+            table_id: data.table_id || table_id,
+            game_type: data.game_type || game_type || 'unknown',
+            pricingRules: data.pricingRules,
+            menuItems: data.menuItems,
+            discount: data.discount,
+            businessName: data.businessName || (prev as any).businessName,
+            tableName: data.tableName || (prev as any).tableName,
+            max_players: data.max_players || (prev as any).max_players,
+            paymentQrConfig: data.paymentQrConfig || (prev as any).paymentQrConfig,
+            qpayConfig: data.qpayConfig || (prev as any).qpayConfig,
+          };
         });
       } else if (data.status === 'active') {
         setSession((prev) => {
@@ -219,6 +231,11 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             food_cost: data.food_cost,
             num_players: data.num_players,
             discount: data.discount,
+            businessName: data.businessName || (prev as any).businessName,
+            tableName: data.tableName || (prev as any).tableName,
+            max_players: data.max_players || (prev as any).max_players,
+            paymentQrConfig: data.paymentQrConfig || (prev as any).paymentQrConfig,
+            qpayConfig: data.qpayConfig || (prev as any).qpayConfig,
             paused_at: data.paused_at,
             paused_duration_seconds: data.paused_duration_seconds || 0,
             locked_rate: data.locked_rate,
@@ -329,6 +346,11 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             pricingRules: prev.pricingRules,
             menuItems: prev.menuItems,
             discount: prev.discount,
+            businessName: prev.businessName,
+            tableName: prev.tableName,
+            max_players: prev.max_players,
+            paymentQrConfig: prev.paymentQrConfig,
+            qpayConfig: prev.qpayConfig,
             food_cost: 0,
             num_players: numPlayers,
           }));
@@ -494,9 +516,9 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             </div>
             <div className="w-full flex flex-col items-center">
               <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">Welcome to</p>
-              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Welcome'}</h1>
+              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-2 tracking-tight">{session.businessName || 'Our Club'}</h1>
               <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 font-medium">
-                <span>Table {session.table_id}</span>
+                <span>{(session as any).tableName || `Table ${session.table_id}`}</span>
                 <span>•</span>
                 <span className="capitalize">{session.game_type}</span>
               </div>
@@ -564,7 +586,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             <div>
               {session.businessName && <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 tracking-wider uppercase mb-1">{session.businessName}</p>}
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">Session is Active</h1>
-              <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">Table: {session.table_id}</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium capitalize">{(session as any).tableName || `Table: ${session.table_id}`}</p>
             </div>
             
             <div className="w-full mt-2">

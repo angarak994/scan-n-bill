@@ -44,9 +44,12 @@ export default async function SessionPage({
         table_id, 
         game_type: data.game_type || game_type || 'unknown', 
         pricingRules: data.pricingRules,
-        businessName: data.businessName,
+        businessName: (data.businessName || business?.business_name || '').trim(),
+        tableName: data.tableName,
+        max_players: data.max_players,
         qpayConfig: data.qpayConfig,
         paymentQrConfig: data.paymentQrConfig,
+        menuItems: data.menuItems,
       };
     } else if (data.status === 'active') {
       const activeState = {
@@ -57,7 +60,9 @@ export default async function SessionPage({
         date: data.date,
         start_time: data.start_time,
         pricingRules: data.pricingRules,
-        businessName: data.businessName,
+        businessName: (data.businessName || business?.business_name || '').trim(),
+        tableName: data.tableName,
+        max_players: data.max_players,
         qpayConfig: data.qpayConfig,
         paymentQrConfig: data.paymentQrConfig,
         food_cost: data.food_cost,
