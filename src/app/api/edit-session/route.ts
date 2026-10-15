@@ -33,16 +33,20 @@ export async function POST(request: Request) {
       await sessionRepository.update(session_id, dbUpdates, business_id);
     }
 
-    // Log to Google Sheets
-    try {
-      const { logActivityToSheet } = require('@/lib/googleSheets');
-      await logActivityToSheet('EDIT_SESSION', {
-        user: 'Club Owner',
-        table: session.table_id,
-        session: session_id,
-        details: `Changed details: ${customer_name ? 'Name ' : ''}${start_time ? 'StartTime ' : ''}${notes ? 'Notes' : ''}`
-      }, business_id);
-    } catch (e) {}
+    // Log to Google Sheets (Non-blocking background dispatch)
+    Promise.resolve().then(async () => {
+      try {
+        const { logActivityToSheet } = require('@/lib/googleSheets');
+        await logActivityToSheet('EDIT_SESSION', {
+          user: 'Club Owner',
+          table: session.table_id,
+          session: session_id,
+          details: `Changed details: ${customer_name ? 'Name ' : ''}${start_time ? 'StartTime ' : ''}${notes ? 'Notes' : ''}`
+        }, business_id);
+      } catch (e) {
+        console.error('Non-blocking sheet log error:', e);
+      }
+    }).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

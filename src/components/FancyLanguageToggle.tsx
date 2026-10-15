@@ -22,7 +22,7 @@ const LANGUAGES: LanguageOption[] = [
     name: 'English',
     nativeName: 'English',
     subtitle: 'International standard • Default',
-    flag: '🌐',
+    flag: '',
     badge: 'Global'
   },
   {
@@ -31,7 +31,7 @@ const LANGUAGES: LanguageOption[] = [
     name: 'Hindi',
     nativeName: 'हिन्दी',
     subtitle: 'देवनागरी लिपि • सम्पूर्ण प्रणाली',
-    flag: '🇮🇳',
+    flag: '',
     badge: 'लोकप्रिय'
   },
   {
@@ -40,7 +40,7 @@ const LANGUAGES: LanguageOption[] = [
     name: 'Marathi',
     nativeName: 'मराठी',
     subtitle: 'देवनागरी लिपी • महाराष्ट्र राज्य',
-    flag: '🚩',
+    flag: '',
     badge: 'स्थानिक'
   }
 ];
@@ -205,12 +205,12 @@ export default function FancyLanguageToggle({
                   >
                     <div className="flex items-center gap-3">
                       {/* Flag / Script Badge */}
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base border transition-transform duration-200 group-hover:scale-105 ${
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs border transition-transform duration-200 group-hover:scale-105 ${
                         isSelected 
                           ? 'bg-accent/20 border-accent/50 shadow-sm' 
                           : 'bg-bg-card border-border-theme'
                       }`}>
-                        {lang.flag}
+                        <span className="font-mono font-black text-xs text-accent tracking-wider">{lang.code}</span>
                       </div>
 
                       {/* Language Title & Subtitle */}

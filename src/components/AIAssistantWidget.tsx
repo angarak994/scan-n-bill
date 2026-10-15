@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -74,7 +75,7 @@ export default function AIAssistantWidget() {
           {/* Header */}
           <div className="bg-accent px-4 py-3 text-white flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-              <span className="text-sm">✨</span>
+              <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div>
               <h3 className="font-bold text-sm">AI Business Assistant</h3>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { businessManager } from '@/lib/businessManager';
 import { getSession } from '@/lib/auth';
 import { resolveReportRange, ReportPreset, formatINR } from '@/lib/services/reportsDateUtils';
 import { getBusinessTimezone, DEFAULT_BUSINESS_TIMEZONE, formatTimeInTimezone, formatDateInTimezone } from '@/lib/sheetsTimezone';
@@ -25,12 +26,8 @@ export async function GET(request: Request) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const pageSize = Math.min(100, Math.max(10, parseInt(searchParams.get('pageSize') || '25', 10)));
 
-    // Fetch business for timezone
-    const { data: business } = await supabase
-      .from('businesses')
-      .select('id, business_name, pricing_rules')
-      .eq('id', businessId)
-      .single();
+    // Fetch business for timezone (Cached in memory with 60s TTL)
+    const business = await businessManager.getBusiness(businessId);
     const timezone = getBusinessTimezone(business) || DEFAULT_BUSINESS_TIMEZONE;
 
     // Resolve date boundaries

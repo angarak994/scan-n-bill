@@ -52,6 +52,24 @@ export async function GET(request: Request) {
     localTodayStart.setHours(0, 0, 0, 0);
     const startOfDayUTC = localTodayStart.toISOString();
 
+    // Calculate previous period dates for real-time growth intelligence upfront
+    let prevStartDate: string;
+    let prevEndDate: string;
+    if (startDate === endDate) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() - 1);
+      prevStartDate = getLocalDateStr(d);
+      prevEndDate = prevStartDate;
+    } else {
+      const startMs = new Date(startDate).getTime();
+      const endMs = new Date(endDate).getTime();
+      const rangeDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1);
+      const prevEndD = new Date(startMs - 24 * 60 * 60 * 1000);
+      const prevStartD = new Date(prevEndD.getTime() - (rangeDays - 1) * 24 * 60 * 60 * 1000);
+      prevStartDate = getLocalDateStr(prevStartD);
+      prevEndDate = getLocalDateStr(prevEndD);
+    }
+
     const scope = searchParams.get('scope') || 'all';
 
     // Fast-path: Scoped Realtime Refresh (avoids refetching 8 tables when only 1 changed)
@@ -221,7 +239,8 @@ export async function GET(request: Request) {
       { data: dbCustomers },
       { data: memberships },
       { data: foodOrders },
-      { data: membership_plans }
+      { data: membership_plans },
+      { data: prevCompletedSessionsData }
     ] = await Promise.all([
       sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
       supabase
@@ -257,7 +276,14 @@ export async function GET(request: Request) {
         .from('membership_plans')
         .select('*')
         .eq('business_id', businessId)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('sessions')
+        .select('cost, amount_paid, payment_status, status, date')
+        .eq('business_id', businessId)
+        .eq('status', 'COMPLETED')
+        .gte('date', prevStartDate)
+        .lte('date', prevEndDate)
     ]);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
@@ -292,33 +318,6 @@ export async function GET(request: Request) {
       const s = session as any;
       return acc + (s.cost || 0);
     }, 0);
-
-    // Calculate previous period dates for real-time growth intelligence
-    let prevStartDate: string;
-    let prevEndDate: string;
-    if (startDate === endDate) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() - 1);
-      prevStartDate = getLocalDateStr(d);
-      prevEndDate = prevStartDate;
-    } else {
-      const startMs = new Date(startDate).getTime();
-      const endMs = new Date(endDate).getTime();
-      const rangeDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1);
-      const prevEndD = new Date(startMs - 24 * 60 * 60 * 1000);
-      const prevStartD = new Date(prevEndD.getTime() - (rangeDays - 1) * 24 * 60 * 60 * 1000);
-      prevStartDate = getLocalDateStr(prevStartD);
-      prevEndDate = getLocalDateStr(prevEndD);
-    }
-
-    // Query previous period completed sessions
-    const { data: prevCompletedSessionsData } = await supabase
-      .from('sessions')
-      .select('cost, amount_paid, payment_status, status, date')
-      .eq('business_id', businessId)
-      .eq('status', 'COMPLETED')
-      .gte('date', prevStartDate)
-      .lte('date', prevEndDate);
 
     const previousRevenue = (prevCompletedSessionsData || []).reduce((acc: number, s: any) => {
       return acc + (Number(s.cost) || 0);

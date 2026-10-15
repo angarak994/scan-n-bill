@@ -277,7 +277,7 @@ export default function OnboardPage() {
               <p className="text-text-secondary mb-6 text-sm leading-relaxed">
                 Start instantly with a pre-configured dashboard. We auto-generate tables and standard pricing so you can test QControl immediately. No Google Sheets required.
               </p>
-              <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-accent group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
+              <div className="mt-auto px-6 py-2 rounded-full border border-border-theme group-hover:bg-accent group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
                 {loading ? 'Launching...' : 'Launch Sandbox'}
               </div>
             </div>
@@ -296,7 +296,7 @@ export default function OnboardPage() {
               <p className="text-text-secondary mb-6 text-sm leading-relaxed">
                 Configure your real business. Set up custom time-based pricing rules, link your Google Sheets for QKhata, and generate live QR codes for your tables.
               </p>
-              <div className="mt-auto px-6 py-2 rounded-full border border-border group-hover:bg-blue-500 group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
+              <div className="mt-auto px-6 py-2 rounded-full border border-border-theme group-hover:bg-blue-500 group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
                 Start Production Setup
               </div>
             </div>
@@ -323,7 +323,7 @@ export default function OnboardPage() {
       <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
         <div className="max-w-5xl w-full">
           <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary bg-bg-surface p-2 rounded-full border border-border">
+            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary bg-bg-surface p-2 rounded-full border border-border-theme">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             </button>
             <h1 className="text-3xl font-bold">Choose Your License</h1>
@@ -333,7 +333,7 @@ export default function OnboardPage() {
             {/* Essential Plan */}
             <div 
               onClick={() => setSelectedPlan('essential')}
-              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer ${selectedPlan === 'essential' ? 'border-accent shadow-[0_0_30px_rgba(16,185,129,0.15)] bg-bg-card' : 'border-border bg-bg-surface hover:border-border-theme'}`}
+              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer ${selectedPlan === 'essential' ? 'border-accent shadow-[0_0_30px_rgba(16,185,129,0.15)] bg-bg-card' : 'border-border-theme bg-bg-surface hover:border-border-theme'}`}
             >
               <h3 className="text-xl font-bold text-text-secondary mb-2">Essential</h3>
               <div className="mb-6"><span className="text-4xl font-black">₹999</span><span className="text-text-secondary">/mo</span></div>
@@ -342,7 +342,7 @@ export default function OnboardPage() {
                 <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Standard QR Billing</li>
                 <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Basic Telegram Alerts</li>
               </ul>
-              <button onClick={() => { setSelectedPlan('essential'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'essential' ? 'bg-accent text-white' : 'bg-bg-card text-text-primary border border-border'}`}>
+              <button onClick={() => { setSelectedPlan('essential'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'essential' ? 'bg-accent text-white' : 'bg-bg-card text-text-primary border border-border-theme'}`}>
                 Select Essential
               </button>
             </div>
@@ -350,7 +350,7 @@ export default function OnboardPage() {
             {/* Growth Plan */}
             <div 
               onClick={() => setSelectedPlan('growth')}
-              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer relative overflow-hidden ${selectedPlan === 'growth' ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-bg-card' : 'border-border bg-bg-surface hover:border-border-theme'}`}
+              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer relative overflow-hidden ${selectedPlan === 'growth' ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-bg-card' : 'border-border-theme bg-bg-surface hover:border-border-theme'}`}
             >
               <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-widest">Recommended</div>
               <h3 className="text-xl font-bold text-blue-500 mb-2">Growth</h3>
@@ -361,7 +361,7 @@ export default function OnboardPage() {
                 <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Time-based Smart Pricing</li>
                 <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Food & Beverage Engine</li>
               </ul>
-              <button onClick={() => { setSelectedPlan('growth'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'growth' ? 'bg-blue-600 text-white' : 'bg-bg-card text-text-primary border border-border'}`}>
+              <button onClick={() => { setSelectedPlan('growth'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'growth' ? 'bg-blue-600 text-white' : 'bg-bg-card text-text-primary border border-border-theme'}`}>
                 Select Growth
               </button>
             </div>
@@ -374,7 +374,7 @@ export default function OnboardPage() {
   if (onboardMode === 'payment') {
     return (
       <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
-        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border bg-bg-surface p-8 animate-in fade-in zoom-in-95 duration-300">
+        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border-theme bg-bg-surface p-8 animate-in fade-in zoom-in-95 duration-300">
           <div className="flex items-center gap-4 mb-8">
             <button onClick={() => setOnboardMode('pricing')} className="text-text-secondary hover:text-text-primary">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
@@ -382,7 +382,7 @@ export default function OnboardPage() {
             <h1 className="text-2xl font-bold">Secure Checkout</h1>
           </div>
           
-          <div className="bg-bg-card border border-border rounded-xl p-4 mb-6">
+          <div className="bg-bg-card border border-border-theme rounded-xl p-4 mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-text-secondary">Selected Plan</span>
               <span className="font-bold capitalize">{selectedPlan}</span>
@@ -396,7 +396,7 @@ export default function OnboardPage() {
           <div className="space-y-4 mb-8">
             <div>
               <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Card Number</label>
-              <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary flex items-center justify-between font-mono">
+              <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary flex items-center justify-between font-mono">
                 <span>•••• •••• •••• 4242</span>
                 <svg className="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><path d="M2.993 6.696C2.993 5.759 3.75 5 4.687 5h14.626c.937 0 1.694.759 1.694 1.696v10.608c0 .937-.757 1.696-1.694 1.696H4.687c-.937 0-1.694-.759-1.694-1.696V6.696zM4.687 6.696h14.626v2.122H4.687V6.696zm0 4.243v6.365h14.626v-6.365H4.687z"/></svg>
               </div>
@@ -404,11 +404,11 @@ export default function OnboardPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Expiry</label>
-                <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary font-mono">12 / 28</div>
+                <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary font-mono">12 / 28</div>
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">CVC</label>
-                <div className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-secondary font-mono">•••</div>
+                <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary font-mono">•••</div>
               </div>
             </div>
           </div>
@@ -428,8 +428,8 @@ export default function OnboardPage() {
     <>
     <Navbar />
     <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern pt-24">
-      <div className="max-w-2xl w-full bg-bg-surface rounded-2xl shadow-2xl overflow-hidden border border-border relative z-10">
-        <div className="bg-bg-card border-b border-border p-8 relative">
+      <div className="max-w-2xl w-full bg-bg-surface rounded-2xl shadow-2xl overflow-hidden border border-border-theme relative z-10">
+        <div className="bg-bg-card border-b border-border-theme p-8 relative">
           {!isTrial && (
             <button onClick={() => setOnboardMode('selection')} className="absolute top-8 left-8 text-text-secondary hover:text-text-primary">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>

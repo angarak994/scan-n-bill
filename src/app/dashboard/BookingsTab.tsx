@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { Phone } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { t } from '@/lib/i18n';
 
@@ -211,7 +212,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
   };
 
   return (
-    <div className="mt-4 animate-in fade-in duration-300">
+    <div className="animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -430,7 +431,10 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                               href={`tel:${b.customer_phone}`}
                               className="text-xs font-mono text-text-secondary hover:text-accent flex items-center gap-1 touch-target py-1 px-1.5 rounded"
                             >
-                              📞 {b.customer_phone}
+                              <span className="flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-text-secondary" />
+                                {b.customer_phone}
+                              </span>
                             </a>
                           )}
                         </div>

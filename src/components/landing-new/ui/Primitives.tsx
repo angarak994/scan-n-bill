@@ -19,7 +19,7 @@ export function useReducedMotion() {
 // --- Layout Primitives ---
 export function Section({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <section id={id} className={`py-[var(--space-24)] border-t border-border-hairline ${className}`}>
+    <section id={id} className={`py-[var(--space-24)] border-t border-border-theme-hairline ${className}`}>
       {children}
     </section>
   );

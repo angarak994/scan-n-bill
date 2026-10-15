@@ -172,7 +172,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
   };
 
   if (loading) return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+    <div className="w-full space-y-6 pb-20">
       <div className="w-64 h-10 bg-border-light/50 rounded-lg animate-pulse mb-6" />
       <div className="w-full h-32 bg-border-light/50 rounded-2xl animate-pulse" />
       <div className="w-full h-[400px] bg-border-light/50 rounded-2xl animate-pulse" />
@@ -204,7 +204,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
   ] as const;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-entrance pb-20">
+    <div className="w-full space-y-6 animate-entrance pb-20">
       
       {/* Top Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">

@@ -25,7 +25,7 @@ export default function QRSessionDemo() {
         <div className="relative">
           <ScrollReveal animation="fade-up" delay={200}>
             <div className="relative w-full max-w-[320px] mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[650px] p-2 glass-panel">
-              <div className="w-full h-full bg-bg-surface rounded-2xl overflow-hidden flex flex-col border border-border relative">
+              <div className="w-full h-full bg-bg-surface rounded-2xl overflow-hidden flex flex-col border border-border-theme relative">
                 
                 {/* Dynamic Island Notch */}
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-full z-20"></div>

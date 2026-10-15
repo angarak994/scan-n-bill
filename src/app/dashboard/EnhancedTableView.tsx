@@ -293,13 +293,13 @@ const TableCardItem = React.memo(function TableCardItem(props: TableCardItemProp
                    {t('quick_add', '+ Quick Add')}
                 </button>
                 <button onClick={() => onEndSession(session, liveCost, liveDuration, { baseTableCost: liveBaseTableCost, foodCost: session.food_cost || 0, discountAmount: liveDiscount, discountLabel })} className="flex-[1] min-h-[44px] py-2.5 px-2 rounded-lg bg-[#EF4444] text-white hover:bg-red-600 text-[11px] font-bold uppercase tracking-widest flex justify-center items-center gap-2 transition-colors touch-target">
-                   {t('bill', '🔴 BILL')}
+                   {t('bill', 'Bill')}
                 </button>
              </>
           ) : (
              <>
                 <button onClick={() => onStartSession(table.id, table.type)} className="flex-[2] min-h-[44px] py-2.5 px-2 rounded-lg bg-accent text-black hover:bg-accent/90 text-sm font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-colors touch-target">
-                   {t('start', '▶ START')}
+                   {t('start', 'Start')}
                 </button>
                 <button onClick={() => onReserveTable(table.id, table.type)} className="flex-[1] min-h-[44px] py-2.5 px-2 rounded-lg bg-bg-surface border border-border-theme text-text-secondary text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-text-primary hover:border-text-secondary touch-target">
                    {t('reserve', 'Reserve')}

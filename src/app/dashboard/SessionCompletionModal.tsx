@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
+import { Clock, Utensils, Tag, CreditCard, BookOpen, Banknote, Zap, AlertTriangle, Check } from 'lucide-react';
 
 export interface EndSessionModalData {
   session: {
@@ -417,7 +418,7 @@ export default function SessionCompletionModal({
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-0.5 text-xs text-text-secondary">
-                <span>⏱️ {data.duration || '0m'}</span>
+                <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-text-secondary" /> {data.duration || '0m'}</span>
                 {customerMeta.outstandingBalance > 0 && (
                   <>
                     <span>•</span>
@@ -457,7 +458,7 @@ export default function SessionCompletionModal({
             {breakdown && breakdown.foodCost > 0 && (
               <div className="flex justify-between items-center text-xs">
                 <span className="text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                  <span>🍔</span>
+                  <Utensils className="w-3.5 h-3.5" />
                   <span>{t('food_orders', 'F&B Orders')}</span>
                 </span>
                 <span className="font-mono text-amber-400 font-bold">
@@ -469,7 +470,7 @@ export default function SessionCompletionModal({
             {discountInfo && (
               <div className="flex justify-between items-center text-xs">
                 <span className="text-emerald-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                  <span>🏷️</span>
+                  <Tag className="w-3.5 h-3.5" />
                   <span>{t('discount', 'Discount')}</span>
                   <span className="text-[10px] bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded text-emerald-400 font-bold">
                     {discountInfo.label}
@@ -536,7 +537,7 @@ export default function SessionCompletionModal({
                     : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
-                <span>💳</span>
+                <CreditCard className="w-4 h-4" />
                 <span>{t('pay_now', 'Collect Payment Now')}</span>
               </button>
               <button
@@ -548,7 +549,7 @@ export default function SessionCompletionModal({
                     : 'text-text-secondary hover:text-amber-400/80'
                 }`}
               >
-                <span>📒</span>
+                <BookOpen className="w-4 h-4" />
                 <span>{t('play_on_credit', 'Add to QKhata (Credit)')}</span>
               </button>
             </div>
@@ -601,10 +602,10 @@ export default function SessionCompletionModal({
                     </label>
                     <div className="grid grid-cols-4 gap-2">
                       {[
-                        { id: 'Cash', label: 'Cash', icon: '💵' },
-                        { id: 'UPI', label: 'UPI / QR', icon: '⚡' },
-                        { id: 'Card', label: 'Card', icon: '💳' },
-                        { id: 'Other', label: 'Other', icon: '🏷️' }
+                        { id: 'Cash', label: 'Cash', icon: <Banknote className="w-4 h-4" /> },
+                        { id: 'UPI', label: 'UPI / QR', icon: <Zap className="w-4 h-4" /> },
+                        { id: 'Card', label: 'Card', icon: <CreditCard className="w-4 h-4" /> },
+                        { id: 'Other', label: 'Other', icon: <Tag className="w-4 h-4" /> }
                       ].map(method => (
                         <button
                           key={method.id}
@@ -616,7 +617,7 @@ export default function SessionCompletionModal({
                               : 'bg-bg-card border-border-theme text-text-secondary hover:border-border-theme/80 hover:text-text-primary'
                           }`}
                         >
-                          <span className="text-sm">{method.icon}</span>
+                          <span className="text-sm flex items-center justify-center">{method.icon}</span>
                           <span>{method.label}</span>
                         </button>
                       ))}
@@ -655,7 +656,7 @@ export default function SessionCompletionModal({
                     {/* Partial payment alerts */}
                     {!isFullSinglePayment && (
                       <div className="mt-2 p-2.5 rounded-lg text-xs flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300">
-                        <span>⚠️</span>
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                         <div>
                           {customerMeta.isMember ? (
                             <span>
@@ -779,8 +780,8 @@ export default function SessionCompletionModal({
                   {/* Cash Input */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1">
-                        <span>💵</span>
+                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1.5">
+                        <Banknote className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Cash (₹)</span>
                       </label>
                       <button
@@ -807,8 +808,8 @@ export default function SessionCompletionModal({
                   {/* UPI Input */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1">
-                        <span>⚡</span>
+                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
                         <span>UPI (₹)</span>
                       </label>
                       <button
@@ -835,8 +836,8 @@ export default function SessionCompletionModal({
                   {/* Card Input */}
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1">
-                        <span>💳</span>
+                      <label className="text-xs font-bold text-text-secondary uppercase flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-sky-400" />
                         <span>Card / POS (₹)</span>
                       </label>
                       <button
@@ -871,7 +872,10 @@ export default function SessionCompletionModal({
 
                     {isSplitExact ? (
                       <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-bold flex items-center justify-between">
-                        <span>✓ Exact Amount Covered</span>
+                        <span className="flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Exact Amount Covered</span>
+                        </span>
                         <span className="font-mono">{formatINR(currentSplitSum)}</span>
                       </div>
                     ) : isSplitUnder ? (
@@ -901,7 +905,7 @@ export default function SessionCompletionModal({
             /* 4. Payment Mode: PLAY ON CREDIT (QKHATA) */
             <div className="p-4 border border-amber-500/30 bg-amber-500/5 rounded-xl space-y-3">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-                <span>📒</span>
+                <BookOpen className="w-4 h-4" />
                 <span>{t('qkhata_credit_agreement', 'QKhata Credit Agreement')}</span>
               </div>
               <p className="text-xs text-text-secondary leading-relaxed">

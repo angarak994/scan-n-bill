@@ -29,6 +29,10 @@ interface ReportsTabProps {
   isPrivacyMode?: boolean;
 }
 
+// Module-level client cache for instant (0ms) tab switching
+const clientSummaryCache = new Map<string, { data: FinancialReportsSummary; timestamp: number }>();
+const clientTransactionsCache = new Map<string, { transactions: any[]; totalCount: number; timestamp: number }>();
+
 export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: ReportsTabProps) {
   // Preset and Range State
   const [period, setPeriod] = useState<ReportPreset>('thisMonth');
@@ -37,9 +41,14 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
   const [showCustomRangePicker, setShowCustomRangePicker] = useState<boolean>(false);
   const [compare, setCompare] = useState<boolean>(true);
 
+  // Check module cache for initial state
+  const cacheKey = `${period}:${compare}:${customStart || ''}:${customEnd || ''}`;
+  const cachedInitial = clientSummaryCache.get(cacheKey);
+  const isInitialValid = Boolean(cachedInitial && (Date.now() - cachedInitial.timestamp < 60000));
+
   // Data State
-  const [summary, setSummary] = useState<FinancialReportsSummary | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [summary, setSummary] = useState<FinancialReportsSummary | null>(isInitialValid && cachedInitial ? cachedInitial.data : null);
+  const [isLoading, setIsLoading] = useState<boolean>(!isInitialValid);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,10 +75,20 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
   const [isTxLoading, setIsTxLoading] = useState<boolean>(false);
   const [selectedRecordTrail, setSelectedRecordTrail] = useState<any | null>(null);
 
-  // Fetch Summary Data
+  // Fetch Summary Data (with 60s client cache for instant tab navigation)
   const fetchSummary = useCallback(async (isManualRefresh = false) => {
+    const key = `${period}:${compare}:${customStart || ''}:${customEnd || ''}`;
+    const cached = clientSummaryCache.get(key);
+    const isValid = !isManualRefresh && Boolean(cached && (Date.now() - cached.timestamp < 60000));
+
+    if (isValid && cached) {
+      setSummary(cached.data);
+      setIsLoading(false);
+      return;
+    }
+
     if (isManualRefresh) setIsRefreshing(true);
-    else setIsLoading(true);
+    else if (!cached) setIsLoading(true);
     setError(null);
 
     try {
@@ -84,6 +103,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         throw new Error(errJson.error || `Server responded with ${res.status}`);
       }
       const data = await res.json();
+      clientSummaryCache.set(key, { data, timestamp: Date.now() });
       setSummary(data);
     } catch (err: any) {
       console.error('[ReportsTab] Fetch error:', err);
@@ -94,8 +114,19 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
     }
   }, [period, customStart, customEnd, compare]);
 
-  // Fetch Transactions Data
-  const fetchTransactions = useCallback(async () => {
+  // Fetch Transactions Data (with 60s client cache)
+  const fetchTransactions = useCallback(async (isManualRefresh = false) => {
+    const txKey = `${period}:${customStart || ''}:${customEnd || ''}:${txPage}:${txPageSize}:${txMethodFilter}:${txStatusFilter}:${txSearch}`;
+    const cached = clientTransactionsCache.get(txKey);
+    const isValid = !isManualRefresh && Boolean(cached && (Date.now() - cached.timestamp < 60000));
+
+    if (isValid && cached) {
+      setTransactions(cached.transactions);
+      setTxTotalCount(cached.totalCount);
+      setIsTxLoading(false);
+      return;
+    }
+
     setIsTxLoading(true);
     try {
       let url = `/api/reports/transactions?period=${period}&page=${txPage}&pageSize=${txPageSize}&method=${txMethodFilter}&status=${txStatusFilter}`;
@@ -107,8 +138,11 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
-        setTransactions(json.transactions || []);
-        setTxTotalCount(json.pagination?.totalCount || 0);
+        const txList = json.transactions || [];
+        const total = json.pagination?.totalCount || 0;
+        clientTransactionsCache.set(txKey, { transactions: txList, totalCount: total, timestamp: Date.now() });
+        setTransactions(txList);
+        setTxTotalCount(total);
       }
     } catch (err) {
       console.error('[ReportsTab] Transactions fetch error:', err);
@@ -194,7 +228,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
       {/* ---------------------------------------------------------------- */}
       {/* 1. TOP HEADER & STICKY FILTER BAR                                */}
       {/* ---------------------------------------------------------------- */}
-      <div className="sticky top-0 z-30 bg-bg-primary/95 backdrop-blur-md pt-2 pb-4 border-b border-border transition-colors">
+      <div className="sticky top-0 z-30 bg-bg-primary/95 backdrop-blur-md pt-2 pb-4 border-b border-border-theme transition-colors">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="text-[11px] font-mono tracking-widest text-text-secondary uppercase">
@@ -202,7 +236,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
             </div>
             <div className="flex items-center gap-3 mt-0.5">
               <h1 className="text-2xl font-bold tracking-tight text-text-primary">Reports & KPIs</h1>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-border text-text-secondary font-mono">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-bg-surface border border-border-theme-theme text-text-secondary font-mono">
                 {summary ? `Data as of ${summary.asOf}` : 'Loading...'}
               </span>
             </div>
@@ -212,7 +246,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
             {onToggleLegacy && (
               <button
                 onClick={onToggleLegacy}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border bg-bg-surface text-text-secondary hover:text-text-primary hover:border-text-secondary transition-colors"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border-theme bg-bg-surface text-text-secondary hover:text-text-primary hover:border-text-secondary transition-colors"
               >
                 Classic Report
               </button>
@@ -221,7 +255,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
             <button
               onClick={() => fetchSummary(true)}
               disabled={isLoading || isRefreshing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-bg-surface text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border-theme bg-bg-surface text-text-secondary hover:text-text-primary hover:bg-bg-card transition-colors disabled:opacity-50"
             >
               <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-accent' : ''} />
               <span>Refresh</span>
@@ -269,7 +303,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                   type="checkbox"
                   checked={compare}
                   onChange={e => setCompare(e.target.checked)}
-                  className="rounded border-border accent-accent cursor-pointer"
+                  className="rounded border-border-theme accent-accent cursor-pointer"
                 />
                 <span>Compare to previous period</span>
               </label>
@@ -279,20 +313,20 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
         {/* Custom Range Popover */}
         {showCustomRangePicker && period === 'custom' && (
-          <div className="mt-3 p-4 bg-bg-card border border-border rounded-xl shadow-lg flex flex-wrap items-center gap-3 animate-entrance">
+          <div className="mt-3 p-4 bg-bg-card border border-border-theme rounded-xl shadow-lg flex flex-wrap items-center gap-3 animate-entrance">
             <span className="text-xs font-medium text-text-secondary">From:</span>
             <input
               type="date"
               value={customStart}
               onChange={e => setCustomStart(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-border bg-bg-surface text-xs font-mono text-text-primary outline-none focus:border-accent"
+              className="px-2.5 py-1.5 rounded-lg border border-border-theme bg-bg-surface text-xs font-mono text-text-primary outline-none focus:border-accent"
             />
             <span className="text-xs font-medium text-text-secondary">To:</span>
             <input
               type="date"
               value={customEnd}
               onChange={e => setCustomEnd(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg border border-border bg-bg-surface text-xs font-mono text-text-primary outline-none focus:border-accent"
+              className="px-2.5 py-1.5 rounded-lg border border-border-theme bg-bg-surface text-xs font-mono text-text-primary outline-none focus:border-accent"
             />
             <button
               onClick={() => {
@@ -345,7 +379,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Tile 1: REVENUE */}
           <div
             onClick={() => openDrilldown('revenue')}
-            className="group relative bg-bg-card border border-border p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
+            className="group relative bg-bg-card border border-border-theme p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
           >
             <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
               <span className="font-semibold uppercase tracking-wider text-[11px]">Revenue</span>
@@ -410,7 +444,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Tile 2: COLLECTED */}
           <div
             onClick={() => openDrilldown('collected')}
-            className="group relative bg-bg-card border border-border p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
+            className="group relative bg-bg-card border border-border-theme p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
           >
             <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
               <span className="font-semibold uppercase tracking-wider text-[11px]">Collected</span>
@@ -475,7 +509,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Tile 3: PENDING DUES */}
           <div
             onClick={() => openDrilldown('pendingDues')}
-            className="group relative bg-bg-card border border-border p-5 rounded-2xl hover:border-warning/40 transition-all cursor-pointer shadow-sm hover-lift"
+            className="group relative bg-bg-card border border-border-theme p-5 rounded-2xl hover:border-warning/40 transition-all cursor-pointer shadow-sm hover-lift"
           >
             <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
               <span className="font-semibold uppercase tracking-wider text-[11px]">Pending Dues</span>
@@ -540,7 +574,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Tile 4: NET CASH FLOW */}
           <div
             onClick={() => openDrilldown('collected')}
-            className="group relative bg-bg-card border border-border p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
+            className="group relative bg-bg-card border border-border-theme p-5 rounded-2xl hover:border-accent/40 transition-all cursor-pointer shadow-sm hover-lift"
           >
             <div className="flex items-center justify-between text-xs text-text-secondary mb-2">
               <span className="font-semibold uppercase tracking-wider text-[11px]">Net Cash Flow</span>
@@ -611,7 +645,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Discounts */}
           <div
             onClick={() => openDrilldown('discounts')}
-            className="p-3.5 rounded-xl bg-bg-card border border-border hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
+            className="p-3.5 rounded-xl bg-bg-card border border-border-theme hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
           >
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Discounts</div>
             <div className="text-xl font-bold font-mono text-text-primary">
@@ -622,7 +656,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Refunds */}
           <div
             onClick={() => openDrilldown('refunds')}
-            className="p-3.5 rounded-xl bg-bg-card border border-border hover:border-danger/30 cursor-pointer transition-colors shadow-sm"
+            className="p-3.5 rounded-xl bg-bg-card border border-border-theme hover:border-danger/30 cursor-pointer transition-colors shadow-sm"
           >
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Refunds</div>
             <div className="text-xl font-bold font-mono text-danger">
@@ -631,7 +665,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           </div>
 
           {/* Expenses (Honesty State: Not tracked) */}
-          <div className="p-3.5 rounded-xl bg-bg-card border border-border shadow-sm">
+          <div className="p-3.5 rounded-xl bg-bg-card border border-border-theme shadow-sm">
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Expenses</div>
             <div className="text-sm font-semibold text-text-disabled mt-1">Not tracked</div>
             <div className="text-[10px] text-text-disabled mt-0.5 truncate">{summary?.secondary.expenses.reason}</div>
@@ -640,7 +674,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Sessions */}
           <div
             onClick={() => openDrilldown('sessions')}
-            className="p-3.5 rounded-xl bg-bg-card border border-border hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
+            className="p-3.5 rounded-xl bg-bg-card border border-border-theme hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
           >
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Sessions</div>
             <div className="text-xl font-bold font-mono text-text-primary">
@@ -650,7 +684,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           </div>
 
           {/* Avg Per Session */}
-          <div className="p-3.5 rounded-xl bg-bg-card border border-border shadow-sm">
+          <div className="p-3.5 rounded-xl bg-bg-card border border-border-theme shadow-sm">
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Avg per session</div>
             <div className="text-xl font-bold font-mono text-text-primary">
               {formatMoney(summary?.secondary.avgPerSession.value)}
@@ -661,7 +695,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* F&B Revenue */}
           <div
             onClick={() => openDrilldown('fb')}
-            className="p-3.5 rounded-xl bg-bg-card border border-border hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
+            className="p-3.5 rounded-xl bg-bg-card border border-border-theme hover:border-accent/30 cursor-pointer transition-colors shadow-sm"
           >
             <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">F&B Revenue</div>
             <div className="text-xl font-bold font-mono text-text-primary">
@@ -675,7 +709,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         {/* 4. "HOW THE MONEY MOVES" STRIP                                   */}
         {/* ---------------------------------------------------------------- */}
         {summary?.moneyMovement && summary.moneyMovement.isProvable && (
-          <div className="p-4 rounded-xl bg-bg-card border border-border mt-4 shadow-sm">
+          <div className="p-4 rounded-xl bg-bg-card border border-border-theme mt-4 shadow-sm">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="font-semibold text-text-primary uppercase tracking-wider text-[11px]">
                 How the money moves
@@ -715,7 +749,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
           
           {/* Revenue vs Collections Line Chart (7 cols) */}
-          <div className="lg:col-span-7 p-5 rounded-2xl bg-bg-card border border-border shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-7 p-5 rounded-2xl bg-bg-card border border-border-theme shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div>
@@ -900,7 +934,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
             {/* Hover Tooltip display */}
             {hoveredTrendIndex !== null && summary?.trends.points[hoveredTrendIndex] && (
-              <div className="mt-3 p-2 bg-bg-surface border border-border rounded-lg text-xs flex items-center justify-between font-mono animate-entrance">
+              <div className="mt-3 p-2 bg-bg-surface border border-border-theme rounded-lg text-xs flex items-center justify-between font-mono animate-entrance">
                 <span className="font-sans font-medium text-text-primary">
                   {summary.trends.points[hoveredTrendIndex].label}
                 </span>
@@ -917,7 +951,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           </div>
 
           {/* Payment Methods Breakdown (5 cols) */}
-          <div className="lg:col-span-5 p-5 rounded-2xl bg-bg-card border border-border shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-5 p-5 rounded-2xl bg-bg-card border border-border-theme shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
@@ -927,7 +961,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
-                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border">
+                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border-theme">
                     <tr>
                       <th className="py-2">Method</th>
                       <th className="py-2 text-right">Collected</th>
@@ -971,7 +1005,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                     ))}
                   </tbody>
                   {/* Total Row */}
-                  <tfoot className="border-t-2 border-border font-mono font-bold text-xs bg-bg-surface/30">
+                  <tfoot className="border-t-2 border-border-theme font-mono font-bold text-xs bg-bg-surface/30">
                     <tr>
                       <td className="py-2.5 font-sans">Total</td>
                       <td className="py-2.5 text-right text-accent">
@@ -1008,7 +1042,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
           
           {/* Performance By Game (6 cols) */}
-          <div className="lg:col-span-6 p-5 rounded-2xl bg-bg-card border border-border shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-6 p-5 rounded-2xl bg-bg-card border border-border-theme shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
@@ -1018,7 +1052,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
-                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border">
+                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border-theme">
                     <tr>
                       <th className="py-2">Game</th>
                       <th className="py-2 text-right">Sessions</th>
@@ -1062,7 +1096,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           </div>
 
           {/* Dues & QKhata (6 cols) */}
-          <div className="lg:col-span-6 p-5 rounded-2xl bg-bg-card border border-border shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-6 p-5 rounded-2xl bg-bg-card border border-border-theme shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -1081,7 +1115,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
-                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border">
+                  <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border-theme">
                     <tr>
                       <th className="py-2">Customer</th>
                       <th className="py-2 text-right">Balance</th>
@@ -1117,7 +1151,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         {/* ---------------------------------------------------------------- */}
         {/* 7. TRANSACTIONS TABLE & RECORD TRAIL DRAWER                      */}
         {/* ---------------------------------------------------------------- */}
-        <div className="p-5 rounded-2xl bg-bg-card border border-border shadow-sm mt-6">
+        <div className="p-5 rounded-2xl bg-bg-card border border-border-theme shadow-sm mt-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider text-text-primary">Transactions</h3>
@@ -1138,7 +1172,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                     setTxSearch(e.target.value);
                     setTxPage(1);
                   }}
-                  className="pl-8 pr-3 py-1.5 rounded-lg border border-border bg-bg-surface text-xs text-text-primary outline-none focus:border-accent w-48 sm:w-60"
+                  className="pl-8 pr-3 py-1.5 rounded-lg border border-border-theme bg-bg-surface text-xs text-text-primary outline-none focus:border-accent w-48 sm:w-60"
                 />
               </div>
 
@@ -1149,7 +1183,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                   setTxMethodFilter(e.target.value);
                   setTxPage(1);
                 }}
-                className="px-2.5 py-1.5 rounded-lg border border-border bg-bg-surface text-xs text-text-primary outline-none cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg border border-border-theme bg-bg-surface text-xs text-text-primary outline-none cursor-pointer"
               >
                 <option value="all">Method: All</option>
                 <option value="UPI">Method: UPI</option>
@@ -1165,7 +1199,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                   setTxStatusFilter(e.target.value);
                   setTxPage(1);
                 }}
-                className="px-2.5 py-1.5 rounded-lg border border-border bg-bg-surface text-xs text-text-primary outline-none cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg border border-border-theme bg-bg-surface text-xs text-text-primary outline-none cursor-pointer"
               >
                 <option value="all">Status: All</option>
                 <option value="Paid">Status: Paid</option>
@@ -1178,7 +1212,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
           {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
-              <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border bg-bg-surface/40">
+              <thead className="text-[10px] font-bold text-text-secondary uppercase tracking-wider border-b border-border-theme bg-bg-surface/40">
                 <tr>
                   <th className="p-3">Time</th>
                   <th className="p-3">Customer</th>
@@ -1246,14 +1280,14 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                 <button
                   disabled={txPage <= 1}
                   onClick={() => setTxPage(p => Math.max(1, p - 1))}
-                  className="p-1 rounded-md border border-border bg-bg-surface hover:text-text-primary disabled:opacity-30"
+                  className="p-1 rounded-md border border-border-theme bg-bg-surface hover:text-text-primary disabled:opacity-30"
                 >
                   <ChevronLeft size={16} />
                 </button>
                 <button
                   disabled={txPage >= Math.ceil(txTotalCount / txPageSize)}
                   onClick={() => setTxPage(p => p + 1)}
-                  className="p-1 rounded-md border border-border bg-bg-surface hover:text-text-primary disabled:opacity-30"
+                  className="p-1 rounded-md border border-border-theme bg-bg-surface hover:text-text-primary disabled:opacity-30"
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -1265,7 +1299,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
         {/* ---------------------------------------------------------------- */}
         {/* 8. RECONCILIATION FOOTER STATUS STRIP                            */}
         {/* ---------------------------------------------------------------- */}
-        <div className="flex items-center justify-between p-3.5 rounded-xl bg-bg-card border border-border mt-6 text-xs shadow-sm">
+        <div className="flex items-center justify-between p-3.5 rounded-xl bg-bg-card border border-border-theme mt-6 text-xs shadow-sm">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={16} className="text-accent" />
             <span className="font-semibold text-text-primary">
@@ -1286,9 +1320,9 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
       {/* ---------------------------------------------------------------- */}
       {selectedRecordTrail && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-bg-surface h-full border-l border-border p-6 overflow-y-auto flex flex-col justify-between shadow-2xl animate-entrance">
+          <div className="w-full max-w-md bg-bg-surface h-full border-l border-border-theme p-6 overflow-y-auto flex flex-col justify-between shadow-2xl animate-entrance">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-border">
+              <div className="flex items-center justify-between pb-4 border-b border-border-theme">
                 <div>
                   <div className="text-[10px] font-mono uppercase tracking-widest text-text-secondary">Record Trail</div>
                   <h3 className="text-lg font-bold text-text-primary">{selectedRecordTrail.ref}</h3>
@@ -1302,7 +1336,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
               </div>
 
               <div className="py-4 space-y-4 text-xs font-sans">
-                <div className="grid grid-cols-2 gap-3 p-3 bg-bg-card rounded-xl border border-border">
+                <div className="grid grid-cols-2 gap-3 p-3 bg-bg-card rounded-xl border border-border-theme">
                   <div>
                     <span className="text-[10px] text-text-secondary uppercase">Customer</span>
                     <p className="font-bold text-text-primary text-sm mt-0.5">{selectedRecordTrail.customer}</p>
@@ -1322,7 +1356,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                 </div>
 
                 {/* Financial Ledger Breakdown */}
-                <div className="p-4 bg-bg-card rounded-xl border border-border space-y-2 font-mono">
+                <div className="p-4 bg-bg-card rounded-xl border border-border-theme space-y-2 font-mono">
                   <div className="text-[10px] font-sans font-bold text-text-secondary uppercase tracking-wider mb-2">
                     Financial Summary
                   </div>
@@ -1344,7 +1378,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
                 {/* Payments allocated */}
                 {selectedRecordTrail.recordTrail?.payments && selectedRecordTrail.recordTrail.payments.length > 0 && (
-                  <div className="p-4 bg-bg-card rounded-xl border border-border space-y-2">
+                  <div className="p-4 bg-bg-card rounded-xl border border-border-theme space-y-2">
                     <div className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2">
                       Payments Recorded
                     </div>
@@ -1366,7 +1400,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
             <button
               onClick={() => setSelectedRecordTrail(null)}
-              className="w-full py-2.5 bg-bg-card border border-border hover:bg-bg-surface text-text-primary rounded-xl font-semibold text-xs transition-colors"
+              className="w-full py-2.5 bg-bg-card border border-border-theme hover:bg-bg-surface text-text-primary rounded-xl font-semibold text-xs transition-colors"
             >
               Close Drawer
             </button>
@@ -1379,9 +1413,9 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
       {/* ---------------------------------------------------------------- */}
       {drilldownMetric && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-2xl bg-bg-surface border border-border rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col justify-between animate-entrance">
+          <div className="w-full max-w-2xl bg-bg-surface border border-border-theme rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col justify-between animate-entrance">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-border">
+              <div className="flex items-center justify-between pb-4 border-b border-border-theme">
                 <div>
                   <div className="text-[10px] font-mono uppercase tracking-widest text-text-secondary">Metric Drill-Down</div>
                   <h3 className="text-xl font-bold capitalize text-text-primary">{drilldownMetric} Breakdown</h3>
@@ -1399,7 +1433,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
               ) : (
                 <div className="py-4 overflow-y-auto max-h-[50vh]">
                   <table className="w-full text-xs text-left">
-                    <thead className="text-[10px] font-bold text-text-secondary uppercase border-b border-border sticky top-0 bg-bg-surface">
+                    <thead className="text-[10px] font-bold text-text-secondary uppercase border-b border-border-theme sticky top-0 bg-bg-surface">
                       <tr>
                         <th className="py-2">Item</th>
                         <th className="py-2">Details</th>
@@ -1419,7 +1453,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="border-t-2 border-border font-mono font-bold bg-bg-card">
+                    <tfoot className="border-t-2 border-border-theme font-mono font-bold bg-bg-card">
                       <tr>
                         <td colSpan={3} className="py-2.5 font-sans">Total</td>
                         <td className="py-2.5 text-right text-accent">
@@ -1434,7 +1468,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
             <button
               onClick={() => setDrilldownMetric(null)}
-              className="mt-4 w-full py-2.5 bg-bg-card border border-border text-text-primary rounded-xl font-semibold text-xs hover:bg-bg-surface transition-colors"
+              className="mt-4 w-full py-2.5 bg-bg-card border border-border-theme text-text-primary rounded-xl font-semibold text-xs hover:bg-bg-surface transition-colors"
             >
               Done
             </button>
@@ -1447,9 +1481,9 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
       {/* ---------------------------------------------------------------- */}
       {showReconciliationModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-xl bg-bg-surface border border-border rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col justify-between animate-entrance">
+          <div className="w-full max-w-xl bg-bg-surface border border-border-theme rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col justify-between animate-entrance">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-border">
+              <div className="flex items-center justify-between pb-4 border-b border-border-theme">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={20} className="text-accent" />
                   <h3 className="text-lg font-bold text-text-primary">Financial Reconciliation Proofs</h3>
@@ -1464,7 +1498,7 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
 
               <div className="py-4 space-y-3 overflow-y-auto max-h-[50vh]">
                 {summary?.reconciliation.details.map((check, idx) => (
-                  <div key={idx} className="p-3 bg-bg-card rounded-xl border border-border text-xs">
+                  <div key={idx} className="p-3 bg-bg-card rounded-xl border border-border-theme text-xs">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold text-text-primary">{check.name}</span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent/15 text-accent">

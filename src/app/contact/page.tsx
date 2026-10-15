@@ -48,7 +48,7 @@ export default function ContactPage() {
     <>
       <Navbar />
       <main className="min-h-screen bg-bg-primary text-text-primary bg-grid-pattern pt-12 pb-24 px-4">
-        <div className="max-w-3xl mx-auto glass-panel p-8 sm:p-12 rounded-3xl border border-border shadow-2xl bg-bg-surface relative z-10">
+        <div className="max-w-3xl mx-auto glass-panel p-8 sm:p-12 rounded-3xl border border-border-theme shadow-2xl bg-bg-surface relative z-10">
           <div className="text-center mb-10">
             <h1 className="text-4xl sm:text-5xl font-black tracking-tight mb-4">Talk to Sales</h1>
             <p className="text-text-secondary text-lg">Tell us about your business and we'll help you find the best solution.</p>
@@ -61,7 +61,7 @@ export default function ContactPage() {
               </div>
               <h2 className="text-2xl font-bold mb-2">Message Sent Successfully!</h2>
               <p className="text-text-secondary">{status.message}</p>
-              <button onClick={() => setStatus({ type: null, message: '' })} className="mt-6 px-6 py-2 border border-border rounded-lg hover:bg-bg-card transition-colors">
+              <button onClick={() => setStatus({ type: null, message: '' })} className="mt-6 px-6 py-2 border border-border-theme rounded-lg hover:bg-bg-card transition-colors">
                 Send another message
               </button>
             </div>
@@ -76,28 +76,28 @@ export default function ContactPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label htmlFor="name" className="text-sm font-bold text-text-secondary block">Full Name *</label>
-                  <input type="text" id="name" name="name" required value={formData.name} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="John Doe" />
+                  <input type="text" id="name" name="name" required value={formData.name} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="John Doe" />
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="email" className="text-sm font-bold text-text-secondary block">Business Email *</label>
-                  <input type="email" id="email" name="email" required value={formData.email} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="john@club.com" />
+                  <input type="email" id="email" name="email" required value={formData.email} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="john@club.com" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label htmlFor="businessName" className="text-sm font-bold text-text-secondary block">Business Name *</label>
-                  <input type="text" id="businessName" name="businessName" required value={formData.businessName} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="Corner Pocket Club" />
+                  <input type="text" id="businessName" name="businessName" required value={formData.businessName} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="Corner Pocket Club" />
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="phone" className="text-sm font-bold text-text-secondary block">Phone Number *</label>
-                  <input type="tel" id="phone" name="phone" required value={formData.phone} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="+91 98765 43210" />
+                  <input type="tel" id="phone" name="phone" required value={formData.phone} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all" placeholder="+91 98765 43210" />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <label htmlFor="tables" className="text-sm font-bold text-text-secondary block">Number of Tables/Consoles</label>
-                <select id="tables" name="tables" value={formData.tables} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all">
+                <select id="tables" name="tables" value={formData.tables} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all">
                   <option value="">Select an option</option>
                   <option value="1-4">1 to 4</option>
                   <option value="5-9">5 to 9</option>
@@ -108,7 +108,7 @@ export default function ContactPage() {
 
               <div className="space-y-2">
                 <label htmlFor="message" className="text-sm font-bold text-text-secondary block">How can we help you?</label>
-                <textarea id="message" name="message" rows={4} value={formData.message} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all resize-y" placeholder="Tell us about your specific requirements..."></textarea>
+                <textarea id="message" name="message" rows={4} value={formData.message} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent transition-all resize-y" placeholder="Tell us about your specific requirements..."></textarea>
               </div>
 
               <button type="submit" disabled={isSubmitting} className="w-full px-8 py-4 bg-accent text-white font-bold rounded-xl text-lg hover:bg-accent/90 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-70 flex items-center justify-center gap-2">

@@ -31,7 +31,7 @@ interface CacheEntry {
 }
 const businessCache = new Map<string, CacheEntry>();
 const slugCache = new Map<string, { id: string, expiresAt: number }>();
-const CACHE_TTL_MS = 5000; // 5 seconds for rapid updates and instant synchronization
+const CACHE_TTL_MS = 60000; // 60 seconds (instant invalidation maintained via invalidateBusinessCache on any write)
 
 type InvalidationListener = (businessId?: string) => void;
 const cacheListeners = new Set<InvalidationListener>();

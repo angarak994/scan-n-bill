@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { businessManager } from '../businessManager';
 import { 
   resolveReportRange, 
   ReportPreset, 
@@ -222,12 +223,8 @@ export async function getFinancialReportsSummary(
   customEnd?: string,
   compareParam: boolean = true
 ): Promise<FinancialReportsSummary> {
-  // 1. Fetch business metadata (for authoritative timezone and name)
-  const { data: business } = await supabase
-    .from('businesses')
-    .select('id, business_name, pricing_rules')
-    .eq('id', businessId)
-    .single();
+  // 1. Fetch business metadata (Cached in memory with 60s TTL)
+  const business = await businessManager.getBusiness(businessId);
 
   const businessName = business?.business_name || 'QControl Gaming Club';
   const timezone = getBusinessTimezone(business) || DEFAULT_BUSINESS_TIMEZONE;
@@ -306,7 +303,7 @@ export async function getFinancialReportsSummary(
     // G. Prior ledger history (for dues roll-forward opening balance)
     supabase
       .from('payments')
-      .select('id, amount, status, metadata, payment_method, customer_id')
+      .select('amount, status, metadata')
       .eq('business_id', businessId)
       .lt('created_at', currentStartIso)
   ]);

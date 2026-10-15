@@ -17,7 +17,7 @@ export default function ProductShowcase() {
         </p>
       </div>
 
-      <div className="w-full rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col md:flex-row h-auto md:h-[600px] glass-panel relative">
+      <div className="w-full rounded-xl shadow-2xl border border-border-theme overflow-hidden flex flex-col md:flex-row h-auto md:h-[600px] glass-panel relative">
         {/* Sidebar Tabs */}
         <div className="w-full md:w-64 bg-bg-card border-b md:border-b-0 md:border-r border-border-light p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-visible">
           {['Tables', 'Sessions', 'Billing', 'Reports'].map(tab => (

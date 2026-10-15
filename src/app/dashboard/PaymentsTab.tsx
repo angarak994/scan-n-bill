@@ -271,7 +271,7 @@ export default function PaymentsTab() {
     }
 
     return (
-        <div className="mt-4 animate-in fade-in duration-300">
+        <div className="animate-in fade-in duration-300">
             {/* Header & Global Filters */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>

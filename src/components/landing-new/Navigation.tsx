@@ -228,11 +228,11 @@ export default function Navigation() {
          <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); setContactOpen(false); }}>
            <div>
              <label className="block text-sm font-medium text-text-secondary mb-1">Email</label>
-             <input type="email" required className="w-full bg-bg-base border border-border-strong rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent" placeholder="hello@club.com" />
+             <input type="email" required className="w-full bg-bg-base border border-border-theme-strong rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent" placeholder="hello@club.com" />
            </div>
            <div>
              <label className="block text-sm font-medium text-text-secondary mb-1">Message</label>
-             <textarea required rows={4} className="w-full bg-bg-base border border-border-strong rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent" placeholder="How can we help?"></textarea>
+             <textarea required rows={4} className="w-full bg-bg-base border border-border-theme-strong rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent" placeholder="How can we help?"></textarea>
            </div>
            <Button type="submit" variant="primary" className="w-full mt-2">Send Message</Button>
          </form>

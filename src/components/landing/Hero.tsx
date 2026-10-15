@@ -147,21 +147,21 @@ export default function Hero() {
         <div id="live-preview" className="w-full max-w-[1020px] mx-auto rounded-2xl overflow-hidden border border-border/80 bg-bg-surface glass-panel p-0 shadow-2xl transition-all duration-300">
           
           {/* Dashboard Header */}
-          <div className="w-full h-14 bg-bg-card flex items-center px-4 sm:px-6 border-b border-border z-20 relative justify-between">
+          <div className="w-full h-14 bg-bg-card flex items-center px-4 sm:px-6 border-b border-border-theme z-20 relative justify-between">
             <div className="flex items-center gap-3">
                <div className="w-7 h-7 bg-accent rounded-lg text-white flex items-center justify-center font-bold text-xs tracking-tighter shadow-sm">Q</div>
                <span className="font-bold font-mono tracking-tight text-sm text-text-primary">Corner Pocket Club</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
-              <div className="bg-bg-surface px-3 py-1 rounded-md text-xs font-semibold text-text-secondary font-mono border border-border">Live Interactive Preview</div>
+              <div className="bg-bg-surface px-3 py-1 rounded-md text-xs font-semibold text-text-secondary font-mono border border-border-theme">Live Interactive Preview</div>
             </div>
           </div>
           
           <div className="relative w-full p-0 flex flex-col sm:flex-row bg-bg-surface">
             
             {/* Interactive Sidebar */}
-            <div className="w-full sm:w-56 flex flex-col bg-bg-card border-r border-border p-4 gap-1 z-10 shrink-0">
+            <div className="w-full sm:w-56 flex flex-col bg-bg-card border-r border-border-theme p-4 gap-1 z-10 shrink-0">
               
               {tabs.map(tab => (
                 <button 

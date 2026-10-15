@@ -106,13 +106,18 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    try {
-      const { logActivityToSheet } = require('@/lib/googleSheets');
-      await logActivityToSheet('PROMOTION_CREATED', {
-        user: 'Club Owner',
-        details: `${initialStatus === 'Scheduled' ? 'Scheduled' : 'Launched'} ${title} (${discount_percent}% off)`
-      }, sessionCookie.businessId);
-    } catch (e) {}
+    // Log to Google Sheets (Non-blocking background dispatch)
+    Promise.resolve().then(async () => {
+      try {
+        const { logActivityToSheet } = require('@/lib/googleSheets');
+        await logActivityToSheet('PROMOTION_CREATED', {
+          user: 'Club Owner',
+          details: `${initialStatus === 'Scheduled' ? 'Scheduled' : 'Launched'} ${title} (${discount_percent}% off)`
+        }, sessionCookie.businessId);
+      } catch (e) {
+        console.error('Non-blocking sheet log error:', e);
+      }
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, promotion: data });
   } catch (error: any) {

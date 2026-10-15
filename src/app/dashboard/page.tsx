@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { EnhancedTableView } from './EnhancedTableView';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
 import { toast } from 'react-hot-toast';
+import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles } from 'lucide-react';
 import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
@@ -850,13 +851,13 @@ function DashboardContent() {
         if (action === 'confirm_playing') {
           setOverdueSession(null);
         } else if (action === 'pause') {
-          toast.success('✓ Session paused successfully.');
+          toast.success('Session paused successfully.');
         } else if (action === 'resume') {
-          toast.success('✓ Session resumed.');
+          toast.success('Session resumed.');
         } else if (action === 'force_end') {
-          toast.success('✓ Session ended successfully.');
+          toast.success('Session ended successfully.');
         } else if (action === 'transfer') {
-          toast.success('✓ Table transferred.');
+          toast.success('Table transferred.');
         }
         return dataJson;
       } else {
@@ -882,7 +883,7 @@ function DashboardContent() {
       });
       if (res.ok) {
         // fetchData removed
-        toast.success('✓ Booking started successfully.');
+        toast.success('Booking started successfully.');
       } else {
         const error = await res.json();
         toast.error(error.error || "We couldn't start the session. Please try again.");
@@ -905,7 +906,7 @@ function DashboardContent() {
           ...prev, 
           bookings: prev.bookings?.map(b => b.id === bookingId ? { ...b, status } : b)
         } : prev);
-        toast.success('✓ Booking updated.');
+        toast.success('Booking updated.');
       } else {
         const error = await res.json().catch(() => ({}));
         toast.error(error.error || "Failed to update booking.");
@@ -944,7 +945,7 @@ function DashboardContent() {
       if (!res.ok) {
         throw new Error(resData?.error || 'Failed to update business configuration');
       }
-      toast.success(`Lazy Mode ${newVal ? 'ON ⚡' : 'OFF'}`);
+      toast.success(`Lazy Mode ${newVal ? 'ON' : 'OFF'}`);
     } catch (e: any) {
       setData(prev => prev ? { ...prev, pricingRules: previousRules } : prev);
       toast.error(e?.message || 'Network error. Failed to toggle Lazy Mode.');
@@ -983,7 +984,7 @@ function DashboardContent() {
             activeSessions: exists ? prev.activeSessions.map(s => s.id === result.id ? result : s) : [...prev.activeSessions, result]
           };
         });
-        toast.success('✓ Session created successfully.');
+        toast.success('Session created successfully.');
         setIsClosingManual(true);
         setTimeout(() => {
           setIsManualModalOpen(false);
@@ -1040,7 +1041,7 @@ function DashboardContent() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        toast.success('✓ Business settings & PS5 config updated successfully.');
+        toast.success('Business settings & PS5 config updated successfully.');
         setData(prev => prev ? {
           ...prev,
           pricingRules: newRules !== undefined ? newRules : prev.pricingRules,
@@ -1060,7 +1061,7 @@ function DashboardContent() {
     if (!data) return;
     const existingRules = data.pricingRules?.rules || {};
     if (existingRules['ps5']) {
-      toast.success('✓ PS5 support is already enabled!');
+      toast.success('PS5 support is already enabled!');
       return;
     }
     const updatedRules = {
@@ -1282,7 +1283,7 @@ function DashboardContent() {
             bookings: exists ? bookings.map(b => b.id === result.booking.id ? result.booking : b) : [...bookings, result.booking]
           };
         });
-        toast.success('✓ Manual booking created.');
+        toast.success('Manual booking created.');
         setIsClosingBooking(true);
         setTimeout(() => {
           setIsBookingModalOpen(false);
@@ -1486,7 +1487,7 @@ function DashboardContent() {
         setVerificationMode('otp');
         fetchMemberships();
         fetchMembershipPlans();
-        toast.success(data.message || '✓ Customer profile created.');
+        toast.success(data.message || 'Customer profile created.');
       } else {
         toast.error(data.error || "Failed to create customer profile.");
       }
@@ -1506,7 +1507,7 @@ function DashboardContent() {
         body: JSON.stringify({ id })
       });
       if (res.ok) {
-        toast.success(`✓ Customer profile for ${name} deleted.`);
+        toast.success(`Customer profile for ${name} deleted.`);
         fetchMemberships();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -1545,7 +1546,7 @@ function DashboardContent() {
       if (res.ok) {
         setEditSession(null);
         // fetchData removed
-        toast.success('✓ Settings updated.');
+        toast.success('Settings updated.');
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err.error || "Failed to update session settings.");
@@ -1644,7 +1645,7 @@ function DashboardContent() {
         }
         const targetLabel = selectedTable === 'all' ? 'All Tables' : (data?.tables?.find(t => t.id === selectedTable)?.name || selectedTable);
         const valLabel = discountType === 'percentage' ? `${discountPercent}%` : `₹${discountFixedAmount}`;
-        toast.success(`✓ ${valLabel} discount applied to ${targetLabel}`);
+        toast.success(`${valLabel} discount applied to ${targetLabel}`);
         setSelectedTable('');
         setMaxDiscountCap('');
         setMinBillAmount('');
@@ -1674,7 +1675,7 @@ function DashboardContent() {
           setData({ ...data, activeDiscounts: json.active_discounts });
         }
         const targetLabel = tableId === 'all' ? 'All Tables' : (data?.tables?.find(t => t.id === tableId)?.name || tableId);
-        toast.success(`✓ Removed discount for ${targetLabel}`);
+        toast.success(`Removed discount for ${targetLabel}`);
       } else {
         toast.error(json.error || 'Could not remove discount.');
       }
@@ -1718,7 +1719,7 @@ function DashboardContent() {
           ...prev,
           activePromotions: [resData.promotion, ...(prev.activePromotions || [])]
         } : prev);
-        toast.success('✓ Promotion scheduled/launched successfully.');
+        toast.success('Promotion scheduled/launched successfully.');
         setPromoTitle('');
         setPromoDiscount('40');
         setPromoTimeSlotEnabled(false);
@@ -2689,7 +2690,7 @@ function DashboardContent() {
   const renderTables = () => {
     if ((preferences as any).enhanced_tables) {
       return (
-        <div className="flex flex-col mt-2">
+        <div className="flex flex-col">
           <EnhancedTableView
             layoutToggleNode={
               <div className="flex items-center gap-2 bg-bg-card border border-border-theme p-1 rounded-lg shadow-sm">
@@ -2987,8 +2988,9 @@ function DashboardContent() {
                     <div>
                       <p className="text-sm font-bold text-text-primary">{m.name}</p>
                       {m.mobile && (
-                        <a href={`tel:${m.mobile}`} className="text-xs font-mono text-accent hover:underline flex items-center gap-1">
-                          📞 {m.mobile}
+                        <a href={`tel:${m.mobile}`} className="text-xs font-mono text-accent hover:underline flex items-center gap-1.5">
+                          <Phone className="w-3 h-3 text-accent shrink-0" />
+                          <span>{m.mobile}</span>
                         </a>
                       )}
                     </div>
@@ -3021,18 +3023,18 @@ function DashboardContent() {
                       <button
                         type="button"
                         onClick={() => setSelectedMemberProfile(m)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left shadow-sm min-h-[36px]"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left shadow-sm min-h-[36px]"
                       >
-                        <span>🛡️</span>
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         <span>Owner Approved</span>
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => setSelectedMemberProfile(m)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left shadow-sm min-h-[36px]"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wide border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left shadow-sm min-h-[36px]"
                       >
-                        <span>📱</span>
+                        <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         <span>OTP Verified</span>
                       </button>
                     )}
@@ -3126,7 +3128,7 @@ function DashboardContent() {
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-all text-left shadow-sm min-h-[32px]"
                           title="Manually approved by owner (Phone unverified). Click for audit info."
                         >
-                          <span>🛡️</span>
+                          <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                           <span>Owner Approved</span>
                         </button>
                       ) : (
@@ -3136,7 +3138,7 @@ function DashboardContent() {
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all text-left shadow-sm min-h-[32px]"
                           title="Verified via Phone OTP. Click for details."
                         >
-                          <span>📱</span>
+                          <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                           <span>OTP Verified</span>
                         </button>
                       )}
@@ -3256,7 +3258,8 @@ function DashboardContent() {
                   : 'text-text-secondary hover:text-text-primary'
               }`}
             >
-              <span>📱</span> Verify via OTP
+              <Smartphone className="w-3.5 h-3.5 shrink-0" />
+              <span>Verify via OTP</span>
             </button>
             {isAuthorized && (
               <button
@@ -3269,7 +3272,8 @@ function DashboardContent() {
                 }`}
                 title="Only authenticated owners/permitted staff can approve members manually"
               >
-                <span>🛡️</span> Owner Approval
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Owner Approval</span>
               </button>
             )}
           </div>
@@ -3400,7 +3404,8 @@ function DashboardContent() {
               <form onSubmit={handleCreateMembership} className="max-w-xl grid grid-cols-2 gap-4">
                 <div className="col-span-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between text-xs text-emerald-400">
                   <span className="flex items-center gap-2 font-bold">
-                    <span>✓</span> Mobile verified successfully via OTP
+                    <Check className="w-4 h-4 text-accent" />
+                    <span>Mobile verified successfully via OTP</span>
                   </span>
                   <span className="font-mono text-text-primary">{newMember.mobile}</span>
                 </div>
@@ -3448,7 +3453,7 @@ function DashboardContent() {
             {/* Audit & Compliance Disclosure Banner */}
             <div className="col-span-2 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                <span>🛡️</span>
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>Verify Manually — Customer Known to Owner</span>
               </div>
               <p className="text-xs text-text-secondary leading-relaxed">
@@ -3530,7 +3535,10 @@ function DashboardContent() {
                     <span>Approving Member...</span>
                   </>
                 ) : (
-                  <span>🛡️ Confirm & Approve Membership</span>
+                  <span className="flex items-center justify-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Confirm & Approve Membership</span>
+                  </span>
                 )}
               </button>
             </div>
@@ -3568,12 +3576,14 @@ function DashboardContent() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Verification Method</span>
                   {selectedMemberProfile.verification_method === 'MANUAL_OWNER_VERIFICATION' ? (
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                      🛡️ Owner Approved
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Owner Approved</span>
                     </span>
                   ) : (
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      📱 Phone OTP Verified
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>Phone OTP Verified</span>
                     </span>
                   )}
                 </div>
@@ -3582,7 +3592,7 @@ function DashboardContent() {
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Phone Number Status:</span>
                     <span className="font-semibold text-text-primary">
-                      {selectedMemberProfile.is_phone_verified ? '✓ Verified via SMS' : '⚠️ Unverified (Owner Override)'}
+                      {selectedMemberProfile.is_phone_verified ? 'Verified via SMS' : 'Unverified (Owner Override)'}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -3646,7 +3656,7 @@ function DashboardContent() {
   );
 
   const renderSettings = () => (
-    <div className="max-w-5xl mx-auto flex flex-col gap-8 mt-4 pb-20 px-3 sm:px-6 md:px-0">
+    <div className="w-full flex flex-col gap-8 pb-20">
       <div className="mb-2">
         <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">{t('settings', 'Settings')}</h1>
         <p className="text-text-secondary text-xs sm:text-sm">Configure your business profile, language preferences, pricing rules, and security preferences.</p>
@@ -3657,7 +3667,8 @@ function DashboardContent() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-border-theme pb-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5">
-              <span>🌐</span> {t('language', 'Language')} & Regional Preferences
+              <Globe className="w-5 h-5 text-accent" />
+              <span>{t('language', 'Language')} & Regional Preferences</span>
             </h2>
             <p className="text-text-secondary text-xs sm:text-sm mt-1">
               Choose your preferred interface language. Changes reflect across the dashboard and bot immediately.
@@ -3901,9 +3912,9 @@ function DashboardContent() {
             </div>
           </div>
           {data?.pricingRules?.globalSettings?.preferences?.business_upi_id ? (
-            <p className="text-xs text-accent font-bold mt-1">✓ UPI payments active</p>
+            <p className="text-xs text-accent font-bold mt-1 inline-flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> UPI payments active</p>
           ) : (
-            <p className="text-xs text-warning font-bold mt-1">⚠️ Please configure your UPI ID</p>
+            <p className="text-xs text-warning font-bold mt-1 inline-flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Please configure your UPI ID</p>
           )}
         </div>
       </div>
@@ -3925,7 +3936,7 @@ function DashboardContent() {
               body: JSON.stringify({ business_id: businessId, goals })
             });
             if (res.ok) {
-              toast.success('✓ Settings updated.');
+              toast.success('Settings updated.');
             } else {
               const errJson = await res.json().catch(() => ({}));
               toast.error(errJson.error || "Failed to save goals.");
@@ -3961,8 +3972,9 @@ function DashboardContent() {
                       + Enable PS5 Support
                     </button>
                   ) : (
-                    <span className="px-3 py-1.5 rounded-md text-xs font-bold font-mono tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">
-                      ✓ PS5 Natively Active
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono tracking-widest border border-accent/50 text-accent bg-accent/10 uppercase shadow-sm">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>PS5 Natively Active</span>
                     </span>
                   )}
                 </div>
@@ -4564,7 +4576,7 @@ function DashboardContent() {
                       onChange={v => setSelectedTable(v)}
                       placeholder="-- Select Table or All Tables --"
                       options={[
-                        { value: 'all', label: '🌟 All Tables (Global Concession)' },
+                        { value: 'all', label: 'All Tables (Global Concession)' },
                         ...(data.tables?.map(t => ({ value: t.id, label: `${t.name} (${t.type.toUpperCase()})` })) || [])
                       ]}
                       className="font-semibold min-h-[44px]"
@@ -4756,8 +4768,9 @@ function DashboardContent() {
                             )}
 
                             {previewRes.minBillShortfall && previewRes.minBillShortfall > 0 ? (
-                              <div className="mt-2 p-2 rounded bg-warning/10 border border-warning/30 text-[11px] text-warning leading-snug">
-                                ⚠️ Sample bill (₹{sampleTotalBase}) is below the ₹{minBillAmount} minimum threshold. Concession will not trigger until threshold is reached.
+                              <div className="mt-2 p-2 rounded bg-warning/10 border border-warning/30 text-[11px] text-warning leading-snug flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                <span>Sample bill (₹{sampleTotalBase}) is below the ₹{minBillAmount} minimum threshold. Concession will not trigger until threshold is reached.</span>
                               </div>
                             ) : null}
                           </div>
@@ -5097,8 +5110,9 @@ function DashboardContent() {
                     <span className="text-xs text-text-secondary font-medium">/ {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}</span>
                   </div>
                   {plan.benefits && plan.benefits.length > 0 && (
-                    <p className="text-xs text-text-secondary leading-relaxed bg-bg-surface p-2 rounded border border-border-theme/60">
-                      🎁 {(plan.benefits || []).join(', ')}
+                    <p className="text-xs text-text-secondary leading-relaxed bg-bg-surface p-2 rounded border border-border-theme/60 flex items-center gap-1.5">
+                      <Gift className="w-3.5 h-3.5 text-accent shrink-0" />
+                      <span>{(plan.benefits || []).join(', ')}</span>
                     </p>
                   )}
                   <div className="flex justify-end pt-1">
@@ -5197,7 +5211,7 @@ function DashboardContent() {
   );
 
   const renderSupport = () => (
-    <div className="max-w-7xl mx-auto flex flex-col gap-12 mt-4 pb-20 px-4 md:px-8">
+    <div className="w-full flex flex-col gap-8 pb-20">
       <div>
         <h1 className="text-4xl font-black tracking-tight mb-3">Support & Integrations</h1>
         <p className="text-text-secondary text-base max-w-3xl leading-relaxed">Manage your connectivity, communication channels, and get help when you need it. Ensure your automated reminders and billing integrations are correctly configured.</p>
@@ -5234,7 +5248,7 @@ function DashboardContent() {
         <div className="bg-bg-card border border-border-theme rounded-2xl p-6 flex items-center justify-between shadow-sm hover:border-accent/50 transition-colors">
           <div className="flex items-center gap-5">
             <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-500 shadow-inner">
-              <span className="text-2xl">🤖</span>
+              <Bot className="w-7 h-7 text-blue-400" />
             </div>
             <div>
               <h3 className="font-extrabold text-text-primary text-lg">Telegram Bot</h3>
@@ -5402,7 +5416,8 @@ function DashboardContent() {
       {/* Telegram Automation UI */}
       <div className="flex flex-col gap-6 mt-4">
         <h2 className="text-2xl font-black flex items-center gap-3">
-          <span>🤖</span> Automation & Notifications
+          <Bot className="w-6 h-6 text-accent" />
+          <span>Automation & Notifications</span>
         </h2>
         
         <div className="bg-bg-card border border-border-theme rounded-2xl overflow-hidden shadow-sm transition-all hover:shadow-md">
@@ -5555,14 +5570,14 @@ function DashboardContent() {
           </div>
   
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-            <button onClick={() => toast('Comprehensive documentation is being prepared for the new update.', { icon: '📚' })} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-xl hover:shadow-accent/5 transition-all group flex flex-col items-start w-full text-left">
+            <button onClick={() => toast('Comprehensive documentation is being prepared for the new update.')} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-accent hover:shadow-xl hover:shadow-accent/5 transition-all group flex flex-col items-start w-full text-left">
               <div className="w-14 h-14 bg-accent/10 rounded-2xl flex items-center justify-center text-accent mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-inner">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
               </div>
               <h3 className="font-extrabold text-text-primary text-xl mb-2">Documentation</h3>
               <p className="text-sm text-text-secondary leading-relaxed">Read guides & tutorials on using QControl.</p>
             </button>
-            <button onClick={() => toast('IoT Hardware integration is currently in private beta. Contact support to enable.', { icon: '🔌' })} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5 transition-all group flex flex-col items-start w-full text-left">
+            <button onClick={() => toast('IoT Hardware integration is currently in private beta. Contact support to enable.')} className="p-8 rounded-2xl border border-border-theme bg-bg-surface hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5 transition-all group flex flex-col items-start w-full text-left">
               <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-inner">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
               </div>
@@ -5604,7 +5619,7 @@ function DashboardContent() {
               <h3 className="text-2xl font-black text-text-primary mb-2">Need direct help?</h3>
               <p className="text-sm text-text-secondary mb-8">Send us a message and our support team will get back to you within 24 hours.</p>
               
-              <form onSubmit={(e) => { e.preventDefault(); toast.success("Support request sent! Our team will contact you shortly.", { icon: '✉️' }); e.currentTarget.reset(); }} className="flex flex-col gap-5 flex-1">
+              <form onSubmit={(e) => { e.preventDefault(); toast.success("Support request sent! Our team will contact you shortly."); e.currentTarget.reset(); }} className="flex flex-col gap-5 flex-1">
                 <input type="text" placeholder="Subject" className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm outline-none font-medium input-premium" required />
                 <textarea placeholder="Describe your issue in detail..." rows={6} className="w-full px-5 py-4 bg-bg-surface border border-border-theme rounded-xl text-sm outline-none resize-none font-medium input-premium" required></textarea>
                 <button type="submit" className="mt-auto py-4 bg-text-primary text-bg-primary font-black uppercase tracking-widest text-sm rounded-xl shadow-[0_4px_15px_rgba(255,255,255,0.2)] flex justify-center items-center gap-2 btn-premium">
@@ -5714,7 +5729,7 @@ function DashboardContent() {
                   />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 text-xs text-center border-2 border-dashed border-gray-300 rounded-lg p-3 gap-1.5">
-                    <span className="text-2xl">⚠️</span>
+                    <AlertTriangle className="w-8 h-8 text-amber-400 stroke-[1.75]" />
                     <span className="font-bold text-gray-800">UPI Not Configured</span>
                     <span className="text-[10px] text-gray-500">Add business UPI ID in Settings to generate dynamic payment QR codes.</span>
                   </div>
@@ -6056,24 +6071,6 @@ function DashboardContent() {
 
           <div className="my-0.5 mx-2 h-px bg-border-theme/30 shrink-0" />
 
-          {/* Settings */}
-          <button 
-            onClick={() => setSidebarTab('settings')} 
-            title={isSidebarCollapsed ? t('settings', 'Settings') : undefined}
-            className={`group relative touch-target flex items-center ${isSidebarCollapsed ? 'justify-center w-10 h-10 mx-auto' : 'gap-3 px-3.5 py-2 w-full'} rounded-xl font-medium text-xs transition-all duration-150 ${sidebarTab === 'settings' ? 'bg-accent/12 text-accent font-semibold border border-accent/25 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'text-text-secondary hover:text-text-primary hover:bg-bg-card/75 border border-transparent'}`}
-          >
-            {sidebarTab === 'settings' && !isSidebarCollapsed && (
-              <span className="absolute left-1 top-1.5 bottom-1.5 w-1 bg-accent rounded-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
-            )}
-            {sidebarTab === 'settings' && isSidebarCollapsed && (
-              <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-4 bg-accent rounded-r-full shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
-            )}
-            <span className={`shrink-0 transition-colors duration-150 ${sidebarTab === 'settings' ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'}`}>
-              <IconSettings />
-            </span>
-            {!isSidebarCollapsed && <span className="truncate">{t('settings', 'Settings')}</span>}
-          </button>
-
           {/* Subscription */}
           <button 
             onClick={() => setSidebarTab('subscription')} 
@@ -6118,25 +6115,19 @@ function DashboardContent() {
         {/* Header */}
         <header className="px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 flex justify-between items-center border-b border-border-theme sticky top-0 bg-bg-primary/95 backdrop-blur z-20">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            {/* Mobile Hamburger Menu (< 768px) */}
-            <button 
-              className="md:hidden touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card transition-colors shrink-0"
-              onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open mobile menu"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-            </button>
-            {/* Tablet & Desktop Sidebar Collapse Toggle */}
-            <button
-              className="hidden md:flex touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card transition-colors shrink-0"
-              onClick={toggleSidebarCollapse}
-              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isSidebarCollapsed ? "M13 5l7 7-7 7M5 5l7 7-7 7" : "M11 19l-7-7 7-7m8 14l-7-7 7-7"} />
-              </svg>
-            </button>
+            {/* Desktop Sidebar Expand Toggle (Shown only when sidebar is collapsed into rail) */}
+            {isSidebarCollapsed && (
+              <button
+                className="hidden md:flex touch-target p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-card transition-colors shrink-0"
+                onClick={toggleSidebarCollapse}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
             <div className="min-w-0">
               {sidebarTab === 'overview' ? (
                 <div>
@@ -6296,7 +6287,7 @@ function DashboardContent() {
         </header>
 
         {/* Content Area */}
-        <div className="p-6 md:p-10 max-w-[1440px] mx-auto w-full flex flex-col gap-8 pb-20">
+        <div className="px-4 sm:px-6 lg:px-8 py-6 w-full flex flex-col gap-6 pb-24">
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
@@ -6307,9 +6298,10 @@ function DashboardContent() {
                 <div className="flex justify-end">
                   <button
                     onClick={() => setUseLegacyReports(false)}
-                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent/90 transition-colors shadow-sm"
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent text-black hover:bg-accent/90 transition-colors shadow-sm inline-flex items-center"
                   >
-                    ✨ Switch to Redesigned Reports
+                    <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                    Switch to Redesigned Reports
                   </button>
                 </div>
                 {renderReports()}

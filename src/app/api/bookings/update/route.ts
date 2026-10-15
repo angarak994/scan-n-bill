@@ -46,16 +46,18 @@ export async function POST(request: Request) {
       throw new Error(updateError.message);
     }
 
-    // Log to Google Sheets
-    try {
-      await logActivityToSheet(`BOOKING_${status.toUpperCase()}`, {
-        user: 'System',
-        table: booking.table_id,
-        details: `Booking ${booking.id} marked as ${status} for ${booking.customer_name}`
-      }, business_id);
-    } catch (e) {
-      console.error('Failed to log to Google Sheets', e);
-    }
+    // Log to Google Sheets (Non-blocking background dispatch)
+    Promise.resolve().then(async () => {
+      try {
+        await logActivityToSheet(`BOOKING_${status.toUpperCase()}`, {
+          user: 'System',
+          table: booking.table_id,
+          details: `Booking ${booking.id} marked as ${status} for ${booking.customer_name}`
+        }, business_id);
+      } catch (e) {
+        console.error('Failed to log to Google Sheets', e);
+      }
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, status });
   } catch (error: any) {
