@@ -32,7 +32,7 @@ export function Tooltip({ text, children }: { text: string, children: React.Reac
   );
 }
 
-export function CustomSelect({ value, onChange, options, className, placeholder }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], className?: string, placeholder?: string }) {
+export function CustomSelect({ value, onChange, options, className, placeholder, emptyMessage }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], className?: string, placeholder?: string, emptyMessage?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,25 +40,51 @@ export function CustomSelect({ value, onChange, options, className, placeholder 
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
-  const selectedLabel = options.find(o => o.value === value)?.label || placeholder || value;
+  const selectedOption = options.find(o => o.value === value);
+  const selectedLabel = selectedOption?.label || placeholder || value;
 
   return (
     <div className="relative w-full" ref={ref}>
-      <button type="button" onClick={() => setIsOpen(!isOpen)} className={`flex justify-between items-center w-full text-left bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary px-4 py-3 min-h-[44px] ${className || ''}`}>
+      <button 
+        type="button" 
+        onClick={() => setIsOpen(!isOpen)} 
+        aria-expanded={isOpen}
+        className={`flex justify-between items-center w-full text-left bg-bg-primary border border-border-theme rounded-lg focus:border-accent outline-none text-sm text-text-primary px-4 py-3 min-h-[44px] transition-colors ${className || ''}`}
+      >
         <span className="truncate">{selectedLabel}</span>
-        <svg className={`w-4 h-4 text-text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+        <svg className={`w-4 h-4 text-text-secondary transition-transform shrink-0 ml-2 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
       </button>
       {isOpen && (
         <div className="absolute top-full left-0 w-full mt-1 bg-bg-surface border border-border-theme rounded-lg shadow-xl z-[9999] max-h-60 overflow-y-auto overflow-x-hidden custom-scrollbar">
-          {options.map((opt, i) => (
-            <div key={i} onClick={() => { onChange(opt.value); setIsOpen(false); }} className={`px-4 py-3 text-sm cursor-pointer hover:bg-bg-primary transition-colors ${value === opt.value ? 'text-accent font-bold bg-accent/5' : 'text-text-primary'}`}>
-              {opt.label}
+          {options.length === 0 ? (
+            <div className="px-4 py-4 text-xs text-text-secondary text-center font-medium">
+              {emptyMessage || 'No options available'}
             </div>
-          ))}
+          ) : (
+            options.map((opt, i) => (
+              <div 
+                key={i} 
+                onClick={() => { onChange(opt.value); setIsOpen(false); }} 
+                className={`px-4 py-3 text-sm cursor-pointer hover:bg-bg-primary transition-colors flex items-center justify-between ${value === opt.value ? 'text-accent font-bold bg-accent/5' : 'text-text-primary'}`}
+              >
+                <span>{opt.label}</span>
+                {value === opt.value && (
+                  <svg className="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
+                )}
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

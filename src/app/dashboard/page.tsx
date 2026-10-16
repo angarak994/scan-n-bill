@@ -989,21 +989,35 @@ function DashboardContent() {
     }
   };
 
-  const handleManualStart = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalCustomer = isLazyModeEnabled ? 'Guest' : manualCustomer;
-    const finalCustomerId = isLazyModeEnabled ? null : manualCustomerId;
+  const handleManualStart = async (e?: React.FormEvent, forceGuest = false) => {
+    if (e) e.preventDefault();
+    const finalCustomer = (isLazyModeEnabled || forceGuest) ? 'Guest' : (manualCustomer.trim() || 'Guest');
+    const finalCustomerId = (isLazyModeEnabled || forceGuest) ? null : manualCustomerId;
 
-    if (!manualTable || !finalCustomer || !businessId) return;
+    const targetTable = manualTable || (data?.tables?.find(t => 
+      !data.activeSessions?.some(s => 
+        String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase() ||
+        String(s.table_id || '').trim().toLowerCase() === String(t.name || '').trim().toLowerCase()
+      )
+    )?.id);
+
+    if (!targetTable) {
+      toast.error('No table selected or available.');
+      return;
+    }
+    if (!businessId) {
+      toast.error('Business ID missing.');
+      return;
+    }
     setIsStartingManual(true);
     try {
       const res = await fetch('/api/start-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          table_id: manualTable, 
-          game_type: manualGame, 
-          num_players: Number(manualPlayers), 
+          table_id: targetTable, 
+          game_type: manualGame || 'pool', 
+          num_players: Number(manualPlayers || '1'), 
           customer_name: finalCustomer, 
           business_id: businessId, 
           notes: manualNotes, 
@@ -1056,6 +1070,64 @@ function DashboardContent() {
     const assigned = t.type.split(/[,/]/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
     return assigned.length > 0 ? assigned : Object.keys(data?.pricingRules?.rules || { pool: {} });
   };
+
+  const availableTableOptions = useMemo(() => {
+    if (!data?.tables) return [];
+    const options = data.tables
+      .filter(t => {
+        if (manualTable && (t.id === manualTable || t.name === manualTable)) return true;
+        return !data.activeSessions?.some(s => 
+          String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase() ||
+          String(s.table_id || '').trim().toLowerCase() === String(t.name || '').trim().toLowerCase()
+        );
+      })
+      .map(t => ({ value: t.id, label: `${t.name} (${t.type || 'Standard'})` }));
+
+    if (manualTable && !options.some(o => o.value === manualTable)) {
+      const match = data.tables.find(t => t.id === manualTable || t.name === manualTable);
+      if (match) {
+        options.unshift({ value: match.id, label: `${match.name} (${match.type || 'Standard'})` });
+      }
+    }
+    return options;
+  }, [data?.tables, data?.activeSessions, manualTable]);
+
+  const manualGameOptions = useMemo(() => {
+    const available = getAvailableGameTypesForTable(manualTable);
+    const types = available.length > 0 ? available : ['pool', 'snooker', 'ps5'];
+    return types.map(type => ({
+      value: type,
+      label: type.charAt(0).toUpperCase() + type.slice(1)
+    }));
+  }, [manualTable, data?.tables, data?.pricingRules]);
+
+  useEffect(() => {
+    if (!isManualModalOpen) return;
+    if (!manualTable && data?.tables) {
+      const freeTable = data.tables.find(t => 
+        !data.activeSessions?.some(s => 
+          String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase() ||
+          String(s.table_id || '').trim().toLowerCase() === String(t.name || '').trim().toLowerCase()
+        )
+      );
+      if (freeTable) {
+        setManualTable(freeTable.id);
+        const allowed = getAvailableGameTypesForTable(freeTable.id);
+        if (allowed.length > 0 && !allowed.includes(manualGame)) {
+          setManualGame(allowed[0]);
+        }
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsManualModalOpen(false);
+        setSelectedQkhataMember(null);
+        setShowQkhataPopover(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isManualModalOpen, manualTable, data?.tables, data?.activeSessions]);
 
   const handleSaveConfig = async (newRules?: any, newTables?: any[], googleSheetId?: string, businessProfile?: any) => {
     if (!businessId) return;
@@ -6806,7 +6878,8 @@ function DashboardContent() {
                       }
                     }}
                     placeholder={t('choose_table', '-- Choose table --')}
-                    options={data.tables?.filter(t => !data.activeSessions.some(s => String(s.table_id || '').trim().toLowerCase() === String(t.id || '').trim().toLowerCase())).map(t => ({ value: t.id, label: `${t.name} (${t.type})` })) || []}
+                    emptyMessage={t('no_available_tables', 'No tables currently available')}
+                    options={availableTableOptions}
                     className="min-h-[48px]"
                   />
                 </div>
@@ -6815,7 +6888,9 @@ function DashboardContent() {
                   <CustomSelect 
                     value={manualGame} 
                     onChange={v => setManualGame(v)} 
-                    options={getAvailableGameTypesForTable(manualTable).map(type => ({ value: type, label: type.charAt(0).toUpperCase() + type.slice(1) }))}
+                    placeholder={t('choose_game', '-- Choose game --')}
+                    emptyMessage={t('no_game_types', 'No game types configured')}
+                    options={manualGameOptions}
                     className="capitalize min-h-[48px]" 
                   />
                 </div>
@@ -6867,19 +6942,38 @@ function DashboardContent() {
 
               {/* Sticky Submit Footer */}
               <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-5">
-                <button type="submit" disabled={isStartingManual || !manualTable} className="w-full bg-accent text-black font-black py-3.5 px-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_15px_rgba(var(--accent),0.4)] flex items-center justify-center gap-2 btn-premium min-h-[44px] touch-target uppercase tracking-wider text-xs">
-                  {isStartingManual ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-                      {t('starting', 'Starting...')}
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      {t('start_session', 'Start Session')}
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleManualStart(undefined, true)}
+                    disabled={isStartingManual || (!manualTable && availableTableOptions.length === 0)}
+                    className="flex-1 bg-bg-card hover:bg-bg-primary text-accent border border-accent/40 font-black py-3.5 px-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px] touch-target uppercase tracking-wider text-xs shadow-sm hover:border-accent active:scale-98"
+                    title="Start instantly as Guest with 1 click"
+                  >
+                    <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>{t('quick_guest_start', '⚡ Quick Start (Guest)')}</span>
+                  </button>
+
+                  <button 
+                    type="submit" 
+                    disabled={isStartingManual || (!manualTable && availableTableOptions.length === 0)} 
+                    className="flex-1 bg-accent text-black font-black py-3.5 px-4 rounded-xl hover:bg-accent/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_15px_rgba(var(--accent),0.4)] flex items-center justify-center gap-2 btn-premium min-h-[44px] touch-target uppercase tracking-wider text-xs active:scale-98"
+                  >
+                    {isStartingManual ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                        {t('starting', 'Starting...')}
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        {t('start_session', 'Start Session')}
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -6921,6 +7015,7 @@ function DashboardContent() {
                       if (allowed.length > 0) setBookingGame(allowed[0]);
                     }}
                     placeholder={`-- ${t('choose_table')} --`}
+                    emptyMessage={t('no_tables_found', 'No tables found')}
                     options={data?.tables?.map((t: any) => ({ value: t.id, label: `${t.name} (${t.type || t.id})` })) || []}
                     className="min-h-[44px]"
                   />

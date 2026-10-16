@@ -108,6 +108,10 @@ export interface Translations {
   overdue: string;
   select_table: string;
   choose_table: string;
+  no_available_tables: string;
+  choose_game: string;
+  no_game_types: string;
+  quick_guest_start: string;
   players: string;
   player_1: string;
   player_2: string;
@@ -319,6 +323,10 @@ export const translations: Record<SupportedLanguage, Translations> = {
     overdue: "Overdue",
     select_table: "Select Table",
     choose_table: "-- Choose table --",
+    no_available_tables: "No tables currently available",
+    choose_game: "-- Choose game --",
+    no_game_types: "No game types configured",
+    quick_guest_start: "⚡ Quick Start (Guest)",
     players: "Players",
     player_1: "1 Player",
     player_2: "2 Players",
@@ -529,6 +537,10 @@ export const translations: Record<SupportedLanguage, Translations> = {
     overdue: "अतिदेय",
     select_table: "टेबल चुनें",
     choose_table: "-- टेबल चुनें --",
+    no_available_tables: "कोई टेबल उपलब्ध नहीं है",
+    choose_game: "-- गेम चुनें --",
+    no_game_types: "कोई गेम कॉन्फ़िगर नहीं है",
+    quick_guest_start: "⚡ त्वरित शुरुआत (अतिथि)",
     players: "खिलाड़ी",
     player_1: "1 खिलाड़ी",
     player_2: "2 खिलाड़ी",
@@ -739,6 +751,10 @@ export const translations: Record<SupportedLanguage, Translations> = {
     overdue: "थकबाकी",
     select_table: "टेबल निवडा",
     choose_table: "-- टेबल निवडा --",
+    no_available_tables: "सध्या कोणताही टेबल उपलब्ध नाही",
+    choose_game: "-- खेळ निवडा --",
+    no_game_types: "कोणतेही खेळ उपलब्ध नाहीत",
+    quick_guest_start: "⚡ थेट सुरू करा (अतिथी)",
     players: "खेळाडू",
     player_1: "1 खेळाडू",
     player_2: "2 खेळाडू",

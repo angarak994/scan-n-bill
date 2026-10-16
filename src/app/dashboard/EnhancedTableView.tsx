@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import toast from 'react-hot-toast';
 import { PrivacyText } from './components';
 import { useLanguage } from '@/context/LanguageContext';
 import { applySessionDiscounts } from '@/lib/billing';
@@ -324,12 +326,21 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
   const [editingTableId, setEditingTableId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [addingFoodTableId, setAddingFoodTableId] = useState<string | null>(null);
   const [viewingOrdersSessionId, setViewingOrdersSessionId] = useState<string | null>(null);
   const [ordersSummary, setOrdersSummary] = useState<any[] | null>(null);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [customPrices, setCustomPrices] = useState<Record<string, number>>({});
   const [isSubmittingFood, setIsSubmittingFood] = useState(false);
+  const [foodSearchQuery, setFoodSearchQuery] = useState('');
+  const [selectedFoodCategory, setSelectedFoodCategory] = useState('All');
+  const [showCustomItemForm, setShowCustomItemForm] = useState(false);
+  const [customItemName, setCustomItemName] = useState('');
+  const [customItemPrice, setCustomItemPrice] = useState('');
 
   const [filter, setFilter] = useState('All');
 
@@ -343,6 +354,82 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
     setTableDensity(d);
     localStorage.setItem('qcontrol_table_density', d);
   };
+
+  // Keyboard shortcut listener (Escape to close drawers, Enter to submit)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (addingFoodTableId) setAddingFoodTableId(null);
+        if (viewingOrdersSessionId) setViewingOrdersSessionId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [addingFoodTableId, viewingOrdersSessionId]);
+
+  // Default fast club options if menu is empty
+  const DEFAULT_CLUB_ITEMS = useMemo(() => [
+    { id: 'def_water', name: 'Water Bottle', price: 20, category: 'Beverages' },
+    { id: 'def_cold_drink', name: 'Cold Drink / Soda', price: 40, category: 'Beverages' },
+    { id: 'def_energy_drink', name: 'Energy Drink / Red Bull', price: 120, category: 'Beverages' },
+    { id: 'def_chips', name: 'Chips / Snacks', price: 50, category: 'Snacks' }
+  ], []);
+
+  // Combined menu items with fallback and custom items
+  const allAvailableMenuItems = useMemo(() => {
+    const baseItems = menuItems && menuItems.length > 0 ? [...menuItems] : [...DEFAULT_CLUB_ITEMS];
+    for (const [name, price] of Object.entries(customPrices)) {
+      if (!baseItems.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+        baseItems.push({ id: `custom_${name}`, name, price, category: 'Custom' });
+      }
+    }
+    return baseItems;
+  }, [menuItems, DEFAULT_CLUB_ITEMS, customPrices]);
+
+  const foodCategories = useMemo(() => {
+    const cats = Array.from(new Set(allAvailableMenuItems.map(i => i.category || 'Other').filter(Boolean)));
+    return ['All', ...cats];
+  }, [allAvailableMenuItems]);
+
+  const filteredMenuItems = useMemo(() => {
+    return allAvailableMenuItems.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(foodSearchQuery.toLowerCase());
+      const matchesCategory = selectedFoodCategory === 'All' || item.category === selectedFoodCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [allAvailableMenuItems, foodSearchQuery, selectedFoodCategory]);
+
+  const totalItemCount = useMemo(() => {
+    return Object.values(cart).reduce((sum, qty) => sum + qty, 0);
+  }, [cart]);
+
+  const runningTotal = useMemo(() => {
+    return Object.entries(cart).reduce((sum, [name, qty]) => {
+      const item = allAvailableMenuItems.find(i => i.name.toLowerCase() === name.toLowerCase());
+      const price = item ? Number(item.price) : (Number(customPrices[name]) || 0);
+      return sum + price * qty;
+    }, 0);
+  }, [cart, allAvailableMenuItems, customPrices]);
+
+  // Active table and session resolution
+  const activeTableObj = useMemo(() => {
+    if (!addingFoodTableId) return null;
+    return tables.find(t => 
+      String(t.id).trim().toLowerCase() === String(addingFoodTableId).trim().toLowerCase() ||
+      String(t.name).trim().toLowerCase() === String(addingFoodTableId).trim().toLowerCase()
+    ) || { id: addingFoodTableId, name: addingFoodTableId };
+  }, [tables, addingFoodTableId]);
+
+  const activeSessionObj = useMemo(() => {
+    if (!addingFoodTableId) return null;
+    const targetId = String(addingFoodTableId).trim().toLowerCase();
+    const tName = activeTableObj ? String(activeTableObj.name).trim().toLowerCase() : '';
+    const tId = activeTableObj ? String(activeTableObj.id).trim().toLowerCase() : '';
+    return activeSessions.find(s => {
+      const sid = String(s.table_id || '').trim().toLowerCase();
+      return sid === targetId || sid === tId || sid === tName;
+    }) || null;
+  }, [activeSessions, addingFoodTableId, activeTableObj]);
 
   // Table Edit Handlers
   const startEditing = (tableId: string, currentName: string) => {
@@ -369,9 +456,15 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
   const handleAddFoodClick = (tableId: string) => {
     setAddingFoodTableId(tableId);
     setCart({});
+    setFoodSearchQuery('');
+    setSelectedFoodCategory('All');
+    setShowCustomItemForm(false);
   };
 
-  const updateCart = (itemName: string, delta: number) => {
+  const updateCart = (itemName: string, delta: number, explicitPrice?: number) => {
+    if (explicitPrice && !customPrices[itemName]) {
+      setCustomPrices(prev => ({ ...prev, [itemName]: explicitPrice }));
+    }
     setCart(prev => {
       const current = prev[itemName] || 0;
       const next = Math.max(0, current + delta);
@@ -381,12 +474,33 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
     });
   };
 
+  const handleAddCustomItem = () => {
+    const name = customItemName.trim();
+    const price = Number(customItemPrice);
+    if (!name) {
+      toast.error('Enter an item name');
+      return;
+    }
+    if (isNaN(price) || price <= 0) {
+      toast.error('Enter a valid price');
+      return;
+    }
+    updateCart(name, 1, price);
+    setCustomItemName('');
+    setCustomItemPrice('');
+    setShowCustomItemForm(false);
+    toast.success(`Added ${name} (₹${price})`);
+  };
+
   const submitFoodOrder = async () => {
     if (!addingFoodTableId) return;
-    const session = activeSessions.find(s => String(s.table_id || '').trim().toLowerCase() === String(addingFoodTableId || '').trim().toLowerCase());
-    if (!session) return;
+    
+    if (!activeSessionObj) {
+      toast.error('No active session found for this table.');
+      return;
+    }
     if (Object.keys(cart).length === 0) {
-      setAddingFoodTableId(null);
+      toast.error('Please select at least one item to add.');
       return;
     }
     
@@ -396,17 +510,24 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: session.id,
+          session_id: activeSessionObj.id,
           business_id: businessId,
-          cart
+          cart,
+          customPrices
         })
       });
       if (res.ok) {
+        toast.success(`Items added to ${activeTableObj?.name || activeSessionObj.table_id} bill!`);
+        setCart({});
         setAddingFoodTableId(null);
         props.onRefresh?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to add items to session.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      toast.error(e?.message || 'Network error while adding items.');
     } finally {
       setIsSubmittingFood(false);
     }
@@ -539,140 +660,352 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
         })()}
       </div>
 
-      {addingFoodTableId && (
-        <div className="fixed inset-0 z-[9999] flex justify-end overflow-hidden">
+      {/* Quick Add / Add to Session Portal Drawer */}
+      {mounted && addingFoodTableId && createPortal(
+        <div className="fixed inset-0 z-[99999] flex justify-end overflow-hidden" role="dialog" aria-modal="true" aria-label="Quick Add F&B to Session">
           <style>{`
             @keyframes slideInRightDrawer {
               from { transform: translateX(100%); }
               to { transform: translateX(0); }
             }
             .animate-drawer {
-              animation: slideInRightDrawer 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+              animation: slideInRightDrawer 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
           `}</style>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setAddingFoodTableId(null)}></div>
-          <div className="relative w-full sm:w-[450px] h-screen max-h-[100dvh] bg-bg-card border-l border-border-theme shadow-2xl flex flex-col animate-drawer">
-            <div className="p-5 border-b border-border-theme bg-bg-primary flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-2xl text-text-primary tracking-tight">{t('quick_add', 'Quick Add')}</h3>
-                <p className="text-accent text-sm font-bold uppercase tracking-widest mt-1">
-                  {t('table', 'Table')} {tables.find(t => t.id === addingFoodTableId)?.name || addingFoodTableId}
-                </p>
-              </div>
-              <button onClick={() => setAddingFoodTableId(null)} className="w-10 h-10 flex items-center justify-center bg-bg-surface rounded-full text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors border border-border-theme">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-              </button>
-            </div>
+          
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" 
+            onClick={() => setAddingFoodTableId(null)}
+          />
+
+          {/* Persistent Rigid Drawer */}
+          <div className="relative w-full sm:w-[480px] h-[100dvh] max-h-[100dvh] bg-bg-card border-l border-border-theme shadow-2xl flex flex-col z-10 animate-drawer overflow-hidden">
             
-            <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
-              {menuItems?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-text-disabled gap-3">
-                  <p className="text-sm font-bold tracking-widest uppercase">No Menu Items</p>
+            {/* 1. Header (Pinned & Rigid) */}
+            <div className="p-4 sm:p-5 border-b border-border-theme bg-bg-primary shrink-0 flex flex-col gap-2.5">
+              <div className="flex justify-between items-start gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                    <h3 className="font-black text-xl sm:text-2xl text-text-primary tracking-tight truncate">
+                      {t('quick_add', 'Quick Add')}
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-accent/15 text-accent border border-accent/30 uppercase tracking-wider">
+                      {activeTableObj?.name || addingFoodTableId}
+                    </span>
+                  </div>
+                  {activeSessionObj && (
+                    <p className="text-xs text-text-secondary mt-1 truncate">
+                      <span className="font-bold text-text-primary">{activeSessionObj.customer_name}</span> · <span className="capitalize">{activeSessionObj.game_type || 'Game'}</span>
+                    </p>
+                  )}
                 </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {menuItems?.map(item => {
-                    const qty = cart[item.name] || 0;
+
+                <button 
+                  onClick={() => setAddingFoodTableId(null)}
+                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-bg-surface rounded-full text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors border border-border-theme shrink-0 touch-target"
+                  aria-label="Close Quick Add"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+              </div>
+
+              {/* Fast Table Switcher if multiple tables active */}
+              {activeSessions.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar border-t border-border-theme/40">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary shrink-0 mr-1">Switch:</span>
+                  {activeSessions.map(s => {
+                    const tObj = tables.find(t => 
+                      String(t.id).toLowerCase() === String(s.table_id).toLowerCase() || 
+                      String(t.name).toLowerCase() === String(s.table_id).toLowerCase()
+                    );
+                    const tName = tObj?.name || s.table_id;
+                    const isSelected = (tObj && tObj.id === addingFoodTableId) || s.table_id === addingFoodTableId;
                     return (
-                      <div key={item.name} className="flex justify-between items-center p-4 bg-bg-surface border border-border-theme rounded-2xl hover:border-accent/50 transition-colors">
-                        <div className="flex flex-col gap-1">
-                          <span className="font-bold text-base text-text-primary">{item.name}</span>
-                          <span className="text-sm text-accent font-mono font-bold">{formatINR(item.price)}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {qty > 0 ? (
-                            <div className="flex items-center bg-bg-primary rounded-xl border border-border-theme overflow-hidden">
-                              <button onClick={() => updateCart(item.name, -1)} className="w-10 h-10 text-text-primary flex items-center justify-center font-bold hover:bg-bg-primary transition-colors">-</button>
-                              <span className="font-bold w-10 text-center text-base text-accent">{qty}</span>
-                              <button onClick={() => updateCart(item.name, 1)} className="w-10 h-10 text-black bg-accent flex items-center justify-center font-bold hover:bg-accent/90 transition-colors">+</button>
-                            </div>
-                          ) : (
-                            <button onClick={() => updateCart(item.name, 1)} className="px-6 py-2.5 bg-bg-surface border border-border-theme text-text-primary text-sm font-bold rounded-xl hover:border-accent hover:text-accent transition-colors shadow-sm touch-target">ADD</button>
-                          )}
-                        </div>
-                      </div>
-                    )
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setAddingFoodTableId(tObj?.id || s.table_id);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold shrink-0 transition-all ${isSelected ? 'bg-accent text-black shadow-sm font-black' : 'bg-bg-surface text-text-secondary border border-border-theme hover:text-text-primary hover:border-accent/40'}`}
+                      >
+                        {tName}
+                      </button>
+                    );
                   })}
                 </div>
               )}
             </div>
-            
-            <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-border-theme bg-bg-primary flex flex-col gap-4">
+
+            {/* 2. Above-the-fold Quick Action Bar (IMMEDIATELY ACCESSIBLE WITHOUT SCROLLING) */}
+            <div className="px-4 py-3 bg-bg-surface border-b border-border-theme shrink-0 flex items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary shrink-0">Total:</span>
+                <span className="text-lg font-black font-mono text-accent tabular-nums truncate">{formatINR(runningTotal)}</span>
+                <span className="text-[11px] font-semibold text-text-disabled shrink-0">
+                  ({totalItemCount} {totalItemCount === 1 ? 'item' : 'items'})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={submitFoodOrder}
+                disabled={isSubmittingFood || totalItemCount === 0}
+                className="px-4 py-2 min-h-[40px] bg-accent text-black font-black uppercase tracking-wider text-xs rounded-xl disabled:opacity-40 transition-all hover:bg-accent/90 shadow-sm flex items-center gap-1.5 touch-target active:scale-95 shrink-0"
+              >
+                {isSubmittingFood ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                    <span>Adding...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                    <span>{t('add_to_session', 'Add to Session')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 3. Search, Quick Filters & Custom Add Bar */}
+            <div className="px-4 py-2.5 bg-bg-card border-b border-border-theme shrink-0 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={foodSearchQuery}
+                    onChange={e => setFoodSearchQuery(e.target.value)}
+                    placeholder="Search menu or snacks..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-bg-primary border border-border-theme rounded-lg text-xs text-text-primary placeholder:text-text-disabled outline-none focus:border-accent"
+                  />
+                  <svg className="w-3.5 h-3.5 text-text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                  {foodSearchQuery && (
+                    <button onClick={() => setFoodSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary text-xs">✕</button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomItemForm(!showCustomItemForm)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shrink-0 transition-colors border ${showCustomItemForm ? 'bg-accent text-black border-accent' : 'bg-bg-surface text-text-primary border-border-theme hover:border-accent/40'}`}
+                >
+                  + Custom
+                </button>
+              </div>
+
+              {/* Quick Custom Item Entry Drawer Form */}
+              {showCustomItemForm && (
+                <div className="p-3 bg-bg-surface border border-accent/30 rounded-xl flex flex-col gap-2 animate-in fade-in slide-in-from-top-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-accent">Quick Custom Charge</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customItemName}
+                      onChange={e => setCustomItemName(e.target.value)}
+                      placeholder="Item name (e.g. Chai, Cigarette)"
+                      className="flex-[2] px-3 py-2 bg-bg-primary border border-border-theme rounded-lg text-xs text-text-primary outline-none focus:border-accent"
+                    />
+                    <input
+                      type="number"
+                      value={customItemPrice}
+                      onChange={e => setCustomItemPrice(e.target.value)}
+                      placeholder="₹ Price"
+                      className="flex-[1] px-3 py-2 bg-bg-primary border border-border-theme rounded-lg text-xs font-mono font-bold text-text-primary outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomItem}
+                      className="px-3 py-2 bg-accent text-black font-black text-xs rounded-lg uppercase tracking-wider hover:bg-accent/90 shrink-0"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Fast 1-Tap Staples Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-text-disabled shrink-0">Fast:</span>
+                {DEFAULT_CLUB_ITEMS.map(staple => (
+                  <button
+                    key={staple.id}
+                    type="button"
+                    onClick={() => updateCart(staple.name, 1, staple.price)}
+                    className="px-2 py-0.5 rounded-md bg-bg-surface border border-border-theme hover:border-accent/50 text-[11px] font-medium text-text-secondary hover:text-text-primary shrink-0 transition-colors flex items-center gap-1 font-mono"
+                  >
+                    <span>+</span> {staple.name.split(' ')[0]} <span className="text-accent font-bold">₹{staple.price}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. Scrollable Items List */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 custom-scrollbar">
+              {filteredMenuItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-text-disabled gap-3">
+                  <svg className="w-10 h-10 text-text-disabled/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                  <p className="text-xs font-bold tracking-widest uppercase text-text-secondary">No matching items</p>
+                  <button 
+                    type="button" 
+                    onClick={() => { setFoodSearchQuery(''); setSelectedFoodCategory('All'); }}
+                    className="text-xs text-accent font-bold hover:underline"
+                  >
+                    Clear search or add custom item above
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {filteredMenuItems.map(item => {
+                    const qty = cart[item.name] || 0;
+                    return (
+                      <div 
+                        key={item.name} 
+                        className={`flex justify-between items-center p-3.5 sm:p-4 bg-bg-surface border rounded-2xl transition-all ${qty > 0 ? 'border-accent/80 bg-accent/[0.03] shadow-sm' : 'border-border-theme hover:border-border-theme/80'}`}
+                      >
+                        <div className="flex flex-col gap-0.5 min-w-0 pr-3">
+                          <span className="font-bold text-sm sm:text-base text-text-primary truncate">{item.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs sm:text-sm text-accent font-mono font-black">{formatINR(item.price)}</span>
+                            {item.category && item.category !== 'Other' && (
+                              <span className="text-[10px] text-text-disabled uppercase tracking-wider font-semibold">· {item.category}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {qty > 0 ? (
+                            <div className="flex items-center bg-bg-primary rounded-xl border border-border-theme overflow-hidden shadow-sm">
+                              <button 
+                                type="button"
+                                onClick={() => updateCart(item.name, -1)} 
+                                className="w-10 h-10 text-text-primary flex items-center justify-center font-bold text-lg hover:bg-bg-surface transition-colors active:scale-95 touch-target"
+                                aria-label="Decrease quantity"
+                              >
+                                −
+                              </button>
+                              <span className="font-black w-9 text-center text-sm font-mono text-accent">{qty}</span>
+                              <button 
+                                type="button"
+                                onClick={() => updateCart(item.name, 1, item.price)} 
+                                className="w-10 h-10 text-black bg-accent flex items-center justify-center font-bold text-lg hover:bg-accent/90 transition-colors active:scale-95 touch-target"
+                                aria-label="Increase quantity"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button 
+                              type="button"
+                              onClick={() => updateCart(item.name, 1, item.price)} 
+                              className="px-5 py-2.5 bg-bg-surface border border-border-theme text-text-primary text-xs font-black uppercase tracking-wider rounded-xl hover:border-accent hover:text-accent hover:bg-bg-primary transition-all shadow-sm touch-target active:scale-95 min-h-[40px]"
+                            >
+                              + Add
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 5. Persistent Pinned Bottom Action Area */}
+            <div className="p-4 sm:p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-border-theme bg-bg-primary/95 backdrop-blur-md shrink-0 sticky bottom-0 z-20 flex flex-col gap-3 shadow-[0_-4px_25px_rgba(0,0,0,0.4)]">
               <div className="flex justify-between items-center px-1">
-                <span className="text-text-secondary text-xs font-bold uppercase tracking-widest">{t('running_total', 'Running Total')}</span>
-                <span className="text-2xl font-black text-accent tabular-nums">
-                  {formatINR(Object.entries(cart).reduce((sum, [name, qty]) => {
-                    const item = menuItems.find(i => i.name === name);
-                    return sum + (item?.price || 0) * qty;
-                  }, 0))}
+                <div className="flex flex-col">
+                  <span className="text-text-secondary text-[11px] font-bold uppercase tracking-widest">{t('running_total', 'Running Total')}</span>
+                  <span className="text-xs text-text-disabled font-medium">{totalItemCount} {totalItemCount === 1 ? 'item selected' : 'items selected'}</span>
+                </div>
+                <span className="text-2xl sm:text-3xl font-black text-accent tabular-nums font-mono">
+                  {formatINR(runningTotal)}
                 </span>
               </div>
               <button 
+                type="button"
                 onClick={submitFoodOrder}
-                disabled={isSubmittingFood || Object.keys(cart).length === 0}
-                className="w-full min-h-[44px] py-4 bg-accent text-black font-black uppercase tracking-widest text-sm rounded-xl disabled:opacity-50 transition-all hover:bg-accent/90 shadow-[0_4px_20px_rgba(var(--accent-color),0.3)] disabled:shadow-none touch-target"
+                disabled={isSubmittingFood || totalItemCount === 0}
+                className="w-full min-h-[48px] py-3.5 px-4 bg-accent text-black font-black uppercase tracking-widest text-sm rounded-xl disabled:opacity-40 transition-all hover:bg-accent/90 shadow-[0_4px_20px_rgba(var(--accent-color),0.3)] disabled:shadow-none flex items-center justify-center gap-2 touch-target active:scale-98"
               >
-                {isSubmittingFood ? t('loading', 'ADDING TO BILL...') : t('add_to_session', 'ADD TO SESSION')}
+                {isSubmittingFood ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                    <span>{t('loading', 'ADDING TO BILL...')}</span>
+                  </>
+                ) : totalItemCount === 0 ? (
+                  <span>SELECT ITEMS TO ADD</span>
+                ) : (
+                  <span>{t('add_to_session', 'ADD TO SESSION')} · {formatINR(runningTotal)}</span>
+                )}
               </button>
             </div>
+
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {viewingOrdersSessionId && (
-        <div className="fixed inset-0 z-[9999] flex justify-end overflow-hidden">
+      {/* Order Summary Portal Drawer */}
+      {mounted && viewingOrdersSessionId && createPortal(
+        <div className="fixed inset-0 z-[99999] flex justify-end overflow-hidden" role="dialog" aria-modal="true" aria-label="Session Order Summary">
           <style>{`
             @keyframes slideInRightDrawer {
               from { transform: translateX(100%); }
               to { transform: translateX(0); }
             }
             .animate-drawer {
-              animation: slideInRightDrawer 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+              animation: slideInRightDrawer 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
           `}</style>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setViewingOrdersSessionId(null)}></div>
-          <div className="relative w-full sm:w-[450px] h-screen max-h-[100dvh] bg-bg-card border-l border-border-theme shadow-2xl flex flex-col animate-drawer">
-            <div className="p-5 border-b border-border-theme bg-bg-primary flex justify-between items-center">
+          
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={() => setViewingOrdersSessionId(null)} />
+          
+          <div className="relative w-full sm:w-[460px] h-[100dvh] max-h-[100dvh] bg-bg-card border-l border-border-theme shadow-2xl flex flex-col z-10 animate-drawer overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-border-theme bg-bg-primary shrink-0 flex justify-between items-center">
               <div>
                 <h3 className="font-black text-xl text-text-primary tracking-tight">Order Summary</h3>
                 <p className="text-accent text-xs font-bold uppercase tracking-widest mt-1">
-                  Session Details
+                  Active Session Orders
                 </p>
               </div>
-              <button onClick={() => setViewingOrdersSessionId(null)} className="w-8 h-8 flex items-center justify-center bg-bg-surface rounded-full text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors border border-border-theme">
+              <button 
+                onClick={() => setViewingOrdersSessionId(null)} 
+                className="w-9 h-9 flex items-center justify-center bg-bg-surface rounded-full text-text-secondary hover:text-text-primary hover:bg-bg-primary transition-colors border border-border-theme shrink-0"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 custom-scrollbar">
               {isLoadingOrders ? (
-                <div className="flex flex-col items-center justify-center h-32 gap-3">
-                  <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <div className="w-8 h-8 border-3 border-accent border-t-transparent rounded-full animate-spin"></div>
                   <p className="text-xs font-bold text-accent uppercase tracking-widest animate-pulse">Loading orders...</p>
                 </div>
-              ) : ordersSummary?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-text-disabled gap-3">
+              ) : !ordersSummary || ordersSummary.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-text-disabled gap-3 text-center">
                   <p className="text-sm font-bold tracking-widest uppercase">No Orders Found</p>
+                  <p className="text-xs text-text-secondary max-w-xs">Use Quick Add on the table card to add food, drinks, or custom charges.</p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
-                  {ordersSummary?.map((order, i) => (
+                  {ordersSummary.map((order, i) => (
                     <div key={i} className="bg-bg-surface border border-border-theme rounded-xl p-4">
                       <div className="flex justify-between items-center mb-3 pb-2 border-b border-border-theme/50">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Order #{i + 1}</span>
                         <span className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">
-                          {new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: 'numeric' }).format(new Date(order.timestamp))}
+                          {order.timestamp ? new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: 'numeric' }).format(new Date(order.timestamp)) : ''}
                         </span>
                       </div>
                       <div className="flex flex-col gap-2">
-                        {Object.entries(order.cart).map(([name, qty]) => {
-                           const price = menuItems?.find(m => m.name === name)?.price || 0;
+                        {order.cart && Object.entries(order.cart).map(([name, qty]) => {
+                           const price = allAvailableMenuItems.find(m => m.name.toLowerCase() === name.toLowerCase())?.price || 0;
                            return (
                              <div key={name} className="flex justify-between items-center text-sm">
                                <span className="text-text-primary font-medium">
                                  <span className="text-accent font-bold mr-2">{String(qty)}x</span>{name}
                                </span>
-                               <span className="font-mono text-text-secondary">{formatINR(price * (qty as number))}</span>
+                               <span className="font-mono text-text-secondary">{formatINR(price * Number(qty))}</span>
                              </div>
                            );
                         })}
@@ -688,17 +1021,18 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
             </div>
             
             {!isLoadingOrders && ordersSummary && ordersSummary.length > 0 && (
-              <div className="p-5 border-t border-border-theme bg-bg-primary">
+              <div className="p-4 sm:p-5 border-t border-border-theme bg-bg-primary/95 backdrop-blur-md shrink-0 sticky bottom-0 z-10 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <div className="flex justify-between items-center">
                   <span className="text-text-secondary text-xs font-bold uppercase tracking-widest">Total F&B Cost</span>
-                  <span className="text-2xl font-black text-yellow-500 tabular-nums">
-                    {formatINR(ordersSummary.reduce((sum, o) => sum + o.total, 0))}
+                  <span className="text-2xl font-black text-accent tabular-nums font-mono">
+                    {formatINR(ordersSummary.reduce((sum, o) => sum + (Number(o.total) || 0), 0))}
                   </span>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

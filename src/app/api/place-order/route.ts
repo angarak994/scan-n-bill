@@ -64,20 +64,28 @@ export async function POST(request: Request) {
 
     // Calculate order total
     const menuItems = business.menu_items || [];
+    const customPrices = data.customPrices || {};
     let orderTotal = 0;
     const itemsOrdered: string[] = [];
 
-    for (const [itemName, qty] of Object.entries(cart)) {
-      if (typeof qty !== 'number' || qty <= 0) continue;
-      const menuItem = menuItems.find(i => i.name === itemName);
-      if (menuItem) {
-        orderTotal += menuItem.price * qty;
-        itemsOrdered.push(`${qty}x ${itemName}`);
+    for (const [itemName, val] of Object.entries(cart)) {
+      let qty = 0;
+      let price = 0;
+      if (typeof val === 'number') {
+        qty = val;
+        const menuItem = menuItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+        price = menuItem ? Number(menuItem.price) : (Number(customPrices[itemName]) || 0);
+      } else if (val && typeof val === 'object') {
+        qty = Number((val as any).qty) || 0;
+        price = Number((val as any).price) || 0;
       }
+      if (qty <= 0 || price <= 0) continue;
+      orderTotal += price * qty;
+      itemsOrdered.push(`${qty}x ${itemName}`);
     }
 
     if (orderTotal === 0) {
-      return NextResponse.json({ error: 'Empty order' }, { status: 400 });
+      return NextResponse.json({ error: 'Empty order or invalid item prices' }, { status: 400 });
     }
 
     // Update session food_cost atomically in Supabase
