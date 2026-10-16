@@ -28,6 +28,7 @@ export interface UserTelegramState {
   chatId: string;
   businessId?: string;
   selectedTableId?: string;
+  selectedCategory?: string;
   cart: Map<string, CartItem>;
   lastUndoAction?: UndoAction;
   lastActiveAt: number;
@@ -59,6 +60,7 @@ try {
           chatId: state.chatId,
           businessId: state.businessId,
           selectedTableId: state.selectedTableId,
+          selectedCategory: state.selectedCategory,
           cart: new Map(Array.isArray(state.cart) ? state.cart : []),
           lastUndoAction: state.lastUndoAction && state.lastUndoAction.expiresAt > now ? state.lastUndoAction : undefined,
           lastActiveAt: state.lastActiveAt || now,
@@ -75,11 +77,12 @@ function writeSnapshotToDisk() {
   try {
     const serializable: Record<string, any> = {};
     for (const [key, state] of userStates.entries()) {
-      if (state.cart.size > 0 || state.selectedTableId) {
+      if (state.cart.size > 0 || state.selectedTableId || state.selectedCategory) {
         serializable[key] = {
           chatId: state.chatId,
           businessId: state.businessId,
           selectedTableId: state.selectedTableId,
+          selectedCategory: state.selectedCategory,
           cart: Array.from(state.cart.entries()),
           lastUndoAction: state.lastUndoAction,
           lastActiveAt: state.lastActiveAt,
@@ -134,10 +137,11 @@ export function getOrCreateUserState(chatId: string | number, businessId?: strin
   } else {
     state.lastActiveAt = Date.now();
     if (businessId && state.businessId !== businessId) {
-      // Switched business: reset cart and table context
+      // Switched business: reset cart, table context, and category
       state.businessId = businessId;
       state.cart.clear();
       state.selectedTableId = undefined;
+      state.selectedCategory = undefined;
       state.lastUndoAction = undefined;
     }
   }
@@ -154,6 +158,18 @@ export function setSelectedTable(chatId: string | number, tableId: string, busin
 export function getSelectedTable(chatId: string | number): string | undefined {
   const state = userStates.get(String(chatId).trim());
   return state?.selectedTableId;
+}
+
+export function setSelectedCategory(chatId: string | number, category?: string) {
+  const state = getOrCreateUserState(chatId);
+  state.selectedCategory = category;
+  state.lastActiveAt = Date.now();
+  persistStateSnapshot();
+}
+
+export function getSelectedCategory(chatId: string | number): string | undefined {
+  const state = userStates.get(String(chatId).trim());
+  return state?.selectedCategory;
 }
 
 export function addItemToCart(

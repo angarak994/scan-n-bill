@@ -226,7 +226,7 @@ async function getAllBusinesses(forceRefresh = false): Promise<any[]> {
   }
   const { data, error } = await supabase
     .from('businesses')
-    .select('id, pricing_rules, tables, business_name');
+    .select('id, pricing_rules, tables, business_name, menu_items');
 
   if (error || !data) {
     return globalBusinessesCache?.data || [];
@@ -403,7 +403,7 @@ async function processWebhook(update: any, tracker?: PerformanceTracker) {
 
       if (text.startsWith('/start ') && text.includes('_auth_')) {
         const token = text.replace('/start ', '').trim();
-        const { data: businesses, error } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name');
+        const { data: businesses, error } = await supabase.from('businesses').select('id, pricing_rules, tables, business_name, menu_items');
         
         if (error || !businesses) {
           await sendTelegramMessage(chatId, `⚠️ <b>Connection temporarily unavailable.</b>\nPlease try again.`);

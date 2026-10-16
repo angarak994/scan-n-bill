@@ -8,6 +8,8 @@ import {
   getOrCreateUserState,
   setSelectedTable,
   getSelectedTable,
+  setSelectedCategory,
+  getSelectedCategory,
   addItemToCart,
   getCartItems,
   getCartTotal,
@@ -17,6 +19,103 @@ import {
   CartItem,
 } from './stateManager';
 import { TelegramClient } from './telegramClient';
+
+/**
+ * Ensures business has menu_items populated; fetches fresh from DB if missing or requested
+ */
+export async function getBusinessWithMenu(business: BusinessData, forceRefresh = false): Promise<BusinessData> {
+  const bizId = business?.id;
+  if (!bizId) return business;
+  if (forceRefresh || !business.menu_items || !Array.isArray(business.menu_items)) {
+    const fresh = await businessManager.getBusiness(bizId, forceRefresh);
+    if (fresh) return fresh;
+  }
+  return business;
+}
+
+/**
+ * Filters out deleted, archived, or malformed menu items according to business status rules
+ */
+export function getActiveMenuItems(business: BusinessData): any[] {
+  if (!business || !Array.isArray(business.menu_items)) return [];
+  return business.menu_items.filter(item => {
+    if (!item || !item.name) return false;
+    const raw = item as any;
+    if (raw.status === 'deleted' || raw.status === 'archived') return false;
+    if (raw.deleted === true || raw.is_deleted === true || raw.archived === true) return false;
+    return true;
+  });
+}
+
+/**
+ * Returns unique non-empty category names from active menu items
+ */
+export function getUniqueMenuCategories(menuItems: any[]): string[] {
+  const set = new Set<string>();
+  for (const item of menuItems) {
+    const cat = (item.category || '').trim();
+    if (cat) set.add(cat);
+  }
+  return Array.from(set);
+}
+
+/**
+ * Returns contextual emoji for a category name
+ */
+export function getCategoryEmoji(category: string): string {
+  const lower = (category || '').toLowerCase();
+  if (
+    lower.includes('bever') ||
+    lower.includes('drink') ||
+    lower.includes('tea') ||
+    lower.includes('coffee') ||
+    lower.includes('soda') ||
+    lower.includes('shake') ||
+    lower.includes('juice') ||
+    lower.includes('water')
+  ) {
+    return '☕';
+  }
+  if (
+    lower.includes('snack') ||
+    lower.includes('fry') ||
+    lower.includes('fries') ||
+    lower.includes('chip') ||
+    lower.includes('munch') ||
+    lower.includes('bites')
+  ) {
+    return '🍟';
+  }
+  if (
+    lower.includes('food') ||
+    lower.includes('meal') ||
+    lower.includes('pizza') ||
+    lower.includes('burger') ||
+    lower.includes('sandwich') ||
+    lower.includes('bread') ||
+    lower.includes('main') ||
+    lower.includes('lunch') ||
+    lower.includes('dinner')
+  ) {
+    return '🍔';
+  }
+  if (
+    lower.includes('dessert') ||
+    lower.includes('sweet') ||
+    lower.includes('ice cream') ||
+    lower.includes('cake')
+  ) {
+    return '🍰';
+  }
+  if (
+    lower.includes('hookah') ||
+    lower.includes('shisha') ||
+    lower.includes('smoke')
+  ) {
+    return '💨';
+  }
+  return '🍽️';
+}
 
 function escapeHtml(text: string): string {
   return String(text || '')
@@ -88,7 +187,8 @@ async function getActiveSessionForTable(businessId?: string, tableId?: string): 
  * 1. RENDER MAIN F&B HUB
  */
 export async function renderFbHub(business: BusinessData, chatId: string | number) {
-  const bizId = business.id || '';
+  const freshBusiness = await getBusinessWithMenu(business);
+  const bizId = freshBusiness.id || '';
   const todayStats = await getTodayFbStats(bizId);
 
   // Direct Supabase query for active sessions to guarantee accuracy
@@ -103,7 +203,7 @@ export async function renderFbHub(business: BusinessData, chatId: string | numbe
   const lastTableId = state.selectedTableId;
 
   let msg = `🍔 <b>F&B Ordering Hub</b>\n`;
-  msg += `🏢 <b>${escapeHtml(business.business_name)}</b>\n`;
+  msg += `🏢 <b>${escapeHtml(freshBusiness.business_name)}</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `📊 <b>Today's F&B:</b> <b>${todayStats.orderCount}</b> orders · <b>₹${todayStats.fbRevenue}</b>\n`;
   msg += `🟢 <b>Active Tables:</b> ${activeSessions.length} active\n`;
@@ -129,7 +229,7 @@ export async function renderFbHub(business: BusinessData, chatId: string | numbe
   }
 
   // All other tables from business config
-  const tables = business.tables || [];
+  const tables = freshBusiness.tables || [];
   const inactiveTables = tables.filter(
     t => !activeSessions.some((s: Session) => s.table_id.toLowerCase().trim() === t.id.toLowerCase().trim())
   );
@@ -167,12 +267,13 @@ export async function renderTableScreen(
   tableId: string,
   noticeMessage?: string
 ) {
-  const bizId = business.id || '';
+  const freshBusiness = await getBusinessWithMenu(business);
+  const bizId = freshBusiness.id || '';
   setSelectedTable(chatId, tableId, bizId);
 
   const activeSession = await getActiveSessionForTable(bizId, tableId);
-  const menuItems = business.menu_items || [];
-  const mostSelling = await getMostSellingItems(bizId, menuItems, 4);
+  const allActiveItems = getActiveMenuItems(freshBusiness);
+  const mostSelling = await getMostSellingItems(bizId, allActiveItems, 4);
 
   // Calculate live tab
   let tableFee = 0;
@@ -298,12 +399,28 @@ export async function renderTableScreen(
     ]);
   }
 
-  // 4. Category browse buttons
-  buttons.push([
-    { text: '☕ Beverages', callback_data: 'fb:cat:Beverages' },
-    { text: '🍟 Snacks', callback_data: 'fb:cat:Snacks' },
-    { text: '📋 Full Menu', callback_data: 'fb:cat:All' },
-  ]);
+  // 4. Category browse buttons - dynamically derived from business's actual menu categories
+  const uniqueCats = getUniqueMenuCategories(allActiveItems);
+  const catButtons: any[] = [];
+  if (uniqueCats.length > 0) {
+    for (const c of uniqueCats.slice(0, 4)) {
+      catButtons.push({
+        text: `${getCategoryEmoji(c)} ${c}`,
+        callback_data: `fb:cat:${encodeURIComponent(c)}`,
+      });
+    }
+  } else {
+    // Default fallback if no categories defined yet
+    catButtons.push(
+      { text: '☕ Beverages', callback_data: 'fb:cat:Beverages' },
+      { text: '🍟 Snacks', callback_data: 'fb:cat:Snacks' }
+    );
+  }
+  catButtons.push({ text: '📋 Full Menu', callback_data: 'fb:cat:All' });
+
+  for (let i = 0; i < catButtons.length; i += 2) {
+    buttons.push(catButtons.slice(i, i + 2));
+  }
 
   // 5. Active orders status / bulk action
   if (existingOrders && existingOrders.length > 0) {
@@ -335,48 +452,87 @@ export async function renderCategoryScreen(
   chatId: string | number,
   category: string
 ) {
+  const freshBusiness = await getBusinessWithMenu(business);
   const tableId = getSelectedTable(chatId) || 'Unknown';
-  const menuItems = business.menu_items || [];
+  const allActiveItems = getActiveMenuItems(freshBusiness);
+  setSelectedCategory(chatId, category);
 
-  const filtered = category === 'All'
-    ? menuItems
-    : menuItems.filter(i => (i.category || 'Other').toLowerCase() === category.toLowerCase());
+  let filtered: any[] = [];
+  const trimmedCat = category.trim();
+
+  if (trimmedCat.toLowerCase() === 'all') {
+    filtered = allActiveItems;
+  } else {
+    // 1. Direct match (case-insensitive, trimmed)
+    filtered = allActiveItems.filter(
+      i => (i.category || 'Other').trim().toLowerCase() === trimmedCat.toLowerCase()
+    );
+
+    // 2. Smart alias match if 0 items found
+    if (filtered.length === 0) {
+      const catLower = trimmedCat.toLowerCase();
+      const beverageAliases = ['beverages', 'beverage', 'drink', 'drinks', 'cold drinks', 'hot drinks', 'tea', 'coffee', 'juice', 'shake', 'water'];
+      const snackAliases = ['snacks', 'snack', 'food', 'meals', 'meal', 'munchies', 'fast food', 'bites'];
+
+      if (beverageAliases.includes(catLower)) {
+        filtered = allActiveItems.filter(i =>
+          beverageAliases.includes((i.category || '').trim().toLowerCase())
+        );
+      } else if (snackAliases.includes(catLower)) {
+        filtered = allActiveItems.filter(i =>
+          snackAliases.includes((i.category || '').trim().toLowerCase())
+        );
+      }
+    }
+  }
 
   const cart = getOrCreateUserState(chatId).cart;
   const { totalAmount: cartTotal, itemCount: cartCount } = getCartTotal(chatId);
 
   let msg = `📋 <b>Menu: ${escapeHtml(category)}</b>\n`;
-  msg += `Table: <b>${escapeHtml(tableId)}</b>\n`;
+  msg += `Table: <b>${escapeHtml(tableId)}</b> · Business: <b>${escapeHtml(freshBusiness.business_name)}</b>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `Tap an item to add to order:\n\n`;
 
   const buttons: any[] = [];
 
   if (filtered.length === 0) {
-    msg += `<i>No items found in this category.</i>\n`;
+    if (allActiveItems.length === 0) {
+      msg += `<i>No active menu items configured for this business yet.</i>\n`;
+    } else {
+      msg += `<i>No items found in category "${escapeHtml(category)}".</i>\n`;
+    }
   } else {
+    const hasAvailable = filtered.some(i => i.available !== false);
+    if (!hasAvailable) {
+      msg += `⚠️ <i>All items in this category are currently sold out.</i>\n\n`;
+    }
+
     for (let idx = 0; idx < filtered.length; idx++) {
       const item = filtered[idx];
-      const globalIdx = menuItems.findIndex(m => m.name === item.name);
+      const globalIdx = allActiveItems.findIndex(m =>
+        m.id && item.id ? m.id === item.id : m.name.trim() === item.name.trim()
+      );
+      const targetIdx = globalIdx >= 0 ? globalIdx : idx;
       const isAvailable = item.available !== false;
-      const currentQty = cart.get(item.name)?.qty || 0;
+      const currentQty = cart.get(item.name.trim())?.qty || 0;
 
       const qtyBadge = currentQty > 0 ? ` (${currentQty} in cart)` : '';
       const text = isAvailable
-        ? `${item.name} — ₹${item.price}${qtyBadge}`
-        : `🚫 ${item.name} [SOLD OUT]`;
+        ? `${item.name.trim()} — ₹${item.price}${qtyBadge}`
+        : `🚫 ${item.name.trim()} [SOLD OUT]`;
 
       if (currentQty > 0 && isAvailable) {
         buttons.push([
-          { text: `−`, callback_data: `fb:sub:${globalIdx}` },
-          { text: `${item.name}: ${currentQty}`, callback_data: `fb:cart` },
-          { text: `+`, callback_data: `fb:add:${globalIdx}` },
+          { text: `−`, callback_data: `fb:sub:${targetIdx}` },
+          { text: `${item.name.trim()}: ${currentQty}`, callback_data: `fb:cart` },
+          { text: `+`, callback_data: `fb:add:${targetIdx}` },
         ]);
       } else {
         buttons.push([
           {
             text: isAvailable ? `+ ${text}` : text,
-            callback_data: isAvailable ? `fb:add:${globalIdx}` : 'ignore',
+            callback_data: isAvailable ? `fb:add:${targetIdx}` : 'ignore',
           },
         ]);
       }
@@ -391,10 +547,28 @@ export async function renderCategoryScreen(
     ]);
   }
 
-  buttons.push([
-    { text: '☕ Beverages', callback_data: 'fb:cat:Beverages' },
-    { text: '🍟 Snacks', callback_data: 'fb:cat:Snacks' },
-  ]);
+  // Dynamic category navigation
+  const uniqueCats = getUniqueMenuCategories(allActiveItems);
+  const otherCats = uniqueCats.filter(c => c.toLowerCase() !== trimmedCat.toLowerCase());
+
+  const navButtons: any[] = [];
+  for (const c of otherCats.slice(0, 4)) {
+    navButtons.push({
+      text: `${getCategoryEmoji(c)} ${c}`,
+      callback_data: `fb:cat:${encodeURIComponent(c)}`,
+    });
+  }
+
+  if (trimmedCat.toLowerCase() !== 'all') {
+    navButtons.push({
+      text: '📋 Full Menu',
+      callback_data: 'fb:cat:All',
+    });
+  }
+
+  for (let i = 0; i < navButtons.length; i += 2) {
+    buttons.push(navButtons.slice(i, i + 2));
+  }
 
   buttons.push([
     { text: `⬅️ Back to Table ${tableId}`, callback_data: `fb:t:${encodeURIComponent(tableId)}` },
@@ -407,13 +581,14 @@ export async function renderCategoryScreen(
  * 4. RENDER CART CONFIRMATION SCREEN
  */
 export async function renderCartScreen(business: BusinessData, chatId: string | number) {
-  const bizId = business.id || '';
+  const freshBusiness = await getBusinessWithMenu(business);
+  const bizId = freshBusiness.id || '';
   const tableId = getSelectedTable(chatId) || 'Unknown';
   const cartItems = getCartItems(chatId);
   const { totalAmount: cartTotal, itemCount: cartCount } = getCartTotal(chatId);
 
   if (cartCount === 0) {
-    return renderTableScreen(business, chatId, tableId, '⚠️ <i>Your cart is empty. Pick items to add below:</i>');
+    return renderTableScreen(freshBusiness, chatId, tableId, '⚠️ <i>Your cart is empty. Pick items to add below:</i>');
   }
 
   const activeSession = await getActiveSessionForTable(bizId, tableId);
@@ -457,7 +632,8 @@ export async function placeTelegramOrder(
   chatId: string | number,
   customCart?: Record<string, number>
 ): Promise<{ success: boolean; message: string; replyMarkup: any }> {
-  const bizId = business.id || '';
+  const freshBusiness = await getBusinessWithMenu(business);
+  const bizId = freshBusiness.id || '';
   const tableId = getSelectedTable(chatId);
   if (!tableId) {
     return {
@@ -469,7 +645,7 @@ export async function placeTelegramOrder(
     };
   }
 
-  const menuItems = business.menu_items || [];
+  const menuItems = getActiveMenuItems(freshBusiness);
   const stateCart = getCartItems(chatId);
 
   // Build items mapping
@@ -478,7 +654,7 @@ export async function placeTelegramOrder(
     Object.assign(finalCart, customCart);
   } else {
     for (const item of stateCart) {
-      if (item.qty > 0) finalCart[item.name] = item.qty;
+      if (item.qty > 0) finalCart[item.name.trim()] = item.qty;
     }
   }
 
@@ -497,7 +673,7 @@ export async function placeTelegramOrder(
   const itemsOrderedList: string[] = [];
 
   for (const [itemName, qty] of Object.entries(finalCart)) {
-    const menuItem = menuItems.find(m => m.name.toLowerCase() === itemName.toLowerCase());
+    const menuItem = menuItems.find(m => m.name.trim().toLowerCase() === itemName.trim().toLowerCase());
     if (!menuItem) {
       return {
         success: false,
@@ -511,7 +687,7 @@ export async function placeTelegramOrder(
     if (menuItem.available === false) {
       return {
         success: false,
-        message: `⚠️ <b>"${escapeHtml(itemName)}"</b> just sold out! Please select another item.`,
+        message: `⚠️ <b>"${escapeHtml(itemName)}"</b> is currently sold out! Please select another item.`,
         replyMarkup: {
           inline_keyboard: [[{ text: '🔄 Refresh Menu', callback_data: `fb:t:${encodeURIComponent(tableId)}` }]],
         },
@@ -520,7 +696,7 @@ export async function placeTelegramOrder(
 
     const price = Number(menuItem.price) || 0;
     orderTotal += price * qty;
-    itemsOrderedList.push(`${qty}x ${menuItem.name} (₹${price * qty})`);
+    itemsOrderedList.push(`${qty}x ${menuItem.name.trim()} (₹${price * qty})`);
   }
 
   // Active session validation
@@ -993,7 +1169,8 @@ export async function handleFbCallback(
   sendMessageFn: (chatId: string | number, text: string, replyMarkup?: any) => Promise<any>,
   editMessageTextFn: (chatId: string | number, messageId: number, text: string, replyMarkup?: any) => Promise<any>
 ): Promise<void> {
-  const bizId = business.id || '';
+  const freshBusiness = await getBusinessWithMenu(business);
+  const bizId = freshBusiness.id || '';
   const render = async (res: { text: string; replyMarkup: any }) => {
     if (messageId) {
       await editMessageTextFn(chatId, messageId, res.text, res.replyMarkup);
@@ -1004,7 +1181,7 @@ export async function handleFbCallback(
 
   // 1. Hub
   if (callbackData === 'fb:hub') {
-    const hub = await renderFbHub(business, chatId);
+    const hub = await renderFbHub(freshBusiness, chatId);
     await render(hub);
     return;
   }
@@ -1013,17 +1190,18 @@ export async function handleFbCallback(
   if (callbackData.startsWith('fb:t:')) {
     const rawTableId = decodeURIComponent(callbackData.replace('fb:t:', ''));
     // Server-side validation: verify table belongs to this business
-    const validTable = (business.tables || []).find(t => String(t.id).toLowerCase().trim() === rawTableId.toLowerCase().trim());
+    const validTable = (freshBusiness.tables || []).find(t => String(t.id).toLowerCase().trim() === rawTableId.toLowerCase().trim());
     const tableId = validTable ? validTable.id : rawTableId;
-    const tableScreen = await renderTableScreen(business, chatId, tableId);
+    const tableScreen = await renderTableScreen(freshBusiness, chatId, tableId);
     await render(tableScreen);
     return;
   }
 
   // 3. Category Screen: fb:cat:<category>
   if (callbackData.startsWith('fb:cat:')) {
-    const category = callbackData.replace('fb:cat:', '');
-    const catScreen = await renderCategoryScreen(business, chatId, category);
+    const category = decodeURIComponent(callbackData.replace('fb:cat:', ''));
+    setSelectedCategory(chatId, category);
+    const catScreen = await renderCategoryScreen(freshBusiness, chatId, category);
     await render(catScreen);
     return;
   }
@@ -1033,22 +1211,22 @@ export async function handleFbCallback(
     const idx = parseInt(callbackData.replace('fb:qa:', ''), 10);
     const tableId = getSelectedTable(chatId);
     if (!tableId) {
-      await render(await renderFbHub(business, chatId));
+      await render(await renderFbHub(freshBusiness, chatId));
       return;
     }
-    const menuItems = business.menu_items || [];
+    const menuItems = getActiveMenuItems(freshBusiness);
     const topItems = await getMostSellingItems(bizId, menuItems, 6);
     if (idx >= 0 && idx < topItems.length) {
       const target = topItems[idx];
       if (target.available) {
         addItemToCart(chatId, {
-          name: target.name,
+          name: target.name.trim(),
           price: target.price,
           id: target.id,
           category: target.category,
         }, 1);
-        const notice = `⚡ <b>Added 1x ${escapeHtml(target.name)} (₹${target.price}) to cart!</b> Tap Confirm below or add more:`;
-        await render(await renderTableScreen(business, chatId, tableId, notice));
+        const notice = `⚡ <b>Added 1x ${escapeHtml(target.name.trim())} (₹${target.price}) to cart!</b> Tap Confirm below or add more:`;
+        await render(await renderTableScreen(freshBusiness, chatId, tableId, notice));
         return;
       }
     }
@@ -1057,12 +1235,12 @@ export async function handleFbCallback(
   // 5. Add item to cart: fb:add:<globalIndex>
   if (callbackData.startsWith('fb:add:')) {
     const idx = parseInt(callbackData.replace('fb:add:', ''), 10);
-    const menuItems = business.menu_items || [];
+    const menuItems = getActiveMenuItems(freshBusiness);
     if (idx >= 0 && idx < menuItems.length) {
       const item = menuItems[idx];
       if (item.available !== false) {
         addItemToCart(chatId, {
-          name: item.name,
+          name: item.name.trim(),
           price: Number(item.price) || 0,
           id: item.id,
           category: item.category,
@@ -1071,7 +1249,8 @@ export async function handleFbCallback(
     }
     const tableId = getSelectedTable(chatId);
     if (tableId) {
-      await render(await renderCategoryScreen(business, chatId, 'All'));
+      const currentCat = getSelectedCategory(chatId) || 'All';
+      await render(await renderCategoryScreen(freshBusiness, chatId, currentCat));
     }
     return;
   }
@@ -1079,11 +1258,11 @@ export async function handleFbCallback(
   // 6. Subtract item from cart: fb:sub:<globalIndex>
   if (callbackData.startsWith('fb:sub:')) {
     const idx = parseInt(callbackData.replace('fb:sub:', ''), 10);
-    const menuItems = business.menu_items || [];
+    const menuItems = getActiveMenuItems(freshBusiness);
     if (idx >= 0 && idx < menuItems.length) {
       const item = menuItems[idx];
       addItemToCart(chatId, {
-        name: item.name,
+        name: item.name.trim(),
         price: Number(item.price) || 0,
         id: item.id,
         category: item.category,
@@ -1091,14 +1270,15 @@ export async function handleFbCallback(
     }
     const tableId = getSelectedTable(chatId);
     if (tableId) {
-      await render(await renderCategoryScreen(business, chatId, 'All'));
+      const currentCat = getSelectedCategory(chatId) || 'All';
+      await render(await renderCategoryScreen(freshBusiness, chatId, currentCat));
     }
     return;
   }
 
   // 7. View Cart: fb:cart
   if (callbackData === 'fb:cart') {
-    const cartScreen = await renderCartScreen(business, chatId);
+    const cartScreen = await renderCartScreen(freshBusiness, chatId);
     await render(cartScreen);
     return;
   }
@@ -1108,23 +1288,23 @@ export async function handleFbCallback(
     clearCart(chatId);
     const tableId = getSelectedTable(chatId);
     if (tableId) {
-      await render(await renderTableScreen(business, chatId, tableId, '🗑️ <i>Cart cleared.</i>'));
+      await render(await renderTableScreen(freshBusiness, chatId, tableId, '🗑️ <i>Cart cleared.</i>'));
     } else {
-      await render(await renderFbHub(business, chatId));
+      await render(await renderFbHub(freshBusiness, chatId));
     }
     return;
   }
 
   // 9. Confirm & Place Order: fb:ok
   if (callbackData === 'fb:ok') {
-    const placeRes = await placeTelegramOrder(business, chatId);
+    const placeRes = await placeTelegramOrder(freshBusiness, chatId);
     await render({ text: placeRes.message, replyMarkup: placeRes.replyMarkup });
     return;
   }
 
   // 10. Repeat Last Order: fb:rpt
   if (callbackData === 'fb:rpt') {
-    const repeatRes = await handleRepeatLastOrder(business, chatId);
+    const repeatRes = await handleRepeatLastOrder(freshBusiness, chatId);
     await render(repeatRes);
     return;
   }
@@ -1132,7 +1312,7 @@ export async function handleFbCallback(
   // 11. Undo 1-Tap: fb:u:<token>
   if (callbackData.startsWith('fb:u:')) {
     const token = callbackData.replace('fb:u:', '');
-    const undoRes = await handleUndo(business, chatId, token);
+    const undoRes = await handleUndo(freshBusiness, chatId, token);
     await render(undoRes);
     return;
   }
@@ -1143,9 +1323,9 @@ export async function handleFbCallback(
     await supabase.from('notifications').update({ type: 'order_served', is_read: true }).eq('id', notifId).eq('business_id', bizId);
     const tableId = getSelectedTable(chatId);
     if (tableId) {
-      await render(await renderTableScreen(business, chatId, tableId, '✅ <i>Order marked as Served.</i>'));
+      await render(await renderTableScreen(freshBusiness, chatId, tableId, '✅ <i>Order marked as Served.</i>'));
     } else {
-      await render(await renderFbHub(business, chatId));
+      await render(await renderFbHub(freshBusiness, chatId));
     }
     return;
   }
@@ -1165,13 +1345,13 @@ export async function handleFbCallback(
       q = q.like('message', `%|${activeSession.id}`);
     }
     await q;
-    await render(await renderTableScreen(business, chatId, tableId, `✅ <i>All orders for Table ${tableId} marked as Served!</i>`));
+    await render(await renderTableScreen(freshBusiness, chatId, tableId, `✅ <i>All orders for Table ${tableId} marked as Served!</i>`));
     return;
   }
 
   // 14. Stock control screen: fb:stk
   if (callbackData === 'fb:stk') {
-    const stockScreen = await renderStockControlScreen(business, chatId);
+    const stockScreen = await renderStockControlScreen(freshBusiness, chatId);
     await render(stockScreen);
     return;
   }
@@ -1179,7 +1359,7 @@ export async function handleFbCallback(
   // 15. Toggle stock item: fb:stktog:<idx>
   if (callbackData.startsWith('fb:stktog:')) {
     const idx = parseInt(callbackData.replace('fb:stktog:', ''), 10);
-    const toggleScreen = await toggleStockAvailability(business, chatId, idx);
+    const toggleScreen = await toggleStockAvailability(freshBusiness, chatId, idx);
     await render(toggleScreen);
     return;
   }
