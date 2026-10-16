@@ -32,7 +32,7 @@ export class DeliveryManager {
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
       'https://scan-n-bill.vercel.app';
 
-    const normalized = baseUrl.replace(/\/+$/, '');
+    const normalized = baseUrl.trim().replace(/\/+$/, '');
     return `${normalized}/api/telegram-webhook`;
   }
 
