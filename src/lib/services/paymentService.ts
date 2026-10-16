@@ -160,20 +160,22 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
     // Always persist payment records to the payments table even if customerId is null!
     const records = [];
     
-    // A. Record the Charge (Credit added to QKhata)
+    // A. Record the Charge (Credit added to Member Ledger)
     if (totalBilled > 0) {
+        const isStoreCredit = paymentStatus === 'Pending' || paymentMethod === 'QKhata' || !!dueDate;
         records.push({
             id: uuidv4(),
             business_id: businessId,
             customer_id: customerId || null,
             session_id: sessionId || null,
             amount: totalBilled,
-            payment_method: 'QKhata',
+            payment_method: isStoreCredit ? 'QKhata' : 'Session Bill',
             status: 'Billed',
             metadata: {
                 type: 'CHARGE',
                 source: source || 'System',
-                due_date: dueDate || null
+                due_date: dueDate || null,
+                settled_instant: effectiveAmountPaid >= totalBilled
             }
         });
     }

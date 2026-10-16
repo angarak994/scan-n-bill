@@ -10,11 +10,11 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { customerId, amount, settlementMethod, selectedCustomerName, selectedCustomerPhone, isCustomerRecord } = body;
+        const { customerId, amount, settlementMethod, selectedCustomerName, selectedCustomerPhone, isCustomerRecord, idempotencyKey } = body;
         const businessId = sessionCookie.businessId;
 
-        if (!amount || !settlementMethod) {
-            return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+        if (!amount || Number(amount) <= 0 || !settlementMethod) {
+            return NextResponse.json({ error: 'Valid settlement amount and payment method are required' }, { status: 400 });
         }
 
         let customerIdToUse = customerId;
@@ -69,6 +69,24 @@ export async function POST(req: Request) {
         }
 
         const customerIdToRecord = primaryCustomer.id;
+
+        // --- IDEMPOTENCY GUARD ---
+        // Prevent accidental double-clicks or retried settlement requests
+        const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
+        const { data: recentDuplicate } = await supabase
+            .from('payments')
+            .select('id, created_at, metadata')
+            .eq('business_id', businessId)
+            .eq('customer_id', customerIdToRecord)
+            .eq('amount', Number(amount))
+            .gte('created_at', fiveSecondsAgo)
+            .limit(1);
+
+        if (recentDuplicate && recentDuplicate.length > 0) {
+            console.warn(`[settle] Idempotent duplicate settlement blocked for customer ${customerIdToRecord} (amount: ${amount})`);
+            return NextResponse.json({ ok: true, customerId: customerIdToRecord, duplicatePrevented: true });
+        }
+
         const currentTotalBalance = siblingRows.reduce((acc: number, c: any) => acc + (Number(c.outstanding_balance) || 0), 0);
         const newOutstanding = currentTotalBalance - Number(amount);
 
@@ -76,12 +94,14 @@ export async function POST(req: Request) {
         const paymentRecord = {
             business_id: businessId,
             customer_id: customerIdToRecord,
-            amount: amount,
+            amount: Number(amount),
             payment_method: settlementMethod,
             status: 'Paid',
             metadata: {
                 type: 'PAYMENT',
-                source: 'Dashboard Settlement'
+                source: 'Dashboard Settlement',
+                idempotency_key: idempotencyKey || null,
+                description: `QKhata Settlement (${settlementMethod})`
             }
         };
 
@@ -103,6 +123,16 @@ export async function POST(req: Request) {
         }).eq('id', primaryCustomer.id);
 
         if (customerError) throw customerError;
+
+        // Sync member ledger update to Google Sheets (Non-blocking)
+        Promise.resolve().then(async () => {
+            try {
+                const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
+                enqueueSheetsSync('MEMBER', customerIdToRecord, businessId);
+            } catch (err) {
+                console.warn('[settle] Non-fatal sheets sync error:', err);
+            }
+        }).catch(console.error);
 
         // --- Telegram Notification ---
         try {

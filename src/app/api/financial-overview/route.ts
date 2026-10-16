@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { getSession } from '@/lib/auth';
+import { businessManager } from '@/lib/businessManager';
 import { getBusinessTimezone, DEFAULT_BUSINESS_TIMEZONE } from '@/lib/sheetsTimezone';
 
 export const dynamic = 'force-dynamic';
@@ -28,17 +29,8 @@ export async function GET(request: Request) {
     
     const businessId = sessionCookie.businessId;
 
-    // Fetch business record to get authoritative timezone & pricing rules
-    const { data: business, error: bizError } = await supabase
-      .from('businesses')
-      .select('id, business_name, pricing_rules')
-      .eq('id', businessId)
-      .single();
-
-    if (bizError && !business) {
-      console.warn('[financial-overview] Could not load business metadata:', bizError);
-    }
-
+    // Fetch business record via cached businessManager
+    const business = await businessManager.getBusiness(businessId);
     const timezone = getBusinessTimezone(business) || DEFAULT_BUSINESS_TIMEZONE;
 
     // Timezone-aware date boundaries
@@ -55,7 +47,7 @@ export async function GET(request: Request) {
     const endDate = url.searchParams.get('endDate');
     const limit = Math.min(2000, Math.max(1, parseInt(url.searchParams.get('limit') || '1000', 10)));
 
-    // 1. Fetch real payment & transaction records with customer and session joins
+    // 1. Prepare payment & transaction records query with customer and session joins
     let paymentsQuery = supabase
       .from('payments')
       .select(`
@@ -84,14 +76,7 @@ export async function GET(request: Request) {
       paymentsQuery = paymentsQuery.limit(limit);
     }
 
-    const { data: rawPayments, error: pError } = await paymentsQuery;
-    if (pError) {
-      console.error('[financial-overview] Payments query error:', pError);
-      throw pError;
-    }
-
-    // 2. Fetch completed sessions (to capture any legacy completed sessions without explicit payment rows)
-    // NOTE: Does NOT query sessions.payment_method as it does not exist in the sessions table schema
+    // 2. Prepare completed sessions query
     let sessionsQuery = supabase
       .from('sessions')
       .select(`
@@ -118,7 +103,20 @@ export async function GET(request: Request) {
       sessionsQuery = sessionsQuery.limit(limit);
     }
 
-    const { data: rawSessions, error: sError } = await sessionsQuery;
+    // Execute both queries concurrently
+    const [
+      { data: rawPayments, error: pError },
+      { data: rawSessions, error: sError }
+    ] = await Promise.all([
+      paymentsQuery,
+      sessionsQuery
+    ]);
+
+    if (pError) {
+      console.error('[financial-overview] Payments query error:', pError);
+      throw pError;
+    }
+
     if (sError) {
       console.error('[financial-overview] Sessions query error:', sError);
       // Non-fatal: if sessions query has an issue, proceed with payments

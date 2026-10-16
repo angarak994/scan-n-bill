@@ -14,36 +14,68 @@ export async function GET(request: Request) {
     }
 
     const businessId = sessionCookie.businessId;
-    const { data: rawMembers, error } = await supabase
-      .from('memberships')
-      .select('*')
-      .eq('business_id', businessId)
-      .order('created_at', { ascending: false });
+
+    // Parallelize members query and completed sessions query
+    const [
+      { data: rawMembers, error },
+      { data: completedSessions }
+    ] = await Promise.all([
+      supabase
+        .from('memberships')
+        .select('*')
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('sessions')
+        .select('member_id, customer_name, cost, discount_amount')
+        .eq('business_id', businessId)
+        .eq('status', 'COMPLETED')
+    ]);
 
     if (error) throw error;
 
-    // Aggregate spend from completed sessions for maximum accuracy & recovery
-    const { data: completedSessions } = await supabase
-      .from('sessions')
-      .select('member_id, customer_name, cost')
-      .eq('business_id', businessId)
-      .eq('status', 'COMPLETED');
+    // Pre-aggregate completed sessions into O(1) HashMaps to avoid O(M * S) nested loops
+    const spendByMemberId = new Map<string, number>();
+    const discountsByMemberId = new Map<string, number>();
+    const spendByName = new Map<string, number>();
+    const discountsByName = new Map<string, number>();
 
-    const memberships = (rawMembers || []).map((m: any) => {
-      let sessionSpend = 0;
-      if (completedSessions && completedSessions.length > 0) {
-        const normName = m.name?.trim().toLowerCase();
-        const normMobile = m.mobile?.trim();
-        for (const s of completedSessions) {
-          const sName = s.customer_name?.trim().toLowerCase();
-          const isMatch = s.member_id === m.id || 
-            (normName && sName === normName) || 
-            (normMobile && (s.customer_name?.trim() === normMobile || sName === normMobile));
-          if (isMatch) {
-            sessionSpend += Number(s.cost) || 0;
-          }
+    if (completedSessions && completedSessions.length > 0) {
+      for (const s of completedSessions) {
+        const cost = Number(s.cost) || 0;
+        const discount = Number(s.discount_amount) || 0;
+
+        if (s.member_id) {
+          spendByMemberId.set(s.member_id, (spendByMemberId.get(s.member_id) || 0) + cost);
+          discountsByMemberId.set(s.member_id, (discountsByMemberId.get(s.member_id) || 0) + discount);
+        }
+        if (s.customer_name) {
+          const norm = s.customer_name.trim().toLowerCase();
+          spendByName.set(norm, (spendByName.get(norm) || 0) + cost);
+          discountsByName.set(norm, (discountsByName.get(norm) || 0) + discount);
         }
       }
+    }
+
+    const memberships = (rawMembers || []).map((m: any) => {
+      const normName = m.name?.trim().toLowerCase();
+      const normMobile = m.mobile?.trim();
+
+      // O(1) spend & discount retrieval
+      let sessionSpend = 0;
+      let sessionDiscounts = 0;
+
+      if (m.id && spendByMemberId.has(m.id)) {
+        sessionSpend = spendByMemberId.get(m.id) || 0;
+        sessionDiscounts = discountsByMemberId.get(m.id) || 0;
+      } else if (normName && spendByName.has(normName)) {
+        sessionSpend = spendByName.get(normName) || 0;
+        sessionDiscounts = discountsByName.get(normName) || 0;
+      } else if (normMobile && spendByName.has(normMobile.toLowerCase())) {
+        sessionSpend = spendByName.get(normMobile.toLowerCase()) || 0;
+        sessionDiscounts = discountsByName.get(normMobile.toLowerCase()) || 0;
+      }
+
       const finalSpend = Math.max(Number(m.total_spend) || 0, sessionSpend);
       
       // Ensure verification properties exist with sensible defaults for legacy records
@@ -59,7 +91,8 @@ export async function GET(request: Request) {
         verified_at: m.verified_at || m.created_at,
         verified_by: m.verified_by || (verification_method === 'OTP_VERIFIED' ? 'CUSTOMER_OTP' : 'Owner'),
         audit_info: m.audit_info || {},
-        total_spend: finalSpend
+        total_spend: finalSpend,
+        total_discounts_received: sessionDiscounts
       };
     });
 

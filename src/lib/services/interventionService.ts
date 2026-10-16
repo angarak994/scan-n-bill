@@ -78,7 +78,7 @@ export async function handleSessionIntervention(params: {
         duration: sessionResult.duration || 0,
         applied_pricing: sessionResult.applied_pricing,
         cost: sessionResult.cost,
-        discount_amount: sessionResult.discounts,
+        discount_amount: sessionResult.discount_amount !== undefined ? sessionResult.discount_amount : (sessionResult.discounts || 0),
         paused_duration_seconds: sessionResult.paused_duration_seconds,
         last_activity_at: now
       };

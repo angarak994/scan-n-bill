@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 import { useLanguage } from '@/context/LanguageContext';
 import { t } from '@/lib/i18n';
+import { getMemberPlanInfo } from '@/lib/membershipUtils';
 
 export default function QKhataTab({ businessId, dbCustomers = [], memberships = [], membershipPlans = [] }: { businessId: string, dbCustomers?: any[], memberships?: any[], membershipPlans?: any[] }) {
     const { language } = useLanguage();
@@ -12,6 +13,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+    const selectedCustomerRef = useRef<any>(null);
     const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
     const [isLedgerLoading, setIsLedgerLoading] = useState(false);
     
@@ -19,144 +21,206 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
     const [settlementMethod, setSettlementMethod] = useState('Cash');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const fetchData = async () => {
-        try {
-            const customersData = dbCustomers;
-            const membersData = memberships;
+    useEffect(() => {
+        selectedCustomerRef.current = selectedCustomer;
+    }, [selectedCustomer]);
 
-            if (membersData) {
-                // Pre-index customersData into HashMaps for instant O(1) lookups
-                const customerByPhone = new Map<string, any[]>();
-                const customerByName = new Map<string, any[]>();
-                const customerById = new Map<string, any>();
+    const processCustomersAndMembers = useCallback((customersData: any[], membersData: any[]) => {
+        // Pre-index customersData into HashMaps for instant O(1) lookups
+        const customerByPhone = new Map<string, any[]>();
+        const customerByName = new Map<string, any[]>();
+        const customerById = new Map<string, any>();
 
-                if (customersData && customersData.length > 0) {
-                    for (const c of customersData) {
-                        if (c.id) customerById.set(c.id, c);
-                        if (c.phone) {
-                            const p = c.phone.trim();
-                            const list = customerByPhone.get(p) || [];
-                            list.push(c);
-                            customerByPhone.set(p, list);
-                        }
-                        if (c.name) {
-                            const n = c.name.trim().toLowerCase();
-                            const list = customerByName.get(n) || [];
-                            list.push(c);
-                            customerByName.set(n, list);
-                        }
+        if (customersData && customersData.length > 0) {
+            for (const c of customersData) {
+                if (c.id) customerById.set(c.id, c);
+                if (c.phone) {
+                    const p = c.phone.trim();
+                    const list = customerByPhone.get(p) || [];
+                    list.push(c);
+                    customerByPhone.set(p, list);
+
+                    const clean10 = p.replace(/\D/g, '').slice(-10);
+                    if (clean10 && clean10 !== p) {
+                        const list10 = customerByPhone.get(clean10) || [];
+                        list10.push(c);
+                        customerByPhone.set(clean10, list10);
                     }
                 }
-
-                const membersList = membersData.map((m: any) => {
-                    const matchedSet = new Set<any>();
-                    if (m.mobile) {
-                        const byPhone = customerByPhone.get(m.mobile.trim());
-                        if (byPhone) {
-                            for (const c of byPhone) matchedSet.add(c);
-                        }
-                    }
-                    if (m.name) {
-                        const byName = customerByName.get(m.name.trim().toLowerCase());
-                        if (byName) {
-                            for (const c of byName) matchedSet.add(c);
-                        }
-                    }
-                    if (m.id && customerById.has(m.id)) {
-                        matchedSet.add(customerById.get(m.id));
-                    }
-                    const matchedCustomers = Array.from(matchedSet);
-                    
-                    const outstanding_balance = matchedCustomers.reduce((acc, c) => acc + (c.outstanding_balance || 0), 0);
-                    const total_billed = matchedCustomers.reduce((acc, c) => acc + (c.total_billed || 0), 0);
-                    const total_paid = matchedCustomers.reduce((acc, c) => acc + (c.total_paid || 0), 0);
-                    
-                    const ledger_id = matchedCustomers.length > 0 ? matchedCustomers[0].id : m.id;
-                    
-                    return {
-                        id: ledger_id, // Use the legacy customer ID for ledger queries and payments
-                        name: m.name,
-                        phone: m.mobile || '',
-                        outstanding_balance,
-                        total_billed,
-                        total_paid,
-                        is_customer_record: matchedCustomers.length > 0,
-                        tier: m.tier,
-                        loyalty_points: m.loyalty_points
-                    };
-                });
-                
-                const sorted = membersList
-                    .sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
-                setCustomers(sorted);
-                
-                // If a customer is currently selected, refresh their specific data locally
-                if (selectedCustomer) {
-                    const freshCust = sorted.find((c: any) => c.name === selectedCustomer.name);
-                    if (freshCust) setSelectedCustomer(freshCust);
+                if (c.name) {
+                    const n = c.name.trim().toLowerCase();
+                    const list = customerByName.get(n) || [];
+                    list.push(c);
+                    customerByName.set(n, list);
                 }
             }
-        } catch (err) {
-            console.error("Failed to load QKhata data", err);
+        }
+
+        const matchedCustomerIds = new Set<string>();
+
+        const membersList = (membersData || []).map((m: any) => {
+            const matchedSet = new Set<any>();
+            if (m.mobile) {
+                const cleanM = m.mobile.trim();
+                const byPhone = customerByPhone.get(cleanM);
+                if (byPhone) {
+                    for (const c of byPhone) matchedSet.add(c);
+                }
+                const clean10 = cleanM.replace(/\D/g, '').slice(-10);
+                if (clean10 && clean10 !== cleanM) {
+                    const byPhone10 = customerByPhone.get(clean10);
+                    if (byPhone10) {
+                        for (const c of byPhone10) matchedSet.add(c);
+                    }
+                }
+            }
+            if (m.name) {
+                const byName = customerByName.get(m.name.trim().toLowerCase());
+                if (byName) {
+                    for (const c of byName) matchedSet.add(c);
+                }
+            }
+            if (m.id && customerById.has(m.id)) {
+                matchedSet.add(customerById.get(m.id));
+            }
+            const matchedCustomers = Array.from(matchedSet);
+            for (const c of matchedCustomers) {
+                if (c.id) matchedCustomerIds.add(c.id);
+            }
+            
+            const outstanding_balance = matchedCustomers.reduce((acc, c) => acc + (Number(c.outstanding_balance) || 0), 0);
+            const total_billed = matchedCustomers.reduce((acc, c) => acc + (Number(c.total_billed) || 0), 0);
+            const total_paid = matchedCustomers.reduce((acc, c) => acc + (Number(c.total_paid) || 0), 0);
+            
+            const ledger_id = matchedCustomers.length > 0 ? matchedCustomers[0].id : m.id;
+            
+            return {
+                id: ledger_id, // Use the legacy customer ID for ledger queries and payments
+                membership_id: m.id,
+                name: m.name,
+                phone: m.mobile || '',
+                outstanding_balance,
+                total_billed,
+                total_paid,
+                is_customer_record: matchedCustomers.length > 0,
+                tier: m.tier,
+                plan_id: m.plan_id,
+                expiry_date: m.expiry_date,
+                status: m.status,
+                loyalty_points: m.loyalty_points
+            };
+        });
+
+        // Also include any customer from customersData who has an outstanding balance > 0 but is not already in membersList
+        if (customersData && customersData.length > 0) {
+            for (const c of customersData) {
+                if (Number(c.outstanding_balance) > 0 && !matchedCustomerIds.has(c.id)) {
+                    membersList.push({
+                        id: c.id,
+                        membership_id: c.id,
+                        name: c.name || 'Walk-in Customer',
+                        phone: c.phone || '',
+                        outstanding_balance: Number(c.outstanding_balance) || 0,
+                        total_billed: Number(c.total_billed) || 0,
+                        total_paid: Number(c.total_paid) || 0,
+                        is_customer_record: true,
+                        tier: 'Customer',
+                        plan_id: undefined,
+                        expiry_date: undefined,
+                        status: 'Active',
+                        loyalty_points: undefined
+                    });
+                }
+            }
+        }
+        
+        const sorted = membersList
+            .sort((a: any, b: any) => Number(b.outstanding_balance) - Number(a.outstanding_balance));
+        setCustomers(sorted);
+        
+        // If a customer is currently selected, refresh their specific data locally
+        const currentSel = selectedCustomerRef.current;
+        if (currentSel) {
+            const freshCust = sorted.find((c: any) => c.name === currentSel.name || (c.id && c.id === currentSel.id));
+            if (freshCust) {
+                setSelectedCustomer((prev: any) => ({ ...prev, ...freshCust }));
+            }
+        }
+        return sorted;
+    }, []);
+
+    const loadFreshQKhataData = useCallback(async () => {
+        if (!businessId) return;
+        try {
+            const res = await fetch('/api/dashboard-data?scope=customers', { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                processCustomersAndMembers(data.dbCustomers || [], data.memberships || memberships);
+            }
+        } catch (e) {
+            console.error("Failed to load fresh QKhata data", e);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [businessId, memberships, processCustomersAndMembers]);
 
-    useEffect(() => {
-        if (!businessId) return;
-        
-        // Listen to payments (ledger rows)
-        const paySub = supabase.channel(`qkhata_payments_${businessId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `business_id=eq.${businessId}` }, () => {
-                if (selectedCustomer) fetchLedgerHistory(selectedCustomer);
-            }).subscribe();
-
-        return () => {
-            supabase.removeChannel(paySub);
-        };
-    }, [businessId, selectedCustomer]);
-
-    useEffect(() => {
-        fetchData();
-    }, [dbCustomers, memberships]);
-
-    // Keep selectedCustomer in sync with realtime updates from customers
-    useEffect(() => {
-        if (selectedCustomer) {
-            const updated = customers.find(c => (c.name === selectedCustomer.name) || (c.phone && c.phone === selectedCustomer.phone));
-            if (updated && (
-                updated.outstanding_balance !== selectedCustomer.outstanding_balance ||
-                updated.total_paid !== selectedCustomer.total_paid ||
-                updated.total_billed !== selectedCustomer.total_billed ||
-                updated.loyalty_points !== selectedCustomer.loyalty_points ||
-                updated.id !== selectedCustomer.id ||
-                updated.is_customer_record !== selectedCustomer.is_customer_record
-            )) {
-                setSelectedCustomer(updated);
-            }
-        }
-    }, [customers, selectedCustomer]);
-
-    const fetchLedgerHistory = async (customer: any) => {
+    const fetchLedgerHistory = useCallback(async (customer: any) => {
+        if (!customer) return;
         setIsLedgerLoading(true);
-        if (customer && customer.is_customer_record === false) {
+        if (customer.is_customer_record === false) {
             setLedgerHistory([]);
             setIsLedgerLoading(false);
             return;
         }
         try {
-            const res = await fetch(`/api/qkhata/ledger?customerId=${customer.id}`);
+            const res = await fetch(`/api/qkhata/ledger?customerId=${customer.id}`, { cache: 'no-store' });
             const data = await res.json();
             if (data.ledger) {
                 setLedgerHistory(data.ledger);
+                if (data.currentBalance !== undefined) {
+                    const bal = Number(data.currentBalance);
+                    setSelectedCustomer((prev: any) => prev ? { ...prev, outstanding_balance: bal } : prev);
+                    setCustomers((prev: any[]) => prev.map(c => 
+                        (c.id === customer.id || c.name === customer.name) ? { ...c, outstanding_balance: bal } : c
+                    ));
+                }
             }
         } catch (error) {
             console.error("Failed to load ledger history", error);
         } finally {
             setIsLedgerLoading(false);
         }
-    };
+    }, []);
+
+    // Initial load and prop synchronization
+    useEffect(() => {
+        if (dbCustomers.length > 0 || memberships.length > 0) {
+            processCustomersAndMembers(dbCustomers, memberships);
+            setIsLoading(false);
+        }
+        loadFreshQKhataData();
+    }, [businessId, dbCustomers, memberships, loadFreshQKhataData, processCustomersAndMembers]);
+
+    // Realtime listener for payments AND customers tables
+    useEffect(() => {
+        if (!businessId) return;
+        
+        const channel = supabase.channel(`qkhata_realtime_${businessId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'payments', filter: `business_id=eq.${businessId}` }, () => {
+                loadFreshQKhataData();
+                if (selectedCustomerRef.current) {
+                    fetchLedgerHistory(selectedCustomerRef.current);
+                }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${businessId}` }, () => {
+                loadFreshQKhataData();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [businessId, loadFreshQKhataData, fetchLedgerHistory]);
 
     const handleSelectCustomer = (c: any) => {
         setSelectedCustomer(c);
@@ -164,7 +228,7 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
         setSettlementAmount('');
     };
 
-    if (isLoading) return <div className="p-8 text-center text-gray-500">Loading Ledger...</div>;
+    if (isLoading && customers.length === 0) return <div className="p-8 text-center text-gray-500">Loading Ledger...</div>;
 
     const filteredCustomers = customers.filter((c: any) => 
         (c.name || 'Unknown').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -185,13 +249,13 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-
                     customerId: selectedCustomer.id,
                     amount,
                     settlementMethod,
                     selectedCustomerName: selectedCustomer.name,
                     selectedCustomerPhone: selectedCustomer.phone,
-                    isCustomerRecord: selectedCustomer.is_customer_record
+                    isCustomerRecord: selectedCustomer.is_customer_record,
+                    idempotencyKey: `settle_${selectedCustomer.id}_${amount}_${Date.now()}`
                 })
             });
 
@@ -209,7 +273,12 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
 
             toast.success('Payment recorded successfully');
             setSettlementAmount('');
-            // the realtime channels will automatically refresh the list and the ledger!
+            
+            // Instantly reload fresh data and re-fetch ledger
+            await loadFreshQKhataData();
+            if (selectedCustomer) {
+                await fetchLedgerHistory(selectedCustomer);
+            }
             
         } catch (error) {
             console.error("Error settling balance", error);
@@ -343,8 +412,21 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center mt-3 pl-2">
-                                            <div className="flex gap-2">
-                                                {c.tier && <span className="text-[9px] font-bold tracking-widest uppercase border border-border-theme px-1.5 py-0.5 rounded text-text-secondary bg-bg-primary/50">{membershipPlans?.find((p:any) => String(p.id).toLowerCase() === String(c.tier).toLowerCase())?.name || 'Standard Tier'}</span>}
+                                            <div className="flex gap-2 flex-wrap items-center">
+                                                {(() => {
+                                                    const planInfo = getMemberPlanInfo(c, membershipPlans);
+                                                    const badgeColor = planInfo.isExpired 
+                                                        ? 'border-amber-500/40 text-amber-400 bg-amber-500/10' 
+                                                        : planInfo.plan 
+                                                            ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' 
+                                                            : 'border-border-theme text-text-secondary bg-bg-primary/50';
+                                                    return (
+                                                        <span className={`text-[9px] font-bold tracking-widest uppercase border px-1.5 py-0.5 rounded ${badgeColor}`}>
+                                                            {planInfo.planName}
+                                                            {planInfo.isExpired ? ' (EXPIRED)' : ''}
+                                                        </span>
+                                                    );
+                                                })()}
                                                 {c.loyalty_points !== undefined && <span className="text-[9px] font-bold tracking-widest uppercase border border-accent/20 px-1.5 py-0.5 rounded text-accent bg-accent/5">{c.loyalty_points} PTS</span>}
                                             </div>
                                             {Number(c.outstanding_balance) > 0 && c.phone && (
@@ -373,8 +455,30 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
                                             {t(language, 'back')}
                                         </button>
-                                        <h2 className="text-2xl font-bold text-text-primary tracking-tight">{selectedCustomer.name}</h2>
-                                        <p className="text-sm text-text-secondary font-mono mt-1">{selectedCustomer.phone}</p>
+                                        <div className="flex flex-wrap items-center gap-2.5">
+                                            <h2 className="text-2xl font-bold text-text-primary tracking-tight">{selectedCustomer.name}</h2>
+                                            {(() => {
+                                                const planInfo = getMemberPlanInfo(selectedCustomer, membershipPlans);
+                                                const badgeColor = planInfo.isExpired 
+                                                    ? 'border-amber-500/40 text-amber-400 bg-amber-500/10' 
+                                                    : planInfo.plan 
+                                                        ? 'border-accent/40 text-accent bg-accent/10' 
+                                                        : 'border-border-theme text-text-secondary bg-bg-primary/50';
+                                                return (
+                                                    <span className={`text-[10px] font-bold tracking-widest uppercase border px-2 py-0.5 rounded-full ${badgeColor}`}>
+                                                        {planInfo.planName} {planInfo.isExpired ? '• EXPIRED' : (planInfo.discountLabel !== 'None' ? `• ${planInfo.discountLabel}` : '')}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary font-mono mt-1">
+                                            <span>{selectedCustomer.phone || 'No phone'}</span>
+                                            {selectedCustomer.expiry_date && (
+                                                <span className="text-xs text-text-secondary/70">
+                                                    • Valid till {new Date(selectedCustomer.expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-widest mb-1">{t(language, 'current_balance')}</p>
@@ -471,7 +575,15 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                                                     </td>
                                                     <td className="p-4">
                                                         <div className="text-sm font-semibold text-text-primary">{row.description}</div>
-                                                        {row.source && <div className={`text-[9px] font-bold tracking-widest uppercase mt-1.5 border inline-block px-1.5 py-0.5 rounded ${row.source === 'system' ? 'border-accent/30 text-accent bg-accent/5' : 'border-border-theme text-text-secondary bg-bg-primary/50'}`}>{row.source}</div>}
+                                                        {row.subtitle && <div className="text-[11px] text-text-secondary mt-0.5">{row.subtitle}</div>}
+                                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                                            {row.event_type === 'CHARGE' ? (
+                                                                <span className="text-[9px] font-bold tracking-widest uppercase border border-red-500/30 text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">BILLED</span>
+                                                            ) : (
+                                                                <span className="text-[9px] font-bold tracking-widest uppercase border border-emerald-500/30 text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">PAID ({row.payment_method || 'CASH'})</span>
+                                                            )}
+                                                            {row.source && <div className={`text-[9px] font-bold tracking-widest uppercase border inline-block px-1.5 py-0.5 rounded ${row.source?.toLowerCase().includes('system') ? 'border-accent/30 text-accent bg-accent/5' : 'border-border-theme text-text-secondary bg-bg-primary/50'}`}>{row.source}</div>}
+                                                        </div>
                                                     </td>
                                                     <td className="p-4">
                                                         {row.session_id ? (

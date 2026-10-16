@@ -51,24 +51,38 @@ export async function GET(req: Request) {
             let credit = 0;
             let payment = 0;
 
-            if (isCharge || (!isCharge && !isPayment && p.payment_method === 'QKhata')) {
+            const isChargeEvent = isCharge || (!isCharge && !isPayment && p.payment_method === 'QKhata');
+            const isPaymentEvent = isPayment || (!isCharge && !isPayment && p.payment_method !== 'QKhata');
+
+            let eventType: 'CHARGE' | 'PAYMENT' = isChargeEvent ? 'CHARGE' : 'PAYMENT';
+            let title = '';
+            let subtitle = '';
+
+            if (isChargeEvent) {
                 credit = amount;
                 runningBalance += amount;
-            } else if (isPayment || (!isCharge && !isPayment && p.payment_method !== 'QKhata')) {
+                title = p.sessions 
+                    ? `${p.sessions.game_type || 'Session'} at ${p.sessions.table_id}`
+                    : 'Session Charge';
+                subtitle = 'Session Billed';
+            } else if (isPaymentEvent) {
                 payment = amount;
                 runningBalance -= amount;
-            }
-
-            let description = p.metadata?.source || 'System';
-            if (p.sessions) {
-                description = `${p.sessions.game_type || 'Session'} at ${p.sessions.table_id}`;
+                const method = p.payment_method || 'Cash';
+                title = `Payment Received (${method})`;
+                subtitle = p.session_id 
+                    ? (p.sessions ? `Settled for ${p.sessions.game_type || 'Session'} ${p.sessions.table_id}` : 'Session Settlement')
+                    : (p.metadata?.source || 'QKhata Settlement');
             }
 
             return {
                 id: p.id,
                 date: new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
                 time: new Date(p.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                description,
+                description: title,
+                subtitle,
+                event_type: eventType,
+                payment_method: p.payment_method,
                 source: p.metadata?.source || p.payment_method,
                 credit,
                 payment,
@@ -82,7 +96,10 @@ export async function GET(req: Request) {
         // Reverse to show newest first on UI
         ledger.reverse();
 
-        return NextResponse.json({ ledger });
+        return NextResponse.json({ 
+            ledger,
+            currentBalance: runningBalance
+        });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

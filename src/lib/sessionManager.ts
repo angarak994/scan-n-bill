@@ -55,6 +55,19 @@ async function getCachedMemberships(businessId: string) {
   return result;
 }
 
+import { normalizePlanDiscounts } from './membershipUtils';
+
+const membershipPlansCache = new Map<string, { data: any[], expiresAt: number }>();
+export async function getCachedMembershipPlans(businessId: string) {
+  const now = Date.now();
+  const cached = membershipPlansCache.get(businessId);
+  if (cached && cached.expiresAt > now) return cached.data;
+  const { data } = await supabase.from('membership_plans').select('*').eq('business_id', businessId);
+  const result = (data || []).map(normalizePlanDiscounts);
+  membershipPlansCache.set(businessId, { data: result, expiresAt: now + 60000 });
+  return result;
+}
+
 const customersCache = new Map<string, { data: any[], expiresAt: number }>();
 async function getCachedCustomers(businessId: string) {
   const now = Date.now();
@@ -218,19 +231,70 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
         (session as any)._matchedMemberId = member.id;
         (session as any)._isRegisteredCustomer = true;
 
-        const isStatusActive = !member.status || member.status.toLowerCase() === 'active';
-        if (isStatusActive) {
-          let memberDiscountPercent = 0;
-          if (member.tier === 'Elite') memberDiscountPercent = 30;
-          else if (member.tier === 'VIP') memberDiscountPercent = 20;
-          else if (member.tier === 'Pro') memberDiscountPercent = 10;
-          else if (member.tier === 'Standard') memberDiscountPercent = 5;
-          
-          const currentPercent = discount?.percent || 0;
-          if (!discount || memberDiscountPercent > currentPercent) {
-             discount = { type: 'percentage', percent: memberDiscountPercent, applyToFood: true, label: `${member.tier} Member Discount` } as any;
-             (session as any)._appliedPromoId = undefined; // Promo didn't win
+        // Verify Expiry Date: Expired members must NOT receive unauthorized benefits!
+        let isExpired = false;
+        if (member.expiry_date) {
+          const expTime = new Date(member.expiry_date).getTime();
+          if (!isNaN(expTime) && Date.now() > expTime) {
+            isExpired = true;
           }
+        }
+
+        const isStatusActive = !member.status || member.status.toLowerCase() === 'active';
+        if (isStatusActive && !isExpired) {
+          const plans = await getCachedMembershipPlans(businessId);
+          const matchedPlan = plans.find((p: any) => 
+            String(p.id).toLowerCase() === String(member.tier).toLowerCase() || 
+            (p.name && member.tier && p.name.trim().toLowerCase() === member.tier.trim().toLowerCase()) ||
+            (member.plan_id && String(p.id).toLowerCase() === String(member.plan_id).toLowerCase())
+          );
+
+          let memberDiscountConfig: any = null;
+
+          if (matchedPlan) {
+            if (matchedPlan.discount_type === 'fixed' && matchedPlan.discount_amount > 0) {
+              memberDiscountConfig = {
+                type: 'fixed',
+                amount: matchedPlan.discount_amount,
+                applyToFood: true,
+                label: `${matchedPlan.name} Member Discount (-₹${matchedPlan.discount_amount})`
+              };
+            } else if (matchedPlan.discount_type === 'flat_rate' && matchedPlan.flat_hourly_rate !== null && matchedPlan.flat_hourly_rate > 0) {
+              // Flat rate membership pricing overrides standard hourly rate
+              session.locked_rate = matchedPlan.flat_hourly_rate;
+              session.locked_rate_name = `${matchedPlan.name} Flat Rate (₹${matchedPlan.flat_hourly_rate}/hr)`;
+            } else if (matchedPlan.discount_percent > 0) {
+              memberDiscountConfig = {
+                type: 'percentage',
+                percent: matchedPlan.discount_percent,
+                applyToFood: true,
+                label: `${matchedPlan.name} Member Discount (${matchedPlan.discount_percent}% Off)`
+              };
+            }
+          } else {
+            // Legacy tier name fallback
+            let memberDiscountPercent = 0;
+            if (member.tier === 'Elite') memberDiscountPercent = 30;
+            else if (member.tier === 'VIP') memberDiscountPercent = 20;
+            else if (member.tier === 'Pro') memberDiscountPercent = 10;
+            else if (member.tier === 'Standard') memberDiscountPercent = 5;
+
+            if (memberDiscountPercent > 0) {
+              memberDiscountConfig = {
+                type: 'percentage',
+                percent: memberDiscountPercent,
+                applyToFood: true,
+                label: `${member.tier} Member Discount (${memberDiscountPercent}% Off)`
+              };
+            }
+          }
+
+          if (memberDiscountConfig) {
+            discount = memberDiscountConfig;
+            (session as any)._appliedPromoId = undefined;
+          }
+        } else if (isExpired) {
+          console.warn(`[sessionManager] Member ${member.name} (${member.id}) membership expired on ${member.expiry_date}. Benefits withheld.`);
         }
       }
 
@@ -522,7 +586,9 @@ export async function endSession(table_id: string, businessId?: string, source: 
       start_time: session.start_time, 
       duration, 
       cost: totalCost, 
-      discounts: discount ? discount.percent : 0, 
+      discounts: totalDiscountAmount, 
+      discount_amount: totalDiscountAmount,
+      discount_percent: (discount && discount.type === 'percentage') ? discount.percent : 0,
       paused_duration_seconds: totalPausedSecs,
       end_time,
       date: session.date,

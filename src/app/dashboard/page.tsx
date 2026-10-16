@@ -9,7 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 import { EnhancedTableView } from './EnhancedTableView';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
 import { toast } from 'react-hot-toast';
-import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles } from 'lucide-react';
+import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles, TrendingUp, Users, DollarSign, Award, Clock } from 'lucide-react';
+import { getMemberPlanInfo } from '@/lib/membershipUtils';
 import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
 import QpulseWidget from '@/components/QpulseWidget';
@@ -112,7 +113,7 @@ function DashboardContent() {
   const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -195,7 +196,16 @@ function DashboardContent() {
 
   const [membershipPlans, setMembershipPlans] = useState<any[]>([]);
   const [isPlansLoading, setIsPlansLoading] = useState(false);
-  const [newPlan, setNewPlan] = useState({ name: '', price: 0, duration_months: 1, benefits: '', discount_percent: 0 });
+  const [newPlan, setNewPlan] = useState({
+    name: '',
+    price: 0,
+    duration_months: 1,
+    benefits: '',
+    discount_type: 'percentage' as 'percentage' | 'fixed' | 'flat_rate',
+    discount_percent: 0,
+    discount_amount: 0,
+    flat_hourly_rate: 0
+  });
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
   const [editingPlan, setEditingPlan] = useState<any>(null);
 
@@ -556,9 +566,13 @@ function DashboardContent() {
         if (targetStartDate === currentDay && targetEndDate === currentDay) {
           if (scope && scope !== 'all') {
             setData(prev => prev ? { ...prev, ...json } : json);
+            if (scope === 'customers' && json.memberships) {
+              setMemberships(json.memberships);
+            }
           } else {
             setData(json);
             setMembershipPlans(json.membership_plans || []);
+            if (json.memberships) setMemberships(json.memberships);
             if (json.businessId) setBusinessId(json.businessId);
             setIsAuthorized(true);
             if (json.has_logged_in === false) {
@@ -822,7 +836,7 @@ function DashboardContent() {
         if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
           fetchRef.current(undefined, true, 'sessions');
         }
-      }, 4000);
+      }, 8000);
       
       return () => {
         clearInterval(heartbeatInterval);
@@ -878,6 +892,7 @@ function DashboardContent() {
           toast.success('Session resumed.');
         } else if (action === 'force_end') {
           toast.success('Session ended successfully.');
+          fetchRef.current(undefined, true, 'customers');
         } else if (action === 'transfer') {
           toast.success('Table transferred.');
         }
@@ -1408,23 +1423,52 @@ function DashboardContent() {
     e.preventDefault();
     setIsCreatingPlan(true);
     try {
+      if (newPlan.discount_type === 'percentage') {
+        const pct = Number(newPlan.discount_percent);
+        if (isNaN(pct) || pct < 0 || pct > 100) {
+          toast.error('Percentage discount must be between 0% and 100%');
+          setIsCreatingPlan(false);
+          return;
+        }
+      } else if (newPlan.discount_type === 'fixed') {
+        const amt = Number(newPlan.discount_amount);
+        if (isNaN(amt) || amt < 0) {
+          toast.error('Fixed discount amount cannot be negative');
+          setIsCreatingPlan(false);
+          return;
+        }
+      } else if (newPlan.discount_type === 'flat_rate') {
+        const rate = Number(newPlan.flat_hourly_rate);
+        if (isNaN(rate) || rate <= 0) {
+          toast.error('Flat hourly rate must be greater than ₹0/hr');
+          setIsCreatingPlan(false);
+          return;
+        }
+      }
+
       const res = await fetch('/api/membership-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-           ...newPlan,
+           name: newPlan.name.trim(),
+           price: Number(newPlan.price) || 0,
+           duration_months: Number(newPlan.duration_months) || 1,
+           discount_type: newPlan.discount_type,
+           discount_percent: newPlan.discount_type === 'percentage' ? Number(newPlan.discount_percent) || 0 : 0,
+           discount_amount: newPlan.discount_type === 'fixed' ? Number(newPlan.discount_amount) || 0 : 0,
+           flat_hourly_rate: newPlan.discount_type === 'flat_rate' ? Number(newPlan.flat_hourly_rate) || 0 : 0,
            benefits: newPlan.benefits.split(',').map(b => b.trim()).filter(b => b)
         })
       });
       if (res.ok) {
         fetchMembershipPlans();
-        setNewPlan({ name: '', price: 0, duration_months: 1, benefits: '', discount_percent: 0 });
-        toast.success('Plan created');
+        setNewPlan({ name: '', price: 0, duration_months: 1, benefits: '', discount_type: 'percentage', discount_percent: 0, discount_amount: 0, flat_hourly_rate: 0 });
+        toast.success('Membership plan created successfully');
       } else {
         const err = await res.json();
-        toast.error(err.error);
+        toast.error(err.error || 'Failed to create plan');
       }
-    } catch(e) { toast.error('Error'); }
+    } catch(e) { toast.error('Error creating plan'); }
     setIsCreatingPlan(false);
   };
 
@@ -1432,9 +1476,9 @@ function DashboardContent() {
     setIsPlansLoading(true);
     try {
       const dummies = [
-        { name: 'Bronze Monthly', price: 999, duration_months: 1, discount_percent: 5, benefits: ['5% off F&B', 'Basic Access'] },
-        { name: 'Silver Quarterly', price: 2499, duration_months: 3, discount_percent: 10, benefits: ['10% off F&B', 'Free Locker'] },
-        { name: 'Gold Annual', price: 7999, duration_months: 12, discount_percent: 20, benefits: ['20% off F&B', 'Priority Booking', 'Free Locker'] }
+        { name: 'Bronze Monthly', price: 999, duration_months: 1, discount_type: 'percentage', discount_percent: 5, discount_amount: 0, benefits: ['5% off F&B', 'Basic Access'] },
+        { name: 'Silver Quarterly', price: 2499, duration_months: 3, discount_type: 'percentage', discount_percent: 10, discount_amount: 0, benefits: ['10% off F&B', 'Free Locker'] },
+        { name: 'Gold Annual', price: 7999, duration_months: 12, discount_type: 'fixed', discount_percent: 0, discount_amount: 100, benefits: ['Flat ₹100 off sessions', 'Priority Booking', 'Free Locker'] }
       ];
       
       for (const plan of dummies) {
@@ -1476,12 +1520,14 @@ function DashboardContent() {
 
     setIsCreatingMember(true);
     try {
+      const selectedPlan = membershipPlans.find((p: any) => p.id === newMember.plan_id);
       const payload: any = {
         name: newMember.name.trim(),
         mobile: newMember.mobile,
         email: newMember.email?.trim() || undefined,
-        tier: newMember.plan_id,
-        duration_months: (membershipPlans.find((p:any) => p.id === newMember.plan_id)?.duration_months || 12)
+        tier: selectedPlan?.name || 'Member',
+        plan_id: newMember.plan_id,
+        duration_months: selectedPlan?.duration_months || 12
       };
 
       if (verificationMode === 'manual') {
@@ -2956,9 +3002,106 @@ function DashboardContent() {
   );
 };
 
-  const renderCustomers = () => (
-    <div className="flex flex-col gap-8 mt-4 px-3 sm:px-6 md:px-0">
-      <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col shadow-sm">
+  const renderCustomers = () => {
+    let totalMembers = memberships.length;
+    let activeMembers = 0;
+    let expiredMembers = 0;
+    let totalLtvSpend = 0;
+    let realizedPlanRevenue = 0;
+    let totalDiscountsGranted = 0;
+
+    for (const m of memberships) {
+      const pInfo = getMemberPlanInfo(m, membershipPlans);
+      if (pInfo.isExpired) {
+        expiredMembers++;
+      } else {
+        activeMembers++;
+      }
+      totalLtvSpend += Number(m.total_spend) || 0;
+      totalDiscountsGranted += Number(m.total_discounts_received) || 0;
+      if (pInfo.plan && pInfo.plan.price) {
+        realizedPlanRevenue += Number(pInfo.plan.price) || 0;
+      }
+    }
+
+    const sustainabilityRatio = totalDiscountsGranted > 0 
+      ? (totalLtvSpend / totalDiscountsGranted).toFixed(1)
+      : '∞';
+
+    return (
+      <div className="flex flex-col gap-8 mt-4 px-3 sm:px-6 md:px-0">
+        {/* Owner Financial & Retention Intelligence Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-bg-card border border-border-theme rounded-xl p-4 sm:p-5 flex flex-col justify-between shadow-sm relative overflow-hidden group hover:border-accent/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Enrolled Members</span>
+              <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black font-mono text-text-primary">{totalMembers}</span>
+                <span className="text-xs font-bold text-accent">({activeMembers} Active)</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                {expiredMembers > 0 ? (
+                  <span className="text-[11px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> {expiredMembers} Expired Plan{expiredMembers > 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-medium text-text-secondary">All plans in good standing</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-bg-card border border-border-theme rounded-xl p-4 sm:p-5 flex flex-col justify-between shadow-sm relative overflow-hidden group hover:border-accent/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Total Member LTV</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl font-black font-mono text-text-primary">₹{totalLtvSpend.toLocaleString('en-IN')}</div>
+              <p className="text-[11px] text-text-secondary mt-1">Cumulative session & facility revenue</p>
+            </div>
+          </div>
+
+          <div className="bg-bg-card border border-border-theme rounded-xl p-4 sm:p-5 flex flex-col justify-between shadow-sm relative overflow-hidden group hover:border-accent/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Plan Subscription Fees</span>
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                <Award className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="text-2xl font-black font-mono text-accent">₹{realizedPlanRevenue.toLocaleString('en-IN')}</div>
+              <p className="text-[11px] text-text-secondary mt-1">Upfront enrolled subscription value</p>
+            </div>
+          </div>
+
+          <div className="bg-bg-card border border-border-theme rounded-xl p-4 sm:p-5 flex flex-col justify-between shadow-sm relative overflow-hidden group hover:border-accent/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Discounts & ROI Ratio</span>
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black font-mono text-text-primary">₹{totalDiscountsGranted.toLocaleString('en-IN')}</span>
+                <span className="text-xs font-bold font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Member Spend to Discount Ratio">
+                  {sustainabilityRatio}x ROI
+                </span>
+              </div>
+              <p className="text-[11px] text-text-secondary mt-1">Spend realized per ₹1 discount granted</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden flex flex-col shadow-sm">
         <div className="p-4 sm:p-6 border-b border-border-theme bg-bg-primary/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h3 className="text-xl font-bold text-text-primary">Membership Directory</h3>
@@ -2990,7 +3133,9 @@ function DashboardContent() {
           ) : memberships.length === 0 ? (
             <div className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</div>
           ) : (
-            memberships.map((m, i) => (
+            memberships.map((m, i) => {
+              const planInfo = getMemberPlanInfo(m, membershipPlans);
+              return (
               <div key={i} className="p-4 flex flex-col gap-3 bg-bg-card hover:bg-bg-surface/40 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -3017,8 +3162,8 @@ function DashboardContent() {
                       )}
                     </div>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>
-                    {m.status}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border uppercase ${planInfo.isExpired ? 'border-danger/50 text-danger bg-danger/10' : (m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-neutral-500/50 text-neutral-400 bg-neutral-500/10')}`}>
+                    {planInfo.isExpired ? 'EXPIRED' : (m.status || 'ACTIVE')}
                   </span>
                 </div>
 
@@ -3026,8 +3171,13 @@ function DashboardContent() {
                   <div>
                     <span className="text-[10px] text-text-secondary block">Tier</span>
                     <span className="font-bold text-accent text-[11px] truncate block">
-                      {membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}
+                      {planInfo.planName}
                     </span>
+                    {planInfo.discountLabel && (
+                      <span className="text-[9px] text-emerald-400 font-mono block">
+                        {planInfo.discountLabel}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[10px] text-text-secondary block">Spend</span>
@@ -3079,7 +3229,8 @@ function DashboardContent() {
                   </div>
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
         
@@ -3110,7 +3261,9 @@ function DashboardContent() {
               ) : memberships.length === 0 ? (
                 <tr><td colSpan={9} className="p-8 text-center text-text-secondary text-sm">Ready to build loyalty? Create your first customer profile today.</td></tr>
               ) : (
-                memberships.map((m, i) => (
+                memberships.map((m, i) => {
+                  const planInfo = getMemberPlanInfo(m, membershipPlans);
+                  return (
                   <tr key={i} className="border-b border-border-theme/50 hover:bg-bg-surface/50 transition-colors">
                     <td className="p-5">
                       <input 
@@ -3137,11 +3290,31 @@ function DashboardContent() {
                       <p className="text-[10px] text-text-secondary mt-0.5">{m.email || 'No email'}</p>
                     </td>
                     <td className="p-5">
-                      <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">{membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(m.tier).toLowerCase())?.name || 'Standard Tier'}</span>
+                      <div className="flex flex-col gap-0.5 items-start">
+                        <span className="px-2 py-1 rounded text-[10px] font-bold tracking-widest border border-accent text-accent bg-accent/10 uppercase">
+                          {planInfo.planName}
+                        </span>
+                        {planInfo.discountLabel && (
+                          <span className="text-[10px] text-emerald-400 font-mono">
+                            {planInfo.discountLabel}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-5"><span className="text-sm font-mono font-bold text-accent">{m.loyalty_points || 0}</span></td>
                     <td className="p-5"><span className="text-sm font-mono">₹{m.total_spend || 0}</span></td>
-                    <td className="p-5"><span className="text-sm font-mono text-text-primary">{m.expiry_date ? m.expiry_date.split('T')[0] : 'N/A'}</span></td>
+                    <td className="p-5">
+                      <div className="flex flex-col">
+                        <span className={`text-sm font-mono ${planInfo.isExpired ? 'text-danger font-bold' : 'text-text-primary'}`}>
+                          {m.expiry_date ? m.expiry_date.split('T')[0] : 'N/A'}
+                        </span>
+                        {m.expiry_date && (
+                          <span className={`text-[10px] ${planInfo.isExpired ? 'text-danger font-semibold' : (planInfo.daysRemaining !== null && planInfo.daysRemaining <= 7 ? 'text-amber-400 font-semibold' : 'text-text-secondary')}`}>
+                            {planInfo.isExpired ? 'Plan Expired' : `${planInfo.daysRemaining} days left`}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-5">
                       {m.verification_method === 'MANUAL_OWNER_VERIFICATION' ? (
                         <button
@@ -3167,7 +3340,9 @@ function DashboardContent() {
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-danger/50 text-danger bg-danger/10'}`}>{m.status}</span>
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold tracking-widest border uppercase ${planInfo.isExpired ? 'border-danger/50 text-danger bg-danger/10' : (m.status === 'Active' ? 'border-accent/50 text-accent bg-accent/10' : 'border-neutral-500/50 text-neutral-400 bg-neutral-500/10')}`}>
+                          {planInfo.isExpired ? 'EXPIRED' : (m.status || 'ACTIVE')}
+                        </span>
                         <Tooltip text="View Profile & Audit Details">
                           <button 
                             onClick={() => setSelectedMemberProfile(m)}
@@ -3187,7 +3362,8 @@ function DashboardContent() {
                       </div>
                     </td>
                   </tr>
-                ))
+                );
+                })
               )}
             </tbody>
           </table>
@@ -3635,32 +3811,51 @@ function DashboardContent() {
               </div>
 
               {/* Membership Summary Grid */}
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
-                  <span className="text-text-secondary block mb-1">Plan Tier</span>
-                  <span className="font-bold text-accent uppercase truncate block">
-                    {membershipPlans.find((p: any) => String(p.id).toLowerCase() === String(selectedMemberProfile.tier).toLowerCase())?.name || selectedMemberProfile.tier || 'Standard'}
-                  </span>
-                </div>
-                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
-                  <span className="text-text-secondary block mb-1">Status</span>
-                  <span className="font-bold text-text-primary uppercase">{selectedMemberProfile.status || 'Active'}</span>
-                </div>
-                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
-                  <span className="text-text-secondary block mb-1">Total Spend</span>
-                  <span className="font-mono font-bold text-text-primary">₹{selectedMemberProfile.total_spend || 0}</span>
-                </div>
-                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
-                  <span className="text-text-secondary block mb-1">Loyalty Points</span>
-                  <span className="font-mono font-bold text-accent">{selectedMemberProfile.loyalty_points || 0}</span>
-                </div>
-                <div className="p-3 bg-bg-surface rounded-lg border border-border-theme col-span-2 flex justify-between">
-                  <span className="text-text-secondary">Expiry Date:</span>
-                  <span className="font-mono font-bold text-text-primary">
-                    {selectedMemberProfile.expiry_date ? selectedMemberProfile.expiry_date.split('T')[0] : 'N/A'}
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const profilePlanInfo = getMemberPlanInfo(selectedMemberProfile, membershipPlans);
+                return (
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                      <span className="text-text-secondary block mb-1">Plan Tier</span>
+                      <span className="font-bold text-accent uppercase truncate block">
+                        {profilePlanInfo.planName}
+                      </span>
+                      {profilePlanInfo.discountLabel && (
+                        <span className="text-[10px] text-emerald-400 font-mono block mt-0.5">
+                          {profilePlanInfo.discountLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                      <span className="text-text-secondary block mb-1">Status</span>
+                      <span className={`font-bold uppercase ${profilePlanInfo.isExpired ? 'text-danger' : 'text-text-primary'}`}>
+                        {profilePlanInfo.isExpired ? 'EXPIRED' : (selectedMemberProfile.status || 'Active')}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                      <span className="text-text-secondary block mb-1">Total Spend</span>
+                      <span className="font-mono font-bold text-text-primary">₹{selectedMemberProfile.total_spend || 0}</span>
+                    </div>
+                    <div className="p-3 bg-bg-surface rounded-lg border border-border-theme">
+                      <span className="text-text-secondary block mb-1">Discounts Saved</span>
+                      <span className="font-mono font-bold text-emerald-400">₹{selectedMemberProfile.total_discounts_received || 0}</span>
+                    </div>
+                    <div className="p-3 bg-bg-surface rounded-lg border border-border-theme col-span-2 flex justify-between items-center">
+                      <div>
+                        <span className="text-text-secondary block mb-0.5">Expiry Date:</span>
+                        <span className={`font-mono font-bold ${profilePlanInfo.isExpired ? 'text-danger' : 'text-text-primary'}`}>
+                          {selectedMemberProfile.expiry_date ? selectedMemberProfile.expiry_date.split('T')[0] : 'N/A'}
+                        </span>
+                      </div>
+                      {selectedMemberProfile.expiry_date && (
+                        <span className={`text-[11px] px-2.5 py-1 rounded-full font-bold border ${profilePlanInfo.isExpired ? 'border-danger/30 text-danger bg-danger/10' : (profilePlanInfo.daysRemaining !== null && profilePlanInfo.daysRemaining <= 7 ? 'border-amber-400/30 text-amber-400 bg-amber-400/10' : 'border-accent/30 text-accent bg-accent/10')}`}>
+                          {profilePlanInfo.isExpired ? 'Expired' : `${profilePlanInfo.daysRemaining} days remaining`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="p-4 border-t border-border-theme flex justify-end bg-bg-surface shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -3676,6 +3871,7 @@ function DashboardContent() {
       )}
     </div>
   );
+};
 
   const renderSettings = () => (
     <div className="w-full flex flex-col gap-8 pb-20">
@@ -5073,30 +5269,117 @@ function DashboardContent() {
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8">
         <h2 className="text-xl sm:text-2xl font-bold mb-6 border-b border-border-theme pb-4">Membership Plans</h2>
         
-        <form onSubmit={handleCreatePlan} className="max-w-2xl grid grid-cols-2 gap-4 mb-8 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
-          <h3 className="col-span-2 text-sm font-black uppercase tracking-widest text-text-primary mb-2">Create New Plan</h3>
-          <div className="col-span-2 md:col-span-1">
+        <form onSubmit={handleCreatePlan} className="max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-bg-surface p-6 rounded-xl border border-border-theme/50">
+          <h3 className="col-span-1 md:col-span-2 text-sm font-black uppercase tracking-widest text-text-primary mb-1">Create New Plan</h3>
+          
+          <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Plan Name</label>
-            <input required type="text" value={newPlan.name} onChange={e => setNewPlan({...newPlan, name: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="VIP Annual" />
+            <input required type="text" value={newPlan.name} onChange={e => setNewPlan({...newPlan, name: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none" placeholder="VIP Annual" />
           </div>
-          <div className="col-span-2 md:col-span-1">
+
+          <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Price (₹)</label>
-            <input required type="number" value={newPlan.price || ''} onChange={e => setNewPlan({...newPlan, price: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="1000" />
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary text-sm font-bold font-mono">₹</span>
+              <input required type="number" min="0" value={newPlan.price || ''} onChange={e => setNewPlan({...newPlan, price: Number(e.target.value)})} className="w-full pl-8 pr-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm font-mono focus:border-accent outline-none" placeholder="1000" />
+            </div>
           </div>
-          <div className="col-span-2 md:col-span-1">
+
+          <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Duration (Months)</label>
-            <input required type="number" min="1" value={newPlan.duration_months} onChange={e => setNewPlan({...newPlan, duration_months: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" />
+            <input required type="number" min="1" value={newPlan.duration_months} onChange={e => setNewPlan({...newPlan, duration_months: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm font-mono focus:border-accent outline-none" />
           </div>
-          <div className="col-span-2 md:col-span-1">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount (%)</label>
-            <input type="number" min="0" max="100" value={newPlan.discount_percent} onChange={e => setNewPlan({...newPlan, discount_percent: Number(e.target.value)})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="10" />
+
+          {/* Discount Type Selector */}
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Discount Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setNewPlan({ ...newPlan, discount_type: 'percentage' })}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all border text-center ${
+                  newPlan.discount_type === 'percentage'
+                    ? 'bg-accent/15 border-accent text-accent'
+                    : 'bg-bg-primary border-border-theme text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Percentage (%)
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewPlan({ ...newPlan, discount_type: 'fixed' })}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all border text-center ${
+                  newPlan.discount_type === 'fixed'
+                    ? 'bg-accent/15 border-accent text-accent'
+                    : 'bg-bg-primary border-border-theme text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Fixed Amount (₹)
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewPlan({ ...newPlan, discount_type: 'flat_rate' })}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all border text-center ${
+                  newPlan.discount_type === 'flat_rate'
+                    ? 'bg-accent/15 border-accent text-accent'
+                    : 'bg-bg-primary border-border-theme text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Flat Rate (₹/hr)
+              </button>
+            </div>
           </div>
-          <div className="col-span-2">
+
+          {/* Dynamic Discount Value Input */}
+          <div className="col-span-1 md:col-span-2">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">
+                {newPlan.discount_type === 'percentage' ? 'Discount Value (%)' : (newPlan.discount_type === 'fixed' ? 'Discount Value (₹)' : 'Flat Hourly Rate (₹/hr)')}
+              </label>
+              <span className="text-[11px] text-text-secondary">
+                {newPlan.discount_type === 'percentage' 
+                  ? 'Example: 10% or 20% off all sessions' 
+                  : (newPlan.discount_type === 'fixed' 
+                      ? 'Example: ₹50 or ₹100 flat session deduction' 
+                      : 'Example: ₹120/hr locked rate instead of regular hourly fee')}
+              </span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-accent text-sm font-bold font-mono">
+                {newPlan.discount_type === 'percentage' ? '%' : '₹'}
+              </span>
+              <input
+                type="number"
+                min="0"
+                max={newPlan.discount_type === 'percentage' ? 100 : undefined}
+                value={
+                  newPlan.discount_type === 'percentage' 
+                    ? newPlan.discount_percent 
+                    : (newPlan.discount_type === 'fixed' ? (newPlan.discount_amount || '') : (newPlan.flat_hourly_rate || ''))
+                }
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  if (newPlan.discount_type === 'percentage') {
+                    setNewPlan({ ...newPlan, discount_percent: Math.min(100, Math.max(0, val)) });
+                  } else if (newPlan.discount_type === 'fixed') {
+                    setNewPlan({ ...newPlan, discount_amount: Math.max(0, val) });
+                  } else {
+                    setNewPlan({ ...newPlan, flat_hourly_rate: Math.max(0, val) });
+                  }
+                }}
+                className="w-full pl-8 pr-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm font-mono focus:border-accent outline-none"
+                placeholder={newPlan.discount_type === 'percentage' ? '10' : (newPlan.discount_type === 'fixed' ? '50' : '120')}
+              />
+            </div>
+          </div>
+
+          <div className="col-span-1 md:col-span-2">
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Benefits (Comma separated)</label>
-            <input type="text" value={newPlan.benefits} onChange={e => setNewPlan({...newPlan, benefits: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm" placeholder="Free Locker, 10% off F&B" />
+            <input type="text" value={newPlan.benefits} onChange={e => setNewPlan({...newPlan, benefits: e.target.value})} className="w-full px-4 py-2.5 bg-bg-primary border border-border-theme rounded-lg text-sm focus:border-accent outline-none" placeholder="Free Locker, 10% off F&B" />
           </div>
-          <div className="col-span-2 mt-2">
-             <button type="submit" disabled={isCreatingPlan} className="bg-accent text-black font-extrabold px-6 py-3 rounded-lg text-sm disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
+
+          <div className="col-span-1 md:col-span-2 mt-2">
+             <button type="submit" disabled={isCreatingPlan} className="bg-accent text-black font-extrabold px-6 py-3 rounded-lg text-sm disabled:opacity-50 min-h-[44px] touch-target shadow-sm hover:opacity-90 transition-opacity">
                {isCreatingPlan ? 'Creating...' : '+ Create Plan'}
              </button>
           </div>
@@ -5119,34 +5402,47 @@ function DashboardContent() {
           <>
             {/* Mobile Cards for Plans (screens < 768px) */}
             <div className="md:hidden divide-y divide-border-theme/50 rounded-xl border border-border-theme overflow-hidden bg-bg-card">
-              {membershipPlans.map((plan: any) => (
-                <div key={plan.id} className="p-4 flex flex-col gap-2.5 hover:bg-bg-surface/50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-text-primary text-base">{plan.name}</span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
-                      {plan.status}
-                    </span>
+              {membershipPlans.map((plan: any) => {
+                const isFlatRate = plan.discount_type === 'flat_rate' && Number(plan.flat_hourly_rate) > 0;
+                const isFixed = plan.discount_type === 'fixed' && Number(plan.discount_amount) > 0;
+                const hasDiscount = isFlatRate || isFixed || Number(plan.discount_percent) > 0;
+
+                return (
+                  <div key={plan.id} className="p-4 flex flex-col gap-2.5 hover:bg-bg-surface/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-text-primary text-base">{plan.name}</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
+                        {plan.status}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono font-bold text-accent text-lg">₹{plan.price}</span>
+                        <span className="text-xs text-text-secondary font-medium">/ {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}</span>
+                      </div>
+                      {hasDiscount && (
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono border ${isFlatRate ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                          {isFlatRate ? `Flat ₹${plan.flat_hourly_rate}/hr` : (isFixed ? `Flat ₹${plan.discount_amount} Off` : `${plan.discount_percent}% Off`)}
+                        </span>
+                      )}
+                    </div>
+                    {plan.benefits && plan.benefits.length > 0 && (
+                      <p className="text-xs text-text-secondary leading-relaxed bg-bg-surface p-2 rounded border border-border-theme/60 flex items-center gap-1.5">
+                        <Gift className="w-3.5 h-3.5 text-accent shrink-0" />
+                        <span>{(plan.benefits || []).join(', ')}</span>
+                      </p>
+                    )}
+                    <div className="flex justify-end pt-1">
+                      <button 
+                        onClick={() => handleTogglePlanStatus(plan)} 
+                        className="min-h-[44px] touch-target px-4 py-1.5 text-xs font-bold text-accent hover:underline flex items-center justify-center rounded-lg border border-border-theme"
+                      >
+                        {plan.status === 'Active' ? 'Archive Plan' : 'Activate Plan'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono font-bold text-accent text-lg">₹{plan.price}</span>
-                    <span className="text-xs text-text-secondary font-medium">/ {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}</span>
-                  </div>
-                  {plan.benefits && plan.benefits.length > 0 && (
-                    <p className="text-xs text-text-secondary leading-relaxed bg-bg-surface p-2 rounded border border-border-theme/60 flex items-center gap-1.5">
-                      <Gift className="w-3.5 h-3.5 text-accent shrink-0" />
-                      <span>{(plan.benefits || []).join(', ')}</span>
-                    </p>
-                  )}
-                  <div className="flex justify-end pt-1">
-                    <button 
-                      onClick={() => handleTogglePlanStatus(plan)} 
-                      className="min-h-[44px] touch-target px-4 py-1.5 text-xs font-bold text-accent hover:underline flex items-center justify-center rounded-lg border border-border-theme"
-                    >
-                      {plan.status === 'Active' ? 'Archive Plan' : 'Activate Plan'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Desktop Table (screens >= 768px) */}
@@ -5157,30 +5453,46 @@ function DashboardContent() {
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Plan Name</th>
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Price</th>
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Duration</th>
+                    <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Member Discount</th>
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Benefits</th>
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary">Status</th>
                     <th className="px-5 py-4 font-bold text-xs uppercase tracking-widest text-text-secondary text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-theme/50">
-                  {membershipPlans.map((plan: any) => (
-                    <tr key={plan.id} className="hover:bg-bg-surface/50 transition-colors">
-                      <td className="px-5 py-4 font-bold text-text-primary">{plan.name}</td>
-                      <td className="px-5 py-4 font-mono font-bold text-accent">₹{plan.price}</td>
-                      <td className="px-5 py-4">{plan.duration_months} M</td>
-                      <td className="px-5 py-4 text-xs text-text-secondary">{(plan.benefits || []).join(', ')}</td>
-                      <td className="px-5 py-4">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
-                          {plan.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button onClick={() => handleTogglePlanStatus(plan)} className="text-xs font-bold text-accent hover:underline min-h-[32px] inline-flex items-center">
-                          {plan.status === 'Active' ? 'Archive' : 'Activate'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {membershipPlans.map((plan: any) => {
+                    const isFlatRate = plan.discount_type === 'flat_rate' && Number(plan.flat_hourly_rate) > 0;
+                    const isFixed = plan.discount_type === 'fixed' && Number(plan.discount_amount) > 0;
+                    const hasDiscount = isFlatRate || isFixed || Number(plan.discount_percent) > 0;
+
+                    return (
+                      <tr key={plan.id} className="hover:bg-bg-surface/50 transition-colors">
+                        <td className="px-5 py-4 font-bold text-text-primary">{plan.name}</td>
+                        <td className="px-5 py-4 font-mono font-bold text-accent">₹{plan.price}</td>
+                        <td className="px-5 py-4">{plan.duration_months} M</td>
+                        <td className="px-5 py-4">
+                          {hasDiscount ? (
+                            <span className={`px-2.5 py-1 rounded text-xs font-bold font-mono border ${isFlatRate ? 'bg-blue-500/10 text-blue-400 border-blue-500/25' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'}`}>
+                              {isFlatRate ? `Flat ₹${plan.flat_hourly_rate}/hr` : (isFixed ? `Flat ₹${plan.discount_amount} Off` : `${plan.discount_percent}% Off`)}
+                            </span>
+                          ) : (
+                            <span className="text-text-secondary text-xs">No Discount</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-xs text-text-secondary">{(plan.benefits || []).join(', ')}</td>
+                        <td className="px-5 py-4">
+                          <span className={`px-2 py-1 rounded text-xs font-bold ${plan.status === 'Active' ? 'bg-success/10 text-success' : 'bg-text-secondary/10 text-text-secondary'}`}>
+                            {plan.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <button onClick={() => handleTogglePlanStatus(plan)} className="text-xs font-bold text-accent hover:underline min-h-[32px] inline-flex items-center">
+                            {plan.status === 'Active' ? 'Archive' : 'Activate'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -5667,6 +5979,7 @@ function DashboardContent() {
         customerByNameMap={customerByNameMap}
         customerByIdMap={customerByIdMap}
         membershipByIdMap={membershipByIdMap}
+        membershipPlans={membershipPlans}
         getDisplayName={getDisplayName}
         onClose={() => setEndSessionData(null)}
         onConfirm={async ({ isCredit, dueDate, isSplit, amountPaid, paymentMethod, splitPayments }) => {
@@ -6339,7 +6652,7 @@ function DashboardContent() {
           {sidebarTab === 'menu' && <MenuManagerTab businessId={businessId!} initialMenuItems={data?.menu_items || []} />}
                     {sidebarTab === 'qkhata' && (
             data?.entitlement?.features?.has_qkhata ? 
-            <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} membershipPlans={membershipPlans || []} /> :
+            <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships?.length > 0 ? memberships : (data?.memberships || [])} membershipPlans={membershipPlans || []} /> :
             <FeatureLock featureName="QKhata Ledger" requiredPlan="Growth" description="Manage customer balances, track payments, and automate ledger entries." />
           )}
           {sidebarTab === 'payments' && <PaymentsTab />}

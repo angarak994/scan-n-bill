@@ -15,6 +15,44 @@ function toReadableDate(date: Date): string {
   return formatter.format(date);
 }
 
+interface PrevRevenueCacheEntry {
+  revenue: number;
+  expiresAt: number;
+}
+const prevRevenueCache = new Map<string, PrevRevenueCacheEntry>();
+const PREV_REVENUE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getCachedPreviousRevenue(businessId: string, prevStartDate: string, prevEndDate: string): Promise<number> {
+  const cacheKey = `${businessId}:${prevStartDate}:${prevEndDate}`;
+  const now = Date.now();
+  const cached = prevRevenueCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.revenue;
+  }
+
+  const { data: prevCompletedSessionsData } = await supabase
+    .from('sessions')
+    .select('cost')
+    .eq('business_id', businessId)
+    .eq('status', 'COMPLETED')
+    .gte('date', prevStartDate)
+    .lte('date', prevEndDate);
+
+  const rev = (prevCompletedSessionsData || []).reduce((acc: number, s: any) => {
+    return acc + (Number(s.cost) || 0);
+  }, 0);
+
+  // Evict old entries periodically
+  if (prevRevenueCache.size > 200) {
+    for (const [k, v] of prevRevenueCache.entries()) {
+      if (v.expiresAt <= now) prevRevenueCache.delete(k);
+    }
+  }
+
+  prevRevenueCache.set(cacheKey, { revenue: rev, expiresAt: now + PREV_REVENUE_TTL_MS });
+  return rev;
+}
+
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function GET(request: Request) {
   try {
@@ -74,7 +112,20 @@ export async function GET(request: Request) {
 
     // Fast-path: Scoped Realtime Refresh (avoids refetching 8 tables when only 1 changed)
     if (scope === 'sessions') {
-      const sessions = await sessionRepository.findAllByDateRange(startDate, endDate, businessId as string);
+      const [
+        sessions,
+        previousRevenue,
+        { data: interventions }
+      ] = await Promise.all([
+        sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
+        getCachedPreviousRevenue(businessId as string, prevStartDate, prevEndDate),
+        supabase
+          .from('session_interventions')
+          .select('amount_recovered, intervention_type, sessions!inner(business_id)')
+          .eq('sessions.business_id', businessId)
+          .eq('intervention_type', 'force_close')
+          .gte('created_at', startOfDayUTC)
+      ]);
 
       let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
       const activeTableMap = new Map<string, typeof activeSessions[0]>();
@@ -99,46 +150,6 @@ export async function GET(request: Request) {
       const dailyRevenue = completedSessions.reduce((acc, session) => {
         const s = session as any;
         return acc + (s.cost || 0);
-      }, 0);
-
-      let prevStartDate: string;
-      let prevEndDate: string;
-      if (startDate === endDate) {
-        const d = new Date(startDate);
-        d.setDate(d.getDate() - 1);
-        prevStartDate = getLocalDateStr(d);
-        prevEndDate = prevStartDate;
-      } else {
-        const startMs = new Date(startDate).getTime();
-        const endMs = new Date(endDate).getTime();
-        const rangeDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1);
-        const prevEndD = new Date(startMs - 24 * 60 * 60 * 1000);
-        const prevStartD = new Date(prevEndD.getTime() - (rangeDays - 1) * 24 * 60 * 60 * 1000);
-        prevStartDate = getLocalDateStr(prevStartD);
-        prevEndDate = getLocalDateStr(prevEndD);
-      }
-
-      const [
-        { data: prevCompletedSessionsData },
-        { data: interventions }
-      ] = await Promise.all([
-        supabase
-          .from('sessions')
-          .select('cost, amount_paid, payment_status, status, date')
-          .eq('business_id', businessId)
-          .eq('status', 'COMPLETED')
-          .gte('date', prevStartDate)
-          .lte('date', prevEndDate),
-        supabase
-          .from('session_interventions')
-          .select('amount_recovered, intervention_type, sessions!inner(business_id)')
-          .eq('sessions.business_id', businessId)
-          .eq('intervention_type', 'force_close')
-          .gte('created_at', startOfDayUTC)
-      ]);
-
-      const previousRevenue = (prevCompletedSessionsData || []).reduce((acc: number, s: any) => {
-        return acc + (Number(s.cost) || 0);
       }, 0);
 
       let growthRate = 0;
@@ -205,13 +216,13 @@ export async function GET(request: Request) {
       const [{ data: dbCustomers }, { data: memberships }] = await Promise.all([
         supabase
           .from('customers')
-          .select('id, name, phone, outstanding_balance')
+          .select('id, name, phone, outstanding_balance, total_billed, total_paid')
           .eq('business_id', businessId)
           .order('updated_at', { ascending: false })
           .limit(1000),
         supabase
           .from('memberships')
-          .select('id, name, mobile, points')
+          .select('id, name, mobile, tier, expiry_date, status, created_at')
           .eq('business_id', businessId)
           .limit(1000)
       ]);
@@ -240,7 +251,7 @@ export async function GET(request: Request) {
       { data: memberships },
       { data: foodOrders },
       { data: membership_plans },
-      { data: prevCompletedSessionsData }
+      previousRevenue
     ] = await Promise.all([
       sessionRepository.findAllByDateRange(startDate, endDate, businessId as string),
       supabase
@@ -257,13 +268,13 @@ export async function GET(request: Request) {
         .order('created_at', { ascending: false }),
       supabase
         .from('customers')
-        .select('id, name, phone, outstanding_balance')
+        .select('id, name, phone, outstanding_balance, total_billed, total_paid')
         .eq('business_id', businessId)
         .order('updated_at', { ascending: false })
         .limit(1000),
       supabase
         .from('memberships')
-        .select('id, name, mobile, points')
+        .select('id, name, mobile, tier, expiry_date, status, created_at')
         .eq('business_id', businessId)
         .limit(1000),
       supabase
@@ -277,13 +288,7 @@ export async function GET(request: Request) {
         .select('*')
         .eq('business_id', businessId)
         .order('created_at', { ascending: false }),
-      supabase
-        .from('sessions')
-        .select('cost, amount_paid, payment_status, status, date')
-        .eq('business_id', businessId)
-        .eq('status', 'COMPLETED')
-        .gte('date', prevStartDate)
-        .lte('date', prevEndDate)
+      getCachedPreviousRevenue(businessId as string, prevStartDate, prevEndDate)
     ]);
 
     let activeSessions = sessions.filter(s => s.status === 'ACTIVE');
@@ -317,10 +322,6 @@ export async function GET(request: Request) {
     const dailyRevenue = completedSessions.reduce((acc, session) => {
       const s = session as any;
       return acc + (s.cost || 0);
-    }, 0);
-
-    const previousRevenue = (prevCompletedSessionsData || []).reduce((acc: number, s: any) => {
-      return acc + (Number(s.cost) || 0);
     }, 0);
 
     // Calculate real-time exact growth percentage

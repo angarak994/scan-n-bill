@@ -49,6 +49,7 @@ export interface SessionCompletionModalProps {
   customerByNameMap?: Map<string, any>;
   customerByIdMap?: Map<string, any>;
   membershipByIdMap?: Map<string, any>;
+  membershipPlans?: any[];
   getDisplayName?: (name: string, memberId?: string) => string;
   onClose: () => void;
   onConfirm: (payload: {
@@ -71,6 +72,7 @@ export default function SessionCompletionModal({
   customerByNameMap,
   customerByIdMap,
   membershipByIdMap,
+  membershipPlans = [],
   getDisplayName,
   onClose,
   onConfirm,
@@ -79,8 +81,21 @@ export default function SessionCompletionModal({
 }: SessionCompletionModalProps) {
   if (!isOpen || !data || !data.session) return null;
 
+  const resolveTierName = (rawTier?: string) => {
+    if (!rawTier) return 'Member';
+    const matchedPlan = (membershipPlans || []).find(
+      (p: any) => String(p.id).toLowerCase() === String(rawTier).toLowerCase() ||
+                  String(p.name).toLowerCase() === String(rawTier).toLowerCase()
+    );
+    if (matchedPlan?.name) return matchedPlan.name;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTier.trim())) {
+      return 'VIP';
+    }
+    return rawTier;
+  };
+
   const session = data.session;
-  const totalCost = Math.max(0, Math.round(data.cost || 0));
+  const initialCost = Math.max(0, Math.round(data.cost || 0));
   const breakdown = data.breakdown;
 
   // Resolve customer & membership details
@@ -99,7 +114,7 @@ export default function SessionCompletionModal({
       return {
         isMember: true,
         displayName: mem.name || rawName || 'Member',
-        tier: mem.tier || 'Member',
+        tier: resolveTierName(mem.tier),
         phone: mem.mobile || matchedCust?.phone || '',
         outstandingBalance: Number(matchedCust?.outstanding_balance || 0),
         loyaltyPoints: Number(mem.loyalty_points || 0)
@@ -134,6 +149,69 @@ export default function SessionCompletionModal({
     };
   }, [session, customerByPhoneMap, customerByNameMap, customerByIdMap, membershipByIdMap, getDisplayName]);
 
+  // Clean discount label logic: FIX MISLEADING "Discount: None"
+  const discountInfo = useMemo(() => {
+    if (breakdown && Number(breakdown.discountAmount || 0) > 0) {
+      const amount = Number(breakdown.discountAmount);
+
+      let rawLabel = (breakdown.discountLabel || '').trim();
+      // Filter out useless/buggy labels like 'None', empty, or min-bill warnings
+      if (!rawLabel || rawLabel.toLowerCase() === 'none' || rawLabel.toLowerCase().includes('required')) {
+        if (breakdown.appliedRateName && breakdown.appliedRateName.toLowerCase() !== 'standard') {
+          rawLabel = breakdown.appliedRateName;
+        } else if (breakdown.discountPercent && breakdown.discountPercent > 0) {
+          rawLabel = `${breakdown.discountPercent}% Off`;
+        } else {
+          rawLabel = 'Applied Discount';
+        }
+      }
+
+      return {
+        amount,
+        label: rawLabel,
+        isAutoApplied: false
+      };
+    }
+
+    // Auto-detect membership plan discount if not yet applied in incoming breakdown
+    if (customerMeta.isMember && customerMeta.tier) {
+      const matchedPlan = (membershipPlans || []).find(
+        (p: any) => String(p.id).toLowerCase() === String(customerMeta.tier).toLowerCase() ||
+                    String(p.name).toLowerCase() === String(customerMeta.tier).toLowerCase()
+      );
+
+      if (matchedPlan) {
+        const rawTable = Number(breakdown?.baseTableCost || initialCost);
+        const rawFood = Number(breakdown?.foodCost || session.food_cost || 0);
+        const eligibleAmount = rawTable + rawFood;
+
+        if (eligibleAmount > 0) {
+          if (matchedPlan.discount_type === 'fixed' && Number(matchedPlan.discount_amount) > 0) {
+            const fixedAmount = Math.min(eligibleAmount, Number(matchedPlan.discount_amount));
+            return {
+              amount: fixedAmount,
+              label: `${matchedPlan.name} (-₹${matchedPlan.discount_amount})`,
+              isAutoApplied: true
+            };
+          } else if (Number(matchedPlan.discount_percent) > 0) {
+            const pctAmount = Math.min(eligibleAmount, Math.round((eligibleAmount * Number(matchedPlan.discount_percent)) / 100));
+            return {
+              amount: pctAmount,
+              label: `${matchedPlan.name} (${matchedPlan.discount_percent}% Off)`,
+              isAutoApplied: true
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }, [breakdown, customerMeta, membershipPlans, initialCost, session.food_cost]);
+
+  const totalCost = discountInfo?.isAutoApplied
+    ? Math.max(0, (Number(breakdown?.baseTableCost || initialCost) + Number(breakdown?.foodCost || session.food_cost || 0)) - discountInfo.amount)
+    : initialCost;
+
   // Form State
   const [paymentMode, setPaymentMode] = useState<'now' | 'credit'>(
     data.paymentMode === 'credit' && customerMeta.isMember ? 'credit' : 'now'
@@ -167,28 +245,11 @@ export default function SessionCompletionModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSubmitting, onClose]);
 
-  // Clean discount label logic: FIX MISLEADING "Discount: None"
-  const discountInfo = useMemo(() => {
-    if (!breakdown || Number(breakdown.discountAmount || 0) <= 0) return null;
-    const amount = Number(breakdown.discountAmount);
-
-    let rawLabel = (breakdown.discountLabel || '').trim();
-    // Filter out useless/buggy labels like 'None', empty, or min-bill warnings
-    if (!rawLabel || rawLabel.toLowerCase() === 'none' || rawLabel.toLowerCase().includes('required')) {
-      if (breakdown.appliedRateName && breakdown.appliedRateName.toLowerCase() !== 'standard') {
-        rawLabel = breakdown.appliedRateName;
-      } else if (breakdown.discountPercent && breakdown.discountPercent > 0) {
-        rawLabel = `${breakdown.discountPercent}% Off`;
-      } else {
-        rawLabel = 'Applied Discount';
-      }
+  useEffect(() => {
+    if (discountInfo?.isAutoApplied && (data.amountReceived === undefined || data.amountReceived === '')) {
+      setAmountReceived(String(totalCost));
     }
-
-    return {
-      amount,
-      label: rawLabel
-    };
-  }, [breakdown]);
+  }, [discountInfo?.isAutoApplied, totalCost, data.amountReceived]);
 
   // Calculations for Single Payment
   const numericAmountReceived = amountReceived === '' ? totalCost : Number(amountReceived);
@@ -451,18 +512,18 @@ export default function SessionCompletionModal({
             <div className="flex justify-between items-center text-xs text-text-secondary">
               <span className="uppercase tracking-wider font-semibold">{t('table_fee', 'Table Session Fee')}</span>
               <span className="font-mono font-bold text-text-primary">
-                {formatINR(breakdown ? breakdown.baseTableCost : totalCost)}
+                {formatINR(breakdown ? breakdown.baseTableCost : (discountInfo?.isAutoApplied ? initialCost : totalCost))}
               </span>
             </div>
 
-            {breakdown && breakdown.foodCost > 0 && (
+            {((breakdown && breakdown.foodCost > 0) || Number(session.food_cost || 0) > 0) && (
               <div className="flex justify-between items-center text-xs">
                 <span className="text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
                   <Utensils className="w-3.5 h-3.5" />
                   <span>{t('food_orders', 'F&B Orders')}</span>
                 </span>
                 <span className="font-mono text-amber-400 font-bold">
-                  + {formatINR(breakdown.foodCost)}
+                  + {formatINR(breakdown?.foodCost ?? session.food_cost ?? 0)}
                 </span>
               </div>
             )}

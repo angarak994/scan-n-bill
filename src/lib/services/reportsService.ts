@@ -244,8 +244,7 @@ export async function getFinancialReportsSummary(
     currentPaymentsRes,
     customersRes,
     compSessionsRes,
-    compPaymentsRes,
-    historicalLedgerRes
+    compPaymentsRes
   ] = await Promise.all([
     // A. Completed sessions in current period (Revenue basis = end_time)
     supabase
@@ -298,14 +297,7 @@ export async function getFinancialReportsSummary(
           .eq('business_id', businessId)
           .gte('created_at', range.comparison.startIso)
           .lt('created_at', range.comparison.endIso)
-      : Promise.resolve({ data: [] }),
-
-    // G. Prior ledger history (for dues roll-forward opening balance)
-    supabase
-      .from('payments')
-      .select('amount, status, metadata')
-      .eq('business_id', businessId)
-      .lt('created_at', currentStartIso)
+      : Promise.resolve({ data: [] })
   ]);
 
   const currentSessions = currentSessionsRes.data || [];
@@ -314,7 +306,6 @@ export async function getFinancialReportsSummary(
   const customers = customersRes.data || [];
   const compSessions = compSessionsRes.data || [];
   const compPayments = compPaymentsRes.data || [];
-  const historicalPayments = historicalLedgerRes.data || [];
 
   // ==========================================
   // 4. METRIC COMPUTATIONS (Exact integer math)
@@ -446,15 +437,6 @@ export async function getFinancialReportsSummary(
 
   // --- DUES ROLL-FORWARD EQUATION ---
   // Opening Dues + New Billed Dues - Settled Collections = Closing Dues
-  let priorChargesSum = 0;
-  let priorPaymentsSum = 0;
-  for (const hp of historicalPayments) {
-    const amt = Math.round(Number(hp.amount) || 0);
-    if (hp.metadata?.type === 'CHARGE') priorChargesSum += amt;
-    else if (hp.status === 'Paid') priorPaymentsSum += amt;
-  }
-  const openingDues = Math.max(0, priorChargesSum - priorPaymentsSum);
-
   let newDuesPeriod = 0;
   let settledDuesPeriod = 0;
   for (const p of currentPayments) {
@@ -463,6 +445,7 @@ export async function getFinancialReportsSummary(
     else if (p.status === 'Paid') settledDuesPeriod += amt;
   }
   const closingDues = outstandingTotal;
+  const openingDues = Math.max(0, closingDues - (newDuesPeriod - settledDuesPeriod));
 
   // --- HOW THE MONEY MOVES STRIP ---
   // Billed in period = Collected at checkout + Added to QKhata
