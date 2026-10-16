@@ -1,0 +1,20 @@
+[Unit]
+Description=QControl Telegram Bot Resilient Worker Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=node
+WorkingDirectory=/path/to/QR-based-billing
+ExecStart=/usr/bin/npx tsx scripts/telegram-worker.ts
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+EnvironmentFile=/path/to/QR-based-billing/.env.local
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qcontrol-tg-worker
+
+[Install]
+WantedBy=multi-user.target

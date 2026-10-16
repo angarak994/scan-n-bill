@@ -83,6 +83,7 @@ export interface Translations {
   // Telegram Menu
   tg_start_session: string;
   tg_active_sessions: string;
+  tg_fb_orders: string;
   tg_member_qkhata: string;
   tg_stop_session: string;
   tg_book_table: string;
@@ -298,6 +299,7 @@ export const translations: Record<SupportedLanguage, Translations> = {
     // Telegram Menu
     tg_start_session: "▶️ Start Session",
     tg_active_sessions: "📋 Active Sessions",
+    tg_fb_orders: "🍔 F&B Orders",
     tg_member_qkhata: "📒 Member QKhata",
     tg_stop_session: "🛑 Stop Session",
     tg_book_table: "📅 Book Table",
@@ -512,6 +514,7 @@ export const translations: Record<SupportedLanguage, Translations> = {
     // Telegram Menu
     tg_start_session: "▶️ सत्र शुरू करें",
     tg_active_sessions: "📋 सक्रिय सत्र",
+    tg_fb_orders: "🍔 खाद्य व पेय",
     tg_member_qkhata: "📒 सदस्य खाता",
     tg_stop_session: "🛑 सत्र समाप्त करें",
     tg_book_table: "📅 टेबल बुक करें",
@@ -726,6 +729,7 @@ export const translations: Record<SupportedLanguage, Translations> = {
     // Telegram Menu
     tg_start_session: "▶️ सत्र सुरू करा",
     tg_active_sessions: "📋 चालू सत्रे",
+    tg_fb_orders: "🍔 खाद्य व पेये",
     tg_member_qkhata: "📒 सदस्य खाते",
     tg_stop_session: "🛑 सत्र थांबवा",
     tg_book_table: "📅 टेबल बुक करा",

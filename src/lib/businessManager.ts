@@ -14,7 +14,7 @@ export interface BusinessData {
   pricing_rules?: BusinessPricing;
   tables?: TableConfig[];
   dashboard_pin?: string;
-  menu_items?: { id?: string; name: string; price: number; category?: string; description?: string; image?: string; available?: boolean }[];
+  menu_items?: { id?: string; name: string; price: number; category?: string; description?: string; image?: string; available?: boolean; is_pinned?: boolean }[];
   active_discounts?: Record<string, TableDiscountConfig>;
   goals?: { daily_revenue: number, daily_sessions: number };
   has_logged_in?: boolean;

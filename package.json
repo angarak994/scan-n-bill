@@ -8,8 +8,12 @@
     "build": "next build",
     "start": "next start",
     "worker": "npx tsx scripts/telegram-worker.ts",
+    "worker:supervised": "node scripts/supervised-worker.js",
     "webhook:set": "node fix_webhook2.js",
+    "webhook:verify": "npx tsx scripts/verify-webhook.ts",
+    "webhook:restore": "npx tsx scripts/restore-webhook.ts",
     "test:tg-perf": "npx tsx scripts/test-telegram-performance.ts",
+    "test:tg-reliability": "npx tsx scripts/test-telegram-reliability.ts",
     "lint": "eslint"
   },
   "dependencies": {

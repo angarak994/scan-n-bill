@@ -14,6 +14,10 @@ import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
 import { SupportedLanguage, translations } from '@/lib/i18n';
 import { PerformanceTracker, getBotMetrics } from '@/lib/telegram/metrics';
 import { invalidateBusinessCache as invalidateGlobalBusinessCache, registerCacheInvalidationListener } from '@/lib/businessManager';
+import { renderFbHub, generateEndOfDayDigest, handleFbCallback, getTodayFbStats } from '@/lib/telegram/fbOrderingService';
+
+import { TelegramClient } from '@/lib/telegram/telegramClient';
+import { DeliveryManager } from '@/lib/telegram/deliveryManager';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -26,76 +30,39 @@ function escapeHtml(text: string) {
 }
 
 async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
-  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!process.env.TELEGRAM_BOT_TOKEN && !TELEGRAM_BOT_TOKEN) return;
   try {
-    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML',
-        reply_markup: replyMarkup
-      })
-    });
-    const data = await res.json();
-    if (!data.ok) console.error("Telegram API Error:", data);
-    return data;
-  } catch (e) {
-    console.error('Failed to send telegram message', e);
+    return await TelegramClient.sendMessage(chatId, text, replyMarkup);
+  } catch (e: any) {
+    console.error('Failed to send telegram message', e?.message || e);
   }
 }
 
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
-  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!process.env.TELEGRAM_BOT_TOKEN && !TELEGRAM_BOT_TOKEN) return;
   try {
-    await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        callback_query_id: callbackQueryId,
-        text
-      })
-    });
+    return await TelegramClient.answerCallbackQuery(callbackQueryId, text);
   } catch (e) {}
 }
 
 async function editTelegramMessageText(chatId: string | number, messageId: number, text: string, replyMarkup?: any) {
-  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!process.env.TELEGRAM_BOT_TOKEN && !TELEGRAM_BOT_TOKEN) return;
   try {
-    const finalReplyMarkup = replyMarkup === undefined ? { inline_keyboard: [] } : replyMarkup;
-    await fetch(`${TELEGRAM_API}/editMessageText`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        text,
-        parse_mode: 'HTML',
-        reply_markup: finalReplyMarkup
-      })
-    });
-  } catch (e) {
-    console.error('Failed to edit telegram message text', e);
+    return await TelegramClient.editMessageText(chatId, messageId, text, replyMarkup);
+  } catch (e: any) {
+    console.error('Failed to edit telegram message text', e?.message || e);
   }
 }
 
 async function editTelegramMessageReplyMarkup(chatId: string | number, messageId: number, replyMarkup: any) {
-  if (!TELEGRAM_BOT_TOKEN) return;
+  if (!process.env.TELEGRAM_BOT_TOKEN && !TELEGRAM_BOT_TOKEN) return;
   try {
-    await fetch(`${TELEGRAM_API}/editMessageReplyMarkup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        reply_markup: replyMarkup
-      })
-    });
-  } catch (e) {
-    console.error('Failed to edit telegram message markup', e);
+    return await TelegramClient.editMessageReplyMarkup(chatId, messageId, replyMarkup);
+  } catch (e: any) {
+    console.error('Failed to edit telegram message markup', e?.message || e);
   }
 }
+
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
@@ -107,7 +74,7 @@ function getMainMenuKeyboard(allActiveMembershipsCount: number = 0, lang: Suppor
   const dict = translations[lang] || translations.en;
   const keyboard = [
     [{ text: dict.tg_start_session }, { text: dict.tg_active_sessions }],
-    [{ text: dict.tg_member_qkhata }],
+    [{ text: dict.tg_fb_orders }, { text: dict.tg_member_qkhata }],
     [{ text: dict.tg_stop_session }, { text: dict.tg_book_table }],
     [{ text: dict.tg_paused_sessions }, { text: dict.tg_today_summary }],
     [{ text: dict.tg_change_language }]
@@ -381,30 +348,30 @@ export async function GET(request: Request) {
     if (url.searchParams.get('ping') === 'true') {
       return NextResponse.json({ ok: true, status: 'warm', timestamp: Date.now() });
     }
+    if (url.searchParams.get('status') === 'true') {
+      const status = await DeliveryManager.getWebhookStatus();
+      return NextResponse.json(status);
+    }
+    if (url.searchParams.get('restore') === 'true' || url.searchParams.get('selfheal') === 'true') {
+      const dropPending = url.searchParams.get('drop') === 'true';
+      const result = await DeliveryManager.ensureWebhookRegistered({ force: true, dropPending });
+      return NextResponse.json(result);
+    }
 
-    const host = request.headers.get('x-forwarded-host') || url.host;
-    const protocol = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
-    const webhookUrl = `${protocol}://${host}/api/telegram-webhook`;
-
-    if (!TELEGRAM_BOT_TOKEN) {
+    if (!process.env.TELEGRAM_BOT_TOKEN) {
       return NextResponse.json({ error: 'Bot token not configured' }, { status: 500 });
     }
 
-    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
-    const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: webhookUrl,
-        drop_pending_updates: true,
-        secret_token: WEBHOOK_SECRET
-      })
+    // Default: Check and ensure webhook is correctly registered
+    const result = await DeliveryManager.ensureWebhookRegistered();
+    return NextResponse.json({
+      success: result.success,
+      action: result.actionTaken,
+      webhookUrl: result.newUrl || result.previousUrl,
+      message: result.message
     });
-    
-    const data = await res.json();
-    return NextResponse.json({ success: true, webhookUrl, telegramResponse: data });
   } catch (error: any) {
-    console.error('Failed to set webhook:', error);
+    console.error('Failed to inspect/set webhook:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -1031,40 +998,79 @@ Time: ${timeStr}`, mainMenu);
       ) {
         const dateStr = getCurrentISTDateStr();
         
-        const [sessionsResponse, qpulseInsight] = await Promise.all([
+        const [sessionsResponse, qpulseInsight, todayFbStats] = await Promise.all([
           supabase
             .from('sessions')
-            .select('cost, duration')
+            .select('cost, duration, food_cost')
             .eq('business_id', business.id)
             .eq('status', 'COMPLETED')
             .eq('date', dateStr),
-          getCachedQpulseInsight(business.id)
+          getCachedQpulseInsight(business.id),
+          getTodayFbStats(business.id)
         ]);
         
         const completedSessions = sessionsResponse.data;
           
         if (!completedSessions || completedSessions.length === 0) {
-          const noRevMsg = userLang === 'mr' ? `आज (${dateStr}) कोणतेही सत्र पूर्ण झालेले नाही.` : userLang === 'hi' ? `आज (${dateStr}) कोई सत्र पूरा नहीं हुआ है।` : `No completed sessions today (${dateStr}).`;
-          await sendTelegramMessage(chatId, noRevMsg, mainMenu);
+          let noRevMsg = userLang === 'mr' ? `आज (${dateStr}) कोणतेही सत्र पूर्ण झालेले नाही.` : userLang === 'hi' ? `आज (${dateStr}) कोई सत्र पूरा नहीं हुआ है।` : `No completed sessions today (${dateStr}).`;
+          if (todayFbStats.orderCount > 0) {
+            noRevMsg += `\n\n🍔 <b>F&B Orders Today:</b> ${todayFbStats.orderCount} orders · ₹${todayFbStats.fbRevenue}`;
+          }
+          const buttons = [
+            [{ text: '🍔 F&B Ordering', callback_data: 'fb:hub' }],
+            [{ text: '📊 Daily Digest', callback_data: 'fb:dgt' }]
+          ];
+          await sendTelegramMessage(chatId, noRevMsg, { inline_keyboard: buttons });
         } else {
           let totalRevenue = 0;
+          let totalFb = 0;
           
           completedSessions.forEach(s => {
             totalRevenue += Number(s.cost) || 0;
+            totalFb += Number(s.food_cost) || 0;
           });
           
+          const effectiveFb = Math.max(totalFb, todayFbStats.fbRevenue);
+          
           let msg = userLang === 'mr' 
-            ? `💰 <b>आजचा हिशोब</b> (${dateStr})\n\nएकूण सत्रे: ${completedSessions.length}\nएकूण कमाई: ₹${Math.round(totalRevenue)}`
+            ? `💰 <b>आजचा हिशोब</b> (${dateStr})\n\nएकूण सत्रे: ${completedSessions.length}\nएकूण कमाई: ₹${Math.round(totalRevenue)}\n🍔 F&B कमाई: ₹${Math.round(effectiveFb)} (${todayFbStats.orderCount} ऑर्डर्स)`
             : userLang === 'hi'
-            ? `💰 <b>आज का सारांश</b> (${dateStr})\n\nकुल सत्र: ${completedSessions.length}\nकुल राजस्व: ₹${Math.round(totalRevenue)}`
-            : `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}`;
+            ? `💰 <b>आज का सारांश</b> (${dateStr})\n\nकुल सत्र: ${completedSessions.length}\nकुल राजस्व: ₹${Math.round(totalRevenue)}\n🍔 F&B कमाई: ₹${Math.round(effectiveFb)} (${todayFbStats.orderCount} ऑर्डर्स)`
+            : `💰 <b>Today's Revenue</b> (${dateStr})\n\nTotal Sessions: ${completedSessions.length}\nTotal Revenue: ₹${Math.round(totalRevenue)}\n🍔 F&B Revenue: ₹${Math.round(effectiveFb)} (${todayFbStats.orderCount} orders)`;
           
           if (qpulseInsight && qpulseInsight.telegram) {
             msg += `\n\n<b>Qpulse Insight</b>\n${qpulseInsight.telegram}`;
           }
           
-          await sendTelegramMessage(chatId, msg, mainMenu);
+          const summaryButtons = [
+            [{ text: '🍔 Open F&B Orders', callback_data: 'fb:hub' }],
+            [{ text: '📊 End-of-Day Digest', callback_data: 'fb:dgt' }]
+          ];
+          await sendTelegramMessage(chatId, msg, { inline_keyboard: summaryButtons });
         }
+        return NextResponse.json({ ok: true });
+      }
+        const dict = translations[userLang] || translations.en;
+        if (
+          text === dict.tg_fb_orders ||
+          text === '🍔 F&B Orders' ||
+          text === '🍔 खाद्य व पेय' ||
+          text === '🍔 खाद्य व पेये' ||
+          text === '/food' ||
+          text === '/fb' ||
+          text === '/orders'
+        ) {
+        const hub = await renderFbHub(business, chatId);
+        await sendTelegramMessage(chatId, hub.text, hub.replyMarkup);
+        return NextResponse.json({ ok: true });
+      }
+      else if (text === '/digest') {
+        const digest = await generateEndOfDayDigest(business.id);
+        const digestButtons = [
+          [{ text: '🔄 Refresh Digest', callback_data: 'fb:dgt' }],
+          [{ text: '🍔 F&B Hub', callback_data: 'fb:hub' }]
+        ];
+        await sendTelegramMessage(chatId, digest, { inline_keyboard: digestButtons });
         return NextResponse.json({ ok: true });
       }
       else if (
@@ -1170,6 +1176,27 @@ Time: ${timeStr}`, mainMenu);
       const ctx = await getBusinessContext(chatId);
       const userLang = (ctx.activeMembership?.userLanguage || 'en') as SupportedLanguage;
       const mainMenu = getMainMenuKeyboard(ctx.allActiveMemberships.length, userLang);
+
+      if (callbackData.startsWith('fb:')) {
+        let b = ctx.activeMembership?.business;
+        if (!b && ctx.allActiveMemberships.length === 1) {
+          b = ctx.allActiveMemberships[0].business;
+        }
+        if (!b) {
+          if (messageId) await editTelegramMessageText(chatId, messageId, '⚠️ Unauthorized or no active business selected.');
+          else await sendTelegramMessage(chatId, '⚠️ Unauthorized or no active business selected.');
+          return NextResponse.json({ ok: true });
+        }
+        if (callbackData === 'fb:back_main') {
+          if (messageId) {
+            await editTelegramMessageText(chatId, messageId, `<b>QControl Dashboard</b>\n${escapeHtml(b.business_name)}\n\nPlease choose an action:`);
+          }
+          await sendTelegramMessage(chatId, `<b>QControl</b>`, mainMenu);
+          return NextResponse.json({ ok: true });
+        }
+        await handleFbCallback(b, chatId, messageId, callbackData, sendTelegramMessage, editTelegramMessageText);
+        return NextResponse.json({ ok: true });
+      }
 
       if (callbackData.startsWith('set_lang_')) {
         const selectedLang = callbackData.replace('set_lang_', '') as SupportedLanguage;
@@ -2465,8 +2492,8 @@ You can still access other businesses associated with your Telegram account.`, {
           try {
             const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1, (booking as any).member_id);
             await supabase.from('bookings').update({ status: 'active', session_id: session.id }).eq('id', bookingId);
-            const { syncUnifiedSessionToSheet } = require('@/lib/googleSheets');
-            syncUnifiedSessionToSheet(session.id, business.id).catch(() => {});
+            const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
+            enqueueSheetsSync('SESSION', session.id, business.id);
             const msg = `✅ <b>Booking Started</b>
 
 Player: ${booking.customer_name}
@@ -2649,19 +2676,23 @@ function isDuplicateUpdate(updateId?: number, callbackQueryId?: string): boolean
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
-    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
     const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
+    const isSecretValid = Boolean(clientSecret && clientSecret === WEBHOOK_SECRET);
     
-    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is configured, reject mismatched secret token.
-    if (WEBHOOK_SECRET && clientSecret && clientSecret !== WEBHOOK_SECRET) {
+    // Strict secret verification: If secret is sent, reject mismatched secret token.
+    if (clientSecret && !isSecretValid) {
       console.warn('Unauthorized Telegram Webhook attempt: invalid secret token.');
       return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
     }
     
-    // Rate Limit: Prevent brute force or spam on webhook
-    const ip = getIpAddress(request);
-    if (!checkRateLimit(`tg_webhook_${ip}`, 120, 60 * 1000)) {
-       return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    // Rate Limit: Prevent brute force or spam on webhook from unauthenticated callers.
+    // Authenticated Telegram delivery is not IP throttled to avoid dropping genuine batch retries.
+    if (!isSecretValid) {
+      const ip = getIpAddress(request);
+      if (!checkRateLimit(`tg_webhook_${ip}`, 120, 60 * 1000)) {
+        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+      }
     }
 
     const update = await request.json();
@@ -2677,26 +2708,47 @@ export async function POST(request: Request) {
       callbackData || update.message?.text?.split(' ')[0]
     );
 
-    // Instant in-memory idempotency check (0.01ms)
-    const isDuplicate = isDuplicateUpdate(updateId, callbackQueryId);
-    if (isDuplicate) {
+    // Layer 1: Instant in-memory idempotency & button debouncing (0.01ms)
+    const isDuplicateMem = isDuplicateUpdate(updateId, callbackQueryId);
+    if (isDuplicateMem) {
       tracker.markAcknowledged();
-      tracker.finish('SUCCESS', 'Duplicate ignored');
+      tracker.finish('SUCCESS', 'In-memory duplicate ignored');
       if (callbackQueryId) {
         return NextResponse.json({
           method: 'answerCallbackQuery',
-          callback_query_id: callbackQueryId
+          callback_query_id: callbackQueryId,
+          cache_time: 0,
+          duplicate: true
         });
       }
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, duplicate: true });
     }
 
-    // Persist to telegram_updates asynchronously (never blocks response)
-    if (updateId && chatId) {
-      Promise.resolve(supabase.from('telegram_updates').insert({
+    // Layer 2: Atomic Database Deduplication Lock
+    // Ensures zero duplicate side-effects across restarts, serverless lambdas, and concurrent workers.
+    if (updateId && updateId > 0) {
+      const { error: insertError } = await supabase.from('telegram_updates').insert({
         update_id: updateId,
-        chat_id: String(chatId)
-      })).catch(() => {});
+        chat_id: String(chatId || '')
+      });
+
+      if (insertError && (
+        insertError.code === '23505' || 
+        insertError.message?.includes('duplicate key') || 
+        insertError.message?.includes('violates unique constraint')
+      )) {
+        tracker.markAcknowledged();
+        tracker.finish('SUCCESS', 'Atomic DB duplicate ignored');
+        if (callbackQueryId) {
+          return NextResponse.json({
+            method: 'answerCallbackQuery',
+            callback_query_id: callbackQueryId,
+            cache_time: 0,
+            duplicate: true
+          });
+        }
+        return NextResponse.json({ ok: true, duplicate: true });
+      }
     }
 
     // Mark callback acknowledged
@@ -2704,7 +2756,7 @@ export async function POST(request: Request) {
       tracker.markAcknowledged();
     }
 
-    // Execute webhook processing directly and await to ensure Vercel doesn't freeze the container prematurely
+    // Execute webhook processing directly and await to ensure container doesn't freeze prematurely
     try {
       await processWebhook(update, tracker);
       tracker.finish('SUCCESS');

@@ -13,6 +13,7 @@ interface EnhancedTableViewProps {
   currentDiscounts: any;
   activePromotions: any[];
   menuItems: any[];
+  mostSellingItems?: any[];
   businessId: string;
   isPrivacyMode: boolean;
   paymentQrConfig?: any;
@@ -374,6 +375,13 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
     { id: 'def_energy_drink', name: 'Energy Drink / Red Bull', price: 120, category: 'Beverages' },
     { id: 'def_chips', name: 'Chips / Snacks', price: 50, category: 'Snacks' }
   ], []);
+
+  const fastTopItems = useMemo(() => {
+    if (props.mostSellingItems && props.mostSellingItems.length > 0) {
+      return props.mostSellingItems;
+    }
+    return menuItems && menuItems.length > 0 ? menuItems.slice(0, 6) : DEFAULT_CLUB_ITEMS;
+  }, [props.mostSellingItems, menuItems, DEFAULT_CLUB_ITEMS]);
 
   // Combined menu items with fallback and custom items
   const allAvailableMenuItems = useMemo(() => {
@@ -823,17 +831,19 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                 </div>
               )}
 
-              {/* Fast 1-Tap Staples Chips */}
+              {/* Fast 1-Tap Most Selling & Pinned Chips */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-text-disabled shrink-0">Fast:</span>
-                {DEFAULT_CLUB_ITEMS.map(staple => (
+                <span className="text-[9px] font-bold uppercase tracking-widest text-text-disabled shrink-0">Top:</span>
+                {fastTopItems.map((staple: any) => (
                   <button
-                    key={staple.id}
+                    key={staple.id || staple.name}
                     type="button"
                     onClick={() => updateCart(staple.name, 1, staple.price)}
                     className="px-2 py-0.5 rounded-md bg-bg-surface border border-border-theme hover:border-accent/50 text-[11px] font-medium text-text-secondary hover:text-text-primary shrink-0 transition-colors flex items-center gap-1 font-mono"
                   >
-                    <span>+</span> {staple.name.split(' ')[0]} <span className="text-accent font-bold">₹{staple.price}</span>
+                    <span>{staple.isPinned ? '📌' : '🔥'}</span>
+                    <span>{staple.name.split(' ')[0]}</span>
+                    <span className="text-accent font-bold">₹{staple.price}</span>
                   </button>
                 ))}
               </div>

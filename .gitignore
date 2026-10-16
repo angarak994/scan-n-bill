@@ -42,3 +42,5 @@ next-env.d.ts
 /data/
 generated-qr-codes/
 /scratch/
+.telegram_state.json
+.telegram_offset.json

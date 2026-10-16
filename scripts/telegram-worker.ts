@@ -1,23 +1,27 @@
 /**
- * QControl Telegram Bot - Always-On High-Performance Worker
+ * QControl Telegram Bot - Always-On Resilient Worker Daemon
  * 
- * Delivers ZERO cold-start latency (0ms container boot time) by running
- * as a persistent, always-warm background daemon.
+ * Delivers ZERO downtime, automatic crash recovery, durable offset tracking,
+ * and seamless fallback to production webhook on shutdown.
  * 
  * Features:
- * 1. Long-polling via Telegram Bot API getUpdates (10-30ms delivery latency).
+ * 1. Resilient long-polling with exponential backoff on network failures.
  * 2. Instant callback query acknowledgement (< 50ms).
- * 3. Permanent HTTP Keep-Alive connection pooling to Supabase & Telegram API.
- * 4. Exact feature parity with webhook route using shared processWebhook.
- * 5. Automatic error recovery, exponential backoff on network failures, and graceful shutdown.
- * 6. Real-time latency tracking and p95 reporting.
+ * 3. Durable offset persistence (.telegram_offset.json) prevents replaying old updates on restarts.
+ * 4. Graceful Webhook Handoff: automatically restores production webhook upon process exit.
+ * 5. Uncaught exception & unhandled rejection shielding prevents silent crashes.
+ * 6. Multi-layer idempotency (in-memory + atomic DB) prevents duplicate actions.
  */
 
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
+import fs from 'fs';
+import path from 'path';
 import { POST } from '../src/app/api/telegram-webhook/route';
 import { PerformanceTracker, getBotMetrics } from '../src/lib/telegram/metrics';
+import { TelegramClient } from '../src/lib/telegram/telegramClient';
+import { DeliveryManager } from '../src/lib/telegram/deliveryManager';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TELEGRAM_BOT_TOKEN) {
@@ -25,28 +29,37 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+const OFFSET_FILE = path.join(process.cwd(), '.telegram_offset.json');
 
-async function answerCallbackQueryDirect(callbackQueryId: string, text?: string) {
-  try {
-    await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch (e: any) {
-    console.error(`[Worker] Failed to answer callback query ${callbackQueryId}:`, e.message);
+// Read durable offset if available
+let offset = 0;
+try {
+  if (fs.existsSync(OFFSET_FILE)) {
+    const raw = fs.readFileSync(OFFSET_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.offset === 'number' && parsed.offset > 0) {
+      offset = parsed.offset;
+      console.log(`[Worker] Resuming from durable offset: ${offset}`);
+    }
   }
+} catch (e) {
+  offset = 0;
+}
+
+function persistOffset(newOffset: number) {
+  offset = newOffset;
+  try {
+    fs.writeFileSync(OFFSET_FILE, JSON.stringify({ offset: newOffset, updatedAt: new Date().toISOString() }), 'utf8');
+  } catch {}
 }
 
 let isRunning = true;
-let offset = 0;
+let isShuttingDown = false;
 let consecutiveErrors = 0;
+const inFlightUpdates = new Set<Promise<any>>();
 
-// Deduplication cache
+// Fast in-memory deduplication set
 const processedUpdateIds = new Set<number>();
-
 function isDuplicate(updateId: number): boolean {
   if (processedUpdateIds.has(updateId)) return true;
   processedUpdateIds.add(updateId);
@@ -74,115 +87,149 @@ async function handleUpdate(update: any) {
     callbackData || update.message?.text?.split(' ')[0]
   );
 
-  // 1. If it is a callback query, acknowledge it immediately before any business logic!
+  // 1. Immediately acknowledge callback queries to dismiss client spinner
   if (callbackQueryId) {
-    answerCallbackQueryDirect(callbackQueryId).then(() => {
+    TelegramClient.answerCallbackQuery(callbackQueryId).then(() => {
       tracker.markAcknowledged();
     }).catch(() => {});
   }
 
-  // 2. Process business logic asynchronously
+  // 2. Process business logic via shared POST route handler with secret header
   try {
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
     const req = new Request('http://localhost:3000/api/telegram-webhook', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-telegram-bot-api-secret-token': process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123'
+        'x-telegram-bot-api-secret-token': secret,
       },
-      body: JSON.stringify(update)
+      body: JSON.stringify(update),
     });
+
     await POST(req);
     tracker.finish('SUCCESS');
   } catch (err: any) {
-    console.error(`[Worker Error] update_id: ${updateId}`, err);
-    tracker.finish('ERROR', err.message);
+    console.error(`[Worker Error] update_id: ${updateId}`, err?.message || err);
+    tracker.finish('ERROR', err?.message || 'Error');
   }
 }
 
 async function startWorker() {
-  console.log('='.repeat(60));
-  console.log('🚀 QControl Telegram Always-On Worker Started');
-  console.log(`🤖 Bot Token: ...${TELEGRAM_BOT_TOKEN?.slice(-6)}`);
-  console.log('⚡ Mode: Low-Latency Persistent Long-Polling');
-  console.log('='.repeat(60));
+  console.log('='.repeat(65));
+  console.log('🚀 QControl Telegram Always-On Worker Daemon Starting');
+  console.log(`🤖 Bot: ...${TELEGRAM_BOT_TOKEN?.slice(-6)}`);
+  console.log('⚡ Mode: Low-Latency Persistent Long-Polling with Auto-Handoff');
+  console.log('='.repeat(65));
 
   // Step 1: Remove any active webhook so long-polling can receive updates
   try {
-    console.log('[Worker] Removing conflicting webhook if active...');
-    const dropRes = await fetch(`${TELEGRAM_API}/deleteWebhook?drop_pending_updates=false`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(10000),
-    });
-    const dropData = await dropRes.json();
-    console.log('[Worker] Webhook deletion status:', dropData);
+    console.log('[Worker] Preparing for polling mode (clearing conflicting webhook)...');
+    await DeliveryManager.prepareForPolling();
+    console.log('[Worker] Webhook cleared. Long-polling activated.');
   } catch (err: any) {
-    console.warn('[Worker] Webhook deletion warning:', err.message);
+    console.warn('[Worker] Webhook preparation warning:', err.message);
   }
 
-  // Step 2: Poll loop
+  // Step 2: Resilient Poll Loop
   while (isRunning) {
     try {
-      const res = await fetch(`${TELEGRAM_API}/getUpdates`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          offset,
-          timeout: 25, // Long polling wait up to 25s on Telegram server
-          allowed_updates: ['message', 'callback_query'],
-        }),
-        signal: AbortSignal.timeout(35000),
-      });
+      const res = await TelegramClient.getUpdates(offset, 25, ['message', 'callback_query']);
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        throw new Error(res.description || `Telegram API error code ${res.error_code}`);
       }
 
-      const data = await res.json();
       consecutiveErrors = 0;
 
-      if (data.ok && Array.isArray(data.result)) {
-        for (const update of data.result) {
-          offset = update.update_id + 1;
-          // Process updates concurrently
-          handleUpdate(update).catch(err => {
-            console.error('[Worker Update Error]:', err);
+      if (Array.isArray(res.result) && res.result.length > 0) {
+        for (const update of res.result) {
+          const nextOffset = update.update_id + 1;
+          persistOffset(nextOffset);
+
+          const task = handleUpdate(update).catch((err) => {
+            console.error('[Worker Update Processing Error]:', err?.message || err);
+          }).finally(() => {
+            inFlightUpdates.delete(task);
           });
+
+          inFlightUpdates.add(task);
         }
-      } else {
-        console.warn('[Worker] getUpdates returned ok=false:', data);
       }
     } catch (err: any) {
+      if (!isRunning) break;
       consecutiveErrors++;
       const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors - 1), 15000);
-      if (err.name !== 'TimeoutError' && !err.message?.includes('aborted')) {
-        console.error(`[Worker Poll Error] (Attempt ${consecutiveErrors}) Backing off ${backoffMs}ms:`, err.message);
+      const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError' || err.message?.includes('aborted');
+
+      if (!isTimeout) {
+        console.error(`[Worker Poll Error] (Attempt ${consecutiveErrors}) Backing off ${backoffMs}ms:`, err.message || err);
       }
-      await new Promise(r => setTimeout(r, backoffMs));
+      await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
 
-  console.log('[Worker] Exited poll loop gracefully.');
+  console.log('[Worker] Exited poll loop.');
 }
 
-// Graceful shutdown handlers
-process.on('SIGINT', () => {
-  console.log('\n[Worker] Received SIGINT. Shutting down gracefully...');
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n[Worker] Received ${signal}. Initiating graceful shutdown...`);
   isRunning = false;
+
+  // Wait for in-flight update processing (up to 5 seconds)
+  if (inFlightUpdates.size > 0) {
+    console.log(`[Worker] Waiting for ${inFlightUpdates.size} in-flight updates to complete...`);
+    const timeout = new Promise((r) => setTimeout(r, 5000));
+    await Promise.race([Promise.all(Array.from(inFlightUpdates)), timeout]);
+  }
+
+  // Restore production webhook so the bot continues operating seamlessly via serverless
+  try {
+    console.log('[Worker] Restoring production Telegram webhook before exit...');
+    await DeliveryManager.restoreWebhookOnWorkerExit();
+    console.log('[Worker] Webhook restored successfully. Zero downtime guaranteed.');
+  } catch (err: any) {
+    console.error('[Worker] Failed to restore webhook during shutdown:', err.message || err);
+  }
+
+  process.exit(0);
+}
+
+// Global exception safety shields
+process.on('uncaughtException', (err: Error) => {
+  console.error('[Worker Uncaught Exception - Shielded]:', err.message, err.stack);
 });
 
-process.on('SIGTERM', () => {
-  console.log('\n[Worker] Received SIGTERM. Shutting down gracefully...');
-  isRunning = false;
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[Worker Unhandled Rejection - Shielded]:', reason);
 });
 
-// Periodic metric reporter every 5 minutes
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Periodic metric & health reporter every 5 minutes
 setInterval(() => {
   const metrics = getBotMetrics();
-  console.log(`[QControl Worker Stats] Total: ${metrics.totalRequests} | P95 Ack: ${metrics.p95AckMs}ms | P95 Op: ${metrics.p95OpMs}ms | Avg DB: ${metrics.avgDbMs}ms | Errors: ${metrics.errors}`);
-}, 300000);
+  console.log(`[Worker Stats] Total: ${metrics.totalRequests} | P95 Ack: ${metrics.p95AckMs}ms | P95 Op: ${metrics.p95OpMs}ms | Errors: ${metrics.errors} | Inflight: ${inFlightUpdates.size}`);
+}, 300000).unref();
 
-// Run worker
-startWorker().catch(err => {
-  console.error('[Worker Fatal Error]:', err);
+// Run worker with top-level crash recovery wrapper
+async function runWithCrashRecovery() {
+  while (isRunning) {
+    try {
+      await startWorker();
+    } catch (err: any) {
+      console.error('[Worker Fatal Crash]:', err.message || err);
+      if (!isRunning) break;
+      console.log('[Worker Crash Recovery] Restarting worker loop in 3000ms...');
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+
+runWithCrashRecovery().catch(async (fatalErr) => {
+  console.error('[Worker Terminal Failure]:', fatalErr);
+  await DeliveryManager.restoreWebhookOnWorkerExit().catch(() => {});
   process.exit(1);
 });

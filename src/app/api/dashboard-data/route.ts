@@ -54,6 +54,7 @@ async function getCachedPreviousRevenue(businessId: string, prevStartDate: strin
 }
 
 import { getBusinessEntitlement } from '@/lib/entitlements';
+import { getMostSellingItems } from '@/lib/services/mostSellingService';
 export async function GET(request: Request) {
   try {
     const sessionCookie = await getSession();
@@ -390,7 +391,8 @@ export async function GET(request: Request) {
       menu_items: business.menu_items || [],
       entitlement: entitlement,
       foodOrders: foodOrders || [],
-      membership_plans: membership_plans || []
+      membership_plans: membership_plans || [],
+      mostSellingItems: await getMostSellingItems(businessId as string, business.menu_items || [], 8)
     });
   } catch (error: any) {
     console.error('Dashboard Error:', error);

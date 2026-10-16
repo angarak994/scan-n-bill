@@ -40,6 +40,54 @@ export async function GET() {
     jwt: Boolean(process.env.JWT_SECRET)
   };
 
+  // 2b. Telegram Bot & Webhook Live Health Check
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    try {
+      const { DeliveryManager } = require('@/lib/telegram/deliveryManager');
+      const { TelegramClient } = require('@/lib/telegram/telegramClient');
+      
+      const tgStartTime = Date.now();
+      const [meRes, webhookStatus] = await Promise.all([
+        TelegramClient.getMe(),
+        DeliveryManager.getWebhookStatus()
+      ]);
+      const tgLatencyMs = Date.now() - tgStartTime;
+
+      let tgHealthy = meRes.ok;
+      let selfHealResult = null;
+
+      // Self-heal webhook if detached and in production or auto-heal requested
+      if (meRes.ok && !webhookStatus.isConfigured && (process.env.NODE_ENV === 'production' || process.env.AUTO_HEAL_WEBHOOK === 'true')) {
+        selfHealResult = await DeliveryManager.ensureWebhookRegistered();
+      }
+
+      checks.telegram = {
+        status: tgHealthy ? (webhookStatus.isConfigured ? 'healthy' : 'degraded_webhook_missing') : 'unhealthy',
+        botUsername: meRes.result?.username,
+        latencyMs: tgLatencyMs,
+        webhook: {
+          configured: webhookStatus.isConfigured,
+          url: webhookStatus.currentUrl,
+          expectedUrl: webhookStatus.expectedUrl,
+          pendingUpdates: webhookStatus.pendingUpdateCount,
+          lastErrorDate: webhookStatus.lastErrorDate,
+          lastErrorMessage: webhookStatus.lastErrorMessage,
+        },
+        selfHeal: selfHealResult
+      };
+
+      if (!tgHealthy) {
+        overallHealthy = false;
+      }
+    } catch (tgErr: any) {
+      checks.telegram = {
+        status: 'unhealthy',
+        error: tgErr?.message || String(tgErr)
+      };
+      overallHealthy = false;
+    }
+  }
+
   // 3. Process & Memory Metrics
   const mem = process.memoryUsage();
   const memoryMetrics = {

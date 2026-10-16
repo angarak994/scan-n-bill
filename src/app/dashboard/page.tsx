@@ -2847,6 +2847,7 @@ function DashboardContent() {
             activePromotions={data?.activePromotions || []}
             
             menuItems={data.menu_items || []}
+            mostSellingItems={(data as any)?.mostSellingItems || []}
             businessId={businessId!}
             isPrivacyMode={isPrivacyMode}
             formatINR={formatINR}
