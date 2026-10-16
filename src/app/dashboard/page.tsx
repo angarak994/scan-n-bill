@@ -2517,7 +2517,7 @@ function DashboardContent() {
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <div className="text-lg font-bold text-accent">₹{total}</div>
-                          <div suppressHydrationWarning className="text-[10px] text-text-secondary mt-1">{new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' })}</div>
+                          <div suppressHydrationWarning className="text-[10px] text-text-secondary mt-1">{formatTimeReadable(order.created_at)}</div>
                         </div>
                         <button
                           type="button"
@@ -2562,12 +2562,7 @@ function DashboardContent() {
       const csvContent = [
         headers.join(','),
         ...reportData.completedSessions.map((s: any) => {
-          let readableTime = s.start_time || '';
-          if (readableTime.includes('T')) {
-            try {
-              readableTime = new Date(readableTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            } catch (err) {}
-          }
+          const readableTime = formatTimeReadable(s.start_time);
           const shortId = s.id ? s.id.split('-')[0].toUpperCase() : '';
           return [
             shortId, s.date, readableTime, s.customer_name, s.game_type, s.duration, 

@@ -459,7 +459,8 @@ async function processWebhook(update: any, tracker?: PerformanceTracker) {
             await switchBusinessContext(chatId, businessWithToken.id);
             
             const newCtx = await getBusinessContext(chatId);
-            const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length);
+            const userLang = (newCtx.activeMembership?.userLanguage || 'en') as SupportedLanguage;
+            const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length, userLang);
             
             const msg = `✅ <b>Telegram Connected Successfully</b>\n\n🏢 Business: ${escapeHtml(businessWithToken.business_name || "")}\n👤 Role: ${role}\n\nYou can now manage this business directly from Telegram.`;
             await sendTelegramMessage(chatId, msg, newMainMenu);
@@ -826,7 +827,7 @@ Time: ${timeStr}`, mainMenu);
             
             try {
                 const session = await startSession(matchingTable.id, gameType as any, 'Guest', business.id, 1);
-                const msg = `⚡ <b>Lazy Session Started</b>\n\nTable: ${matchingTable.id}\nCustomer: Guest\nTime: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+                const msg = `⚡ <b>Lazy Session Started</b>\n\nTable: ${matchingTable.id}\nCustomer: Guest\nTime: ${formatTimeReadable(session.start_time)}`;
                 await sendTelegramMessage(chatId, msg, mainMenu);
             } catch(e: any) {
                 await sendTelegramMessage(chatId, `❌ Failed to start lazy session: ${e.message}`, mainMenu);
@@ -1392,7 +1393,8 @@ You can still access other businesses associated with your Telegram account.`, {
           await switchBusinessContext(chatId, targetBiz);
           const newCtx = await getBusinessContext(chatId);
           if (newCtx.activeMembership) {
-             const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length);
+             const userLang = (newCtx.activeMembership.userLanguage || 'en') as SupportedLanguage;
+             const newMainMenu = getMainMenuKeyboard(newCtx.allActiveMemberships.length, userLang);
              if (messageId) editTelegramMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] });
              await sendTelegramMessage(chatId, `✅ <b>Business Selected</b>\n\nYou are now managing:\n🏢 ${escapeHtml(newCtx.activeMembership.business.business_name)}`, newMainMenu);
           }
@@ -1864,12 +1866,16 @@ You can still access other businesses associated with your Telegram account.`, {
                  
                 try {
                     const session = await startSession(tableId, gameType as any, 'Guest', business.id, 1);
-                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType}\nStart Time: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
-                    if (messageId) await editTelegramMessageText(chatId, messageId, msg);
-                    else await sendTelegramMessage(chatId, msg, getMainMenuKeyboard(0));
+                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType}\nStart Time: ${formatTimeReadable(session.start_time)}`;
+                    if (messageId) {
+                      await editTelegramMessageText(chatId, messageId, msg);
+                      await sendTelegramMessage(chatId, `🎱 Session for Table <b>${tableId}</b> is active.`, mainMenu);
+                    } else {
+                      await sendTelegramMessage(chatId, msg, mainMenu);
+                    }
                 } catch (error: any) {
                     if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Error starting session: ${error.message}`);
-                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, getMainMenuKeyboard(0));
+                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, mainMenu);
                 }
               } else {
                 if (messageId) {
@@ -1914,12 +1920,16 @@ You can still access other businesses associated with your Telegram account.`, {
              
                 try {
                     const session = await startSession(tableId, gameType as any, 'Guest', business.id, 1);
-                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType}\nStart Time: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
-                    if (messageId) await editTelegramMessageText(chatId, messageId, msg);
-                    else await sendTelegramMessage(chatId, msg, getMainMenuKeyboard(0));
+                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType}\nStart Time: ${formatTimeReadable(session.start_time)}`;
+                    if (messageId) {
+                      await editTelegramMessageText(chatId, messageId, msg);
+                      await sendTelegramMessage(chatId, `🎱 Session for Table <b>${tableId}</b> is active.`, mainMenu);
+                    } else {
+                      await sendTelegramMessage(chatId, msg, mainMenu);
+                    }
                 } catch (error: any) {
                     if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Error starting session: ${error.message}`);
-                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, getMainMenuKeyboard(0));
+                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, mainMenu);
                 }
           } else {
             if (messageId) {
@@ -1945,12 +1955,16 @@ You can still access other businesses associated with your Telegram account.`, {
             const table = (business.tables || []).find((t: any) => t.id === tableId);
             const gameType = table?.type || 'ps5';
             const session = await startSession(tableId, gameType as any, 'Guest', business.id, numPlayers);
-            const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType.toUpperCase()}\nPlayers: ${numPlayers}\nStart Time: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
-            if (messageId) await editTelegramMessageText(chatId, messageId, msg);
-            else await sendTelegramMessage(chatId, msg, getMainMenuKeyboard(0));
+            const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: ${gameType.toUpperCase()}\nPlayers: ${numPlayers}\nStart Time: ${formatTimeReadable(session.start_time)}`;
+            if (messageId) {
+              await editTelegramMessageText(chatId, messageId, msg);
+              await sendTelegramMessage(chatId, `🎱 Session for Table <b>${tableId}</b> is active.`, mainMenu);
+            } else {
+              await sendTelegramMessage(chatId, msg, mainMenu);
+            }
           } catch (error: any) {
             if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Error starting session: ${error.message}`);
-            else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, getMainMenuKeyboard(0));
+            else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, mainMenu);
           }
           return NextResponse.json({ ok: true });
         }
@@ -1991,12 +2005,16 @@ You can still access other businesses associated with your Telegram account.`, {
           
                 try {
                     const session = await startSession(tableId, 'ps5', 'Guest', business.id, parseInt(numPlayers, 10));
-                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: PS5\nPlayers: ${numPlayers}\nStart Time: ${new Date(session.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
-                    if (messageId) await editTelegramMessageText(chatId, messageId, msg);
-                    else await sendTelegramMessage(chatId, msg, getMainMenuKeyboard(0));
+                    const msg = `✅ <b>Session Started (Guest)</b>\n\nTable: ${tableId}\nGame: PS5\nPlayers: ${numPlayers}\nStart Time: ${formatTimeReadable(session.start_time)}`;
+                    if (messageId) {
+                      await editTelegramMessageText(chatId, messageId, msg);
+                      await sendTelegramMessage(chatId, `🎱 Session for Table <b>${tableId}</b> is active.`, mainMenu);
+                    } else {
+                      await sendTelegramMessage(chatId, msg, mainMenu);
+                    }
                 } catch (error: any) {
                     if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Error starting session: ${error.message}`);
-                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, getMainMenuKeyboard(0));
+                    else await sendTelegramMessage(chatId, `❌ Error starting session: ${error.message}`, mainMenu);
                 }
         } else {
           if (messageId) {
@@ -2453,7 +2471,7 @@ You can still access other businesses associated with your Telegram account.`, {
 `;
             msg += `<b>Table:</b> ${b.table_id}
 `;
-            msg += `<b>Time:</b> ${b.start_time}
+            msg += `<b>Time:</b> ${formatTimeReadable(b.start_time)}
 `;
             msg += `<b>Name:</b> ${b.customer_name}
 `;
@@ -2541,9 +2559,7 @@ Select Game Type:`;
             if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: [buttons] });
         } else {
             const todayStr = getCurrentISTDateStr();
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+            const tomorrowStr = getCurrentISTDateStr(Date.now() + 24 * 60 * 60 * 1000);
             
             const buttons = [
                [{ text: 'Today', callback_data: `bk_date_${gameType}_1_${todayStr}` }],
@@ -2556,9 +2572,7 @@ Select Game Type:`;
       else if (callbackData.startsWith('bk_ps5_')) {
         const numPlayers = parseInt(callbackData.replace('bk_ps5_', ''), 10);
         const todayStr = getCurrentISTDateStr();
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const tomorrowStr = getCurrentISTDateStr(Date.now() + 24 * 60 * 60 * 1000);
         
         const buttons = [
            [{ text: 'Today', callback_data: `bk_date_ps5_${numPlayers}_${todayStr}` }],

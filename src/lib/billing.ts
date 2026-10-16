@@ -23,31 +23,45 @@ export function getCurrentISTDateStr(dateMs?: number): string {
   return istDate.toISOString().split('T')[0];
 }
 
-export function formatTimeReadable(timeStr?: string, includeToday: boolean = false, bookingDate?: string): string {
-  if (!timeStr) return '-';
+export function formatTimeReadable(timeInput?: string | Date | number | null, includeToday: boolean = false, bookingDate?: string): string {
+  if (timeInput === null || timeInput === undefined || timeInput === '') return '-';
   try {
-    let clean = timeStr;
-    if (clean.includes('T') || clean.includes(', ') || clean.includes(' ')) {
-      const d = new Date(clean.includes('+') || clean.includes('Z') || clean.includes('GMT') ? clean : `${clean}+05:30`);
-      if (!isNaN(d.getTime())) {
-        const formatter = new Intl.DateTimeFormat('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        });
-        clean = formatter.format(d).replace(' am', ' AM').replace(' pm', ' PM').toUpperCase();
-      }
-    } else if (clean.includes(':')) {
-      const parts = clean.split(':');
-      const h = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      if (!isNaN(h) && !isNaN(m)) {
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const h12 = h % 12 || 12;
-        clean = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+    let d: Date | null = null;
+    let clean = '';
+
+    if (timeInput instanceof Date) {
+      d = timeInput;
+    } else if (typeof timeInput === 'number') {
+      d = new Date(timeInput);
+    } else if (typeof timeInput === 'string') {
+      clean = timeInput.trim();
+      if (clean.includes('T') || clean.includes(', ') || clean.includes(' ')) {
+        const withTz = clean.includes('+') || clean.includes('Z') || clean.includes('GMT') ? clean : `${clean}+05:30`;
+        d = new Date(withTz);
+      } else if (clean.includes(':')) {
+        const parts = clean.split(':');
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m)) {
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const h12 = h % 12 || 12;
+          clean = `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+        }
       }
     }
+
+    if (d && !isNaN(d.getTime())) {
+      const formatter = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      clean = formatter.format(d).replace(' am', ' AM').replace(' pm', ' PM').toUpperCase();
+    }
+
+    if (!clean) return '-';
+
     if (includeToday) {
       const todayStr = getCurrentISTDateStr();
       const isToday = !bookingDate || bookingDate === todayStr || bookingDate.toLowerCase().includes('today');
@@ -57,7 +71,7 @@ export function formatTimeReadable(timeStr?: string, includeToday: boolean = fal
     }
     return clean;
   } catch {
-    return timeStr;
+    return String(timeInput || '-');
   }
 }
 

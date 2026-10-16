@@ -77,8 +77,8 @@ export async function GET(req: Request) {
 
             return {
                 id: p.id,
-                date: new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
-                time: new Date(p.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                date: new Date(p.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }),
+                time: new Date(p.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }),
                 description: title,
                 subtitle,
                 event_type: eventType,

@@ -224,7 +224,7 @@ export function NotificationBell({ businessId }: { businessId: string }) {
                 <div key={n.id} className={`p-4 border-b border-border-light/50 text-sm ${n.is_read ? 'opacity-70' : 'bg-primary/5'}`}>
                   <div className="flex justify-between items-start mb-1">
                     <p className={`font-bold ${n.type === 'success' ? 'text-success' : n.type === 'warning' ? 'text-warning' : n.type === 'error' ? 'text-error' : n.type?.startsWith('order_') ? 'text-accent' : 'text-info'}`}>{n.title}</p>
-                    <span suppressHydrationWarning className="text-[10px] text-text-disabled">{new Date(n.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    <span suppressHydrationWarning className="text-[10px] text-text-disabled">{formatTimeReadable(n.created_at)}</span>
                   </div>
                   {(() => {
                     if (n.type?.startsWith('order_')) {
