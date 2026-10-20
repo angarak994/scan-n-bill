@@ -12,6 +12,7 @@ export interface IntelligenceInput {
   businessName: string;
   buttonReplyId?: string | null;
   listReplyId?: string | null;
+  businessProfile?: any;
 }
 
 export interface IntelligenceOutput {
@@ -32,7 +33,7 @@ export const qcontrolIntelligence = {
    * Main entry point to process a customer message intelligently with strict zero-hallucination guarantees.
    */
   async processCustomerMessage(input: IntelligenceInput): Promise<IntelligenceOutput> {
-    const { incomingText, senderPhone, businessId, businessName, buttonReplyId, listReplyId } = input;
+    const { incomingText, senderPhone, businessId, businessName, buttonReplyId, listReplyId, businessProfile } = input;
     const cleanPhone = senderPhone.replace(/\D/g, '');
     const rawText = (buttonReplyId || listReplyId || incomingText || '').trim();
     const lower = rawText.toLowerCase();
@@ -42,14 +43,14 @@ export const qcontrolIntelligence = {
     const currentStep = state?.current_step;
     const context = state?.context || {};
 
-    // 2. Fetch business context
-    const business = await businessManager.getBusiness(businessId);
+    // 2. Fetch business context (with fresh DB values to reflect instant dashboard profile edits)
+    const business = businessProfile || await businessManager.getBusiness(businessId, true);
     const bName = business?.business_name || businessName || 'QControl';
 
     // 3. Handle explicit state-machine button / interactive clicks first
-    if (buttonReplyId || listReplyId) {
-      const interactiveId = buttonReplyId || listReplyId;
+    const interactiveId = buttonReplyId || listReplyId || (rawText.startsWith('action_') || rawText.startsWith('cancel_') || rawText.startsWith('game_') ? rawText : null);
 
+    if (interactiveId) {
       if (interactiveId === 'action_availability' || interactiveId === 'action_book') {
         return {
           replyText: `What game would you like to play at *${bName}*?`,
@@ -71,9 +72,14 @@ export const qcontrolIntelligence = {
           replyType: 'buttons',
           buttons: [
             { id: 'action_book', title: '📅 Book Now' },
+            { id: 'action_club_info', title: '📍 Location & Info' },
             { id: 'action_my_bookings', title: '📋 My Bookings' }
           ]
         };
+      }
+
+      if (interactiveId === 'action_club_info' || interactiveId === 'action_location' || interactiveId === 'action_contact') {
+        return await this.handleClubProfileInfo(business, bName, cleanPhone);
       }
 
       if (interactiveId === 'action_my_bookings') {
@@ -113,17 +119,24 @@ export const qcontrolIntelligence = {
 
     switch (intent) {
       case 'GREETING': {
+        const addressSnippet = business?.address ? `\n📍 *Address:* ${business.address}` : '';
         return {
-          replyText: `*Welcome to ${bName}!* 🎱\n\nHi! I'm your virtual club assistant. I can help you check table availability, book a game, view pricing or find clubs near you.\n\nWhat would you like to do?`,
+          replyText: `*Welcome to ${bName}!* 🎱${addressSnippet}\n\nHi! I'm your virtual club assistant. I can help you check table availability, book a game, view pricing or view club details.\n\nWhat would you like to do?`,
           replyType: 'buttons',
           buttons: [
             { id: 'action_availability', title: '🎱 Check Tables' },
             { id: 'action_pricing', title: '💰 View Pricing' },
-            { id: 'action_my_bookings', title: '📋 My Bookings' }
+            { id: 'action_club_info', title: '📍 Location & Info' }
           ],
           nextStep: 'AWAITING_ACTION',
           updatedContext: { business_name: bName }
         };
+      }
+
+      case 'ADDRESS_INQUIRY':
+      case 'CONTACT_INQUIRY':
+      case 'CLUB_INFO_INQUIRY': {
+        return await this.handleClubProfileInfo(business, bName, cleanPhone);
       }
 
       case 'PAYMENT_INQUIRY': {
@@ -261,7 +274,54 @@ export const qcontrolIntelligence = {
       return 'BOOK_CHEAPEST';
     }
 
-    // 8. Location discovery
+    // 8. Address & Location Inquiry for current club
+    if (
+      text.includes('address') ||
+      text.includes('location') ||
+      text.includes('kaha hai') ||
+      text.includes('kaha par hai') ||
+      text.includes('kaha pe hai') ||
+      text.includes('kidhar hai') ||
+      text.includes('where is the club') ||
+      text.includes('where are you') ||
+      text.includes('directions') ||
+      text.includes('rasta') ||
+      text.includes('map link')
+    ) {
+      return 'ADDRESS_INQUIRY';
+    }
+
+    // 9. Contact / Manager / Staff Inquiry
+    if (
+      text.includes('contact') ||
+      text.includes('phone') ||
+      text.includes('number') ||
+      text.includes('mobile') ||
+      text.includes('manager') ||
+      text.includes('owner') ||
+      text.includes('staff') ||
+      text.includes('human') ||
+      text.includes('call') ||
+      text.includes('helpdesk') ||
+      text.includes('baat karni')
+    ) {
+      return 'CONTACT_INQUIRY';
+    }
+
+    // 10. Club Profile / Info
+    if (
+      text.includes('about the club') ||
+      text.includes('club details') ||
+      text.includes('facilities') ||
+      text.includes('timing') ||
+      text.includes('open kab') ||
+      text.includes('opening hours') ||
+      text.includes('club info')
+    ) {
+      return 'CLUB_INFO_INQUIRY';
+    }
+
+    // 11. Location discovery
     if (
       text.includes('near me') ||
       text.includes('paas mein') ||
@@ -488,6 +548,37 @@ export const qcontrolIntelligence = {
         { id: `cancel_${booking.id}`, title: '❌ Cancel Booking' }
       ],
       clearState: true
+    };
+  },
+
+  /**
+   * Generates a comprehensive, verified business profile response using live database values.
+   */
+  async handleClubProfileInfo(business: any, bName: string, cleanPhone: string): Promise<IntelligenceOutput> {
+    const addressStr = business?.address ? `📍 *Address:* ${business.address}` : '📍 *Address:* Address not configured yet';
+    const contactStr = business?.contact_number ? `📞 *Contact Number:* +91 ${business.contact_number}` : '📞 *Contact:* Not configured yet';
+    const ownerStr = business?.owner_name ? `👤 *Owner / Manager:* ${business.owner_name}` : '';
+    const typeStr = business?.business_type ? `🏷️ *Category:* ${business.business_type}` : '🏷️ *Category:* Pool & Billiards Lounge';
+
+    const tables = business?.tables || [];
+    const gamesOffered = Array.from(new Set(tables.map((t: any) => ((t.game_type || t.type || 'Pool') as string).toUpperCase()))).join(', ') || 'Pool, Snooker, PS5';
+
+    let msg = `*${bName} — Club Details* 🎱\n\n`;
+    msg += `${typeStr}\n`;
+    if (ownerStr) msg += `${ownerStr}\n`;
+    msg += `${contactStr}\n`;
+    msg += `${addressStr}\n`;
+    msg += `🎮 *Available Tables:* ${tables.length} tables (${gamesOffered})\n\n`;
+    msg += `Everything is synced live from our club profile. What would you like to do next?`;
+
+    return {
+      replyText: msg,
+      replyType: 'buttons',
+      buttons: [
+        { id: 'action_availability', title: '🎱 Check Tables' },
+        { id: 'action_pricing', title: '💰 View Pricing' },
+        { id: 'action_my_bookings', title: '📋 My Bookings' }
+      ]
     };
   },
 

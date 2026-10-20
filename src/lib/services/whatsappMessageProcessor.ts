@@ -271,7 +271,8 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     businessId,
     businessName,
     buttonReplyId,
-    listReplyId
+    listReplyId,
+    businessProfile: detectedBusiness
   });
 
   // 8. Update conversation state if requested
