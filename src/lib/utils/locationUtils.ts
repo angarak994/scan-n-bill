@@ -34,19 +34,16 @@ export function getGoogleMapsDirectionsUrl(options: GoogleMapsDirectionsOptions)
   ) {
     destination = `${Number(latitude).toFixed(6)},${Number(longitude).toFixed(6)}`;
   }
-  // 2. Verified street address + business name
+  // 2. Verified street address saved by the owner
   else if (address && address.trim()) {
     const cleanAddress = address.trim();
     const cleanName = (businessName || '').trim();
     destination = cleanName ? `${cleanName}, ${cleanAddress}` : cleanAddress;
   }
-  // 3. Verified business name fallback
-  else if (businessName && businessName.trim()) {
-    destination = businessName.trim();
-  }
 
+  // Never invent a location: if neither coordinates nor verified address are provided, return null
   if (!destination) {
-    return 'https://maps.google.com';
+    return null;
   }
 
   // Google Maps Universal URL Scheme for Turn-by-Turn Directions
@@ -105,7 +102,9 @@ export function formatBookingConfirmationWhatsApp(params: {
     ? `\n📍 *Address:* ${address.trim()}`
     : '';
 
-  const directionsLine = `\n🗺️ *Get Directions:* ${directionsUrl}`;
+  const directionsLine = directionsUrl
+    ? `\n🗺️ *Get Directions:* ${directionsUrl}`
+    : '';
 
   const contactLine = contactNumber && contactNumber.trim()
     ? `\n📞 *Contact / Support:* +91 ${contactNumber.replace(/\D/g, '').slice(-10)}`

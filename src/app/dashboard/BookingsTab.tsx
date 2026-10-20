@@ -356,10 +356,10 @@ export default function BookingsTab({
           <div>
             <h3 className="text-xl font-bold text-text-primary">{t(language, 'upcoming_bookings')}</h3>
             <p className="text-xs text-text-secondary mt-0.5">Manage schedule, assign tables, and perform bulk operations.</p>
-            {address && (
+            {address && address.trim() ? (
               <div className="flex items-center gap-1.5 mt-2 text-xs text-text-secondary">
                 <MapPin className="w-3.5 h-3.5 text-accent shrink-0" />
-                <span className="truncate max-w-sm sm:max-w-md">{address}</span>
+                <span className="truncate max-w-sm sm:max-w-md">{address.trim()}</span>
                 {getDirectionsForBooking() && (
                   <a
                     href={getDirectionsForBooking()!}
@@ -372,6 +372,11 @@ export default function BookingsTab({
                     <span>Get Directions</span>
                   </a>
                 )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-text-secondary/70">
+                <MapPin className="w-3.5 h-3.5 text-text-disabled shrink-0" />
+                <span>Address not configured. Set your club address in Settings &gt; Business Profile to enable Google Maps turn-by-turn directions.</span>
               </div>
             )}
           </div>
@@ -788,17 +793,29 @@ export default function BookingsTab({
                 </div>
 
                 {/* Club Location Info */}
-                {address && (
+                {address && address.trim() ? (
                   <div className="p-3 bg-bg-surface/80 rounded-xl border border-border-theme flex items-start gap-2.5 text-xs">
                     <MapPin className="w-4 h-4 text-accent shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <div className="font-bold text-text-primary text-[11px] uppercase tracking-wider">
                         {businessName || 'Club Location'}
                       </div>
-                      <div className="text-text-secondary mt-0.5 text-xs">{address}</div>
+                      <div className="text-text-secondary mt-0.5 text-xs">{address.trim()}</div>
                       <div className="text-[11px] text-accent mt-1 flex items-center gap-1 font-medium">
                         <Navigation className="w-3 h-3" />
                         Customer receives Google Maps turn-by-turn directions link automatically
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-bg-surface/80 rounded-xl border border-border-theme/60 flex items-start gap-2.5 text-xs text-text-secondary">
+                    <MapPin className="w-4 h-4 text-text-disabled shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-bold text-text-primary text-[11px] uppercase tracking-wider">
+                        Club Location Not Configured
+                      </div>
+                      <div className="text-text-secondary mt-0.5 text-xs">
+                        Save your club address in Settings &gt; Business Profile to automatically share Google Maps turn-by-turn directions with players.
                       </div>
                     </div>
                   </div>

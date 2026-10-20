@@ -308,9 +308,10 @@ async function runTestSuite() {
   // TEST 13: Google Maps Universal Directions URL Generator
   // -------------------------------------------------------------------------
   try {
-    // 1. With address only
+    // 1. With verified owner address
+    const sampleOwnerAddress = 'Koregaon Park, Pune';
     const urlFromAddress = getGoogleMapsDirectionsUrl({
-      address: 'FC Road, Deccan Gymkhana, Pune',
+      address: sampleOwnerAddress,
       businessName: 'LevelUP'
     });
 
@@ -321,22 +322,26 @@ async function runTestSuite() {
       businessName: 'Snooker Star'
     });
 
-    // 3. Fallback when coordinates missing
-    const urlFallback = getGoogleMapsDirectionsUrl({
-      address: 'Baner Road, Pune'
+    // 3. Fallback when address & coordinates are not yet set by owner -> MUST RETURN NULL (never invent a location)
+    const urlMissing = getGoogleMapsDirectionsUrl({
+      address: null,
+      latitude: null,
+      longitude: null,
+      businessName: 'LevelUP'
     });
 
-    const isUniversalScheme = urlFromAddress.startsWith('https://www.google.com/maps/dir/?api=1&destination=');
-    const hasOriginOmitted = !urlFromAddress.includes('origin='); // Let device GPS supply origin
-    const gpsEncoded = urlFromGps.includes('18.520430%2C73.856740');
-    const addressEncoded = urlFromAddress.includes('FC%20Road');
+    const isUniversalScheme = Boolean(urlFromAddress?.startsWith('https://www.google.com/maps/dir/?api=1&destination='));
+    const hasOriginOmitted = Boolean(urlFromAddress && !urlFromAddress.includes('origin=')); // Live device GPS defaults
+    const gpsEncoded = Boolean(urlFromGps?.includes('18.520430%2C73.856740'));
+    const addressEncoded = Boolean(urlFromAddress?.includes('Koregaon%20Park'));
+    const neverInventLocation = urlMissing === null;
 
-    const passed = Boolean(isUniversalScheme && hasOriginOmitted && gpsEncoded && addressEncoded);
+    const passed = Boolean(isUniversalScheme && hasOriginOmitted && gpsEncoded && addressEncoded && neverInventLocation);
 
     results.push({
-      name: '13. Google Maps Dynamic Directions Generator (Device GPS Defaults)',
+      name: '13. Google Maps Dynamic Directions Generator (Strict Zero Invention)',
       passed,
-      details: `Universal Scheme: ${isUniversalScheme}, Live GPS Default (No Origin Param): ${hasOriginOmitted}, Destination: ${urlFromAddress.substring(0, 75)}...`
+      details: `Universal Scheme: ${isUniversalScheme}, Live GPS Default: ${hasOriginOmitted}, Never Invent (Null on empty): ${neverInventLocation}, Destination: ${urlFromAddress?.substring(0, 60)}...`
     });
   } catch (e: any) {
     results.push({ name: '13. Google Maps Dynamic Directions Generator', passed: false, details: e.message });
@@ -346,6 +351,7 @@ async function runTestSuite() {
   // TEST 14: WhatsApp Booking Confirmation Message with Verified Club Location
   // -------------------------------------------------------------------------
   try {
+    const ownerCustomAddress = 'MG Road, Camp, Pune';
     const confirmationMsg = formatBookingConfirmationWhatsApp({
       bookingId: 'test_book_8829',
       customerName: 'Angarak Tate',
@@ -355,22 +361,37 @@ async function runTestSuite() {
       startTime: '19:00',
       durationMinutes: 60,
       numPlayers: 2,
-      address: 'FC Road, Deccan Gymkhana, Pune',
+      address: ownerCustomAddress,
       contactNumber: '918208388320'
     });
 
     const hasClubName = confirmationMsg.includes('*Club:* LevelUP Billiards');
     const hasBookingCode = confirmationMsg.includes('*Booking ID:* QC-TEST_B');
-    const hasAddress = confirmationMsg.includes('📍 *Address:* FC Road, Deccan Gymkhana, Pune');
+    const hasAddress = confirmationMsg.includes(`📍 *Address:* ${ownerCustomAddress}`);
     const hasDirections = confirmationMsg.includes('🗺️ *Get Directions:* https://www.google.com/maps/dir/?api=1&destination=');
     const hasContact = confirmationMsg.includes('📞 *Contact / Support:* +91 8208388320');
 
-    const passed = Boolean(hasClubName && hasBookingCode && hasAddress && hasDirections && hasContact);
+    // Test with unconfigured address: omits address & directions gracefully without inventing
+    const unconfiguredMsg = formatBookingConfirmationWhatsApp({
+      bookingId: 'test_book_8830',
+      customerName: 'Rahul',
+      businessName: 'LevelUP Billiards',
+      gameType: 'pool',
+      bookingDate: todayStr,
+      startTime: '20:00',
+      durationMinutes: 60,
+      numPlayers: 1,
+      address: null,
+      contactNumber: '918208388320'
+    });
+    const omitsAddressWhenMissing = !unconfiguredMsg.includes('📍 *Address:*') && !unconfiguredMsg.includes('🗺️ *Get Directions:*');
+
+    const passed = Boolean(hasClubName && hasBookingCode && hasAddress && hasDirections && hasContact && omitsAddressWhenMissing);
 
     results.push({
-      name: '14. Verified WhatsApp Confirmation Message (Clickable Directions Link)',
+      name: '14. Verified WhatsApp Confirmation Message (Dynamic Owner Address & Graceful Fallback)',
       passed,
-      details: `Club Name: ${hasClubName}, Booking ID: ${hasBookingCode}, Address: ${hasAddress}, Directions Link: ${hasDirections}, Contact: ${hasContact}`
+      details: `Club Name: ${hasClubName}, Booking ID: ${hasBookingCode}, Address: ${hasAddress}, Directions Link: ${hasDirections}, Graceful Omit on Null: ${omitsAddressWhenMissing}`
     });
   } catch (e: any) {
     results.push({ name: '14. Verified WhatsApp Confirmation Message', passed: false, details: e.message });
