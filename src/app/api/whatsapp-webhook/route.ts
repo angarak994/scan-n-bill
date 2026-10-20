@@ -36,18 +36,15 @@ export async function POST(request: Request) {
       return new NextResponse('Not Found', { status: 404 });
     }
 
-    // Process asynchronously with timeout protection
-    // Immediate ACK to Meta (< 50ms) to prevent timeout / retry storming
-    Promise.resolve().then(async () => {
-      try {
-        await Promise.race([
-          processWhatsAppMessage(body, correlationId),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp processing timeout (>15s)')), 15000))
-        ]);
-      } catch (err: any) {
-        console.error(`[WhatsApp Background Worker] Correlation: ${correlationId} Error:`, err);
-      }
-    });
+    // Execute webhook processing directly and await so Vercel Serverless doesn't freeze prematurely
+    try {
+      await Promise.race([
+        processWhatsAppMessage(body, correlationId),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp processing timeout (>15s)')), 15000))
+      ]);
+    } catch (err: any) {
+      console.error(`[WhatsApp Processing Error] Correlation: ${correlationId}`, err);
+    }
 
     return NextResponse.json({ ok: true, correlation_id: correlationId });
   } catch (error: any) {

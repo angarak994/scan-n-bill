@@ -1,8 +1,8 @@
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 
 const WHATSAPP_API = 'https://graph.facebook.com/v19.0';
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1339039279301796';
 
 export interface WhatsAppLogContext {
   businessId?: string;
