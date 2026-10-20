@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { Phone } from 'lucide-react';
+import { Phone, Navigation, MapPin } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { t } from '@/lib/i18n';
+import { getGoogleMapsDirectionsUrl } from '@/lib/utils/locationUtils';
 
 interface Booking {
   id: string;
+  business_id?: string;
   customer_name: string;
   customer_phone: string;
   table_id: string;
@@ -17,20 +19,56 @@ interface Booking {
   status: string;
   source: string;
   session_id?: string;
+  club_name?: string | null;
+  club_address?: string | null;
+  club_contact?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface BookingsTabProps {
   businessId?: string | null;
+  businessName?: string | null;
+  address?: string | null;
+  contactNumber?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   bookings?: Booking[];
   tables?: any[];
   onRefresh?: () => void;
 }
 
-export default function BookingsTab({ businessId, bookings = [], tables: propTables = [], onRefresh }: BookingsTabProps) {
+export default function BookingsTab({ 
+  businessId, 
+  businessName,
+  address,
+  contactNumber,
+  latitude,
+  longitude,
+  bookings = [], 
+  tables: propTables = [], 
+  onRefresh 
+}: BookingsTabProps) {
   const { language } = useLanguage();
   const [localBookings, setLocalBookings] = useState<Booking[]>(bookings);
   const [isLoading, setIsLoading] = useState(false);
   const [tables, setTables] = useState<any[]>(propTables);
+
+  const getDirectionsForBooking = (b?: Booking) => {
+    const targetAddress = b?.club_address || address;
+    const targetName = b?.club_name || businessName;
+    const targetLat = b?.latitude ?? latitude;
+    const targetLng = b?.longitude ?? longitude;
+
+    if (!targetAddress && !targetLat && !targetName) return null;
+
+    return getGoogleMapsDirectionsUrl({
+      address: targetAddress,
+      businessName: targetName,
+      latitude: targetLat,
+      longitude: targetLng
+    });
+  };
 
   // Selection & Bulk Action States
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -318,6 +356,24 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
           <div>
             <h3 className="text-xl font-bold text-text-primary">{t(language, 'upcoming_bookings')}</h3>
             <p className="text-xs text-text-secondary mt-0.5">Manage schedule, assign tables, and perform bulk operations.</p>
+            {address && (
+              <div className="flex items-center gap-1.5 mt-2 text-xs text-text-secondary">
+                <MapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span className="truncate max-w-sm sm:max-w-md">{address}</span>
+                {getDirectionsForBooking() && (
+                  <a
+                    href={getDirectionsForBooking()!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-accent font-semibold hover:underline shrink-0 ml-1.5"
+                    title="Get Directions in Google Maps"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    <span>Get Directions</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -438,6 +494,28 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                             </a>
                           )}
                         </div>
+
+                        {/* Mobile Get Directions Action */}
+                        {(() => {
+                          const dirUrl = getDirectionsForBooking(b);
+                          if (!dirUrl) return null;
+                          return (
+                            <div className="mt-2.5 pt-2 border-t border-border-theme/40 flex items-center justify-between gap-2 text-xs">
+                              <span className="text-[11px] text-text-secondary truncate flex-1">
+                                {b.club_address || address || b.club_name || businessName}
+                              </span>
+                              <a
+                                href={dirUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-accent hover:underline py-1 px-2 rounded bg-accent/10 border border-accent/20 shrink-0"
+                              >
+                                <Navigation className="w-3 h-3 text-accent" />
+                                <span>Get Directions</span>
+                              </a>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -469,12 +547,13 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                     <th className="p-5 text-center">{t(language, 'duration')}</th>
                     <th className="p-5 text-center">Source</th>
                     <th className="p-5 text-center">{t(language, 'status')}</th>
+                    <th className="p-5 text-center">Directions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredBookings.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-text-secondary">
+                      <td colSpan={8} className="p-12 text-center text-text-secondary">
                         {searchQuery || statusFilter !== 'all' ? (
                           <div className="flex flex-col items-center">
                             <svg className="w-10 h-10 text-text-disabled mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -490,6 +569,7 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                     filteredBookings.map((b) => {
                       const isSelected = selectedIds.has(b.id);
                       const statusLower = b.status?.toLowerCase();
+                      const dirUrl = getDirectionsForBooking(b);
                       return (
                         <tr 
                           key={b.id} 
@@ -530,6 +610,22 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                             }`}>
                               {b.status}
                             </span>
+                          </td>
+                          <td className="p-5 text-center">
+                            {dirUrl ? (
+                              <a
+                                href={dirUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 hover:border-accent/40 transition-colors shadow-sm"
+                                title="Get Directions in Google Maps"
+                              >
+                                <Navigation className="w-3.5 h-3.5" />
+                                <span>Directions</span>
+                              </a>
+                            ) : (
+                              <span className="text-xs text-text-disabled font-mono">—</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -690,6 +786,23 @@ export default function BookingsTab({ businessId, bookings = [], tables: propTab
                     />
                   </div>
                 </div>
+
+                {/* Club Location Info */}
+                {address && (
+                  <div className="p-3 bg-bg-surface/80 rounded-xl border border-border-theme flex items-start gap-2.5 text-xs">
+                    <MapPin className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-bold text-text-primary text-[11px] uppercase tracking-wider">
+                        {businessName || 'Club Location'}
+                      </div>
+                      <div className="text-text-secondary mt-0.5 text-xs">{address}</div>
+                      <div className="text-[11px] text-accent mt-1 flex items-center gap-1 font-medium">
+                        <Navigation className="w-3 h-3" />
+                        Customer receives Google Maps turn-by-turn directions link automatically
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Sticky Footer Action */}

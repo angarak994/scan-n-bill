@@ -113,7 +113,7 @@ function DashboardContent() {
   const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, address?: string, contact_number?: string, latitude?: number, longitude?: number, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -6694,7 +6694,19 @@ function DashboardContent() {
           {renderBookingReminders()}
           {sidebarTab === 'overview' && renderOverview()}
           {sidebarTab === 'tables' && renderTables()}
-          {sidebarTab === 'bookings' && <BookingsTab businessId={businessId} bookings={data?.bookings || []} tables={data?.tables || []} onRefresh={fetchData} />}
+          {sidebarTab === 'bookings' && (
+            <BookingsTab 
+              businessId={businessId} 
+              businessName={data?.businessName}
+              address={data?.address}
+              contactNumber={data?.contact_number}
+              latitude={data?.latitude}
+              longitude={data?.longitude}
+              bookings={data?.bookings || []} 
+              tables={data?.tables || []} 
+              onRefresh={fetchData} 
+            />
+          )}
           {sidebarTab === 'reports' && (
             useLegacyReports ? (
               <div className="flex flex-col gap-4">

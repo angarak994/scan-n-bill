@@ -4,6 +4,7 @@ import { clubDiscoveryService } from '@/lib/services/clubDiscoveryService';
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
+import { getGoogleMapsDirectionsUrl, formatBookingConfirmationWhatsApp } from '@/lib/utils/locationUtils';
 
 export interface IntelligenceInput {
   incomingText: string;
@@ -534,14 +535,25 @@ export const qcontrolIntelligence = {
     }
 
     const booking = result.booking;
-    const bookingCode = `QC-${booking.id.substring(0, 6).toUpperCase()}`;
-
     const business = await businessManager.getBusiness(businessId);
-    const mapLink = business?.address ? `\n📍 *Address:* ${business.address}` : '';
-    const contactMsg = business?.contact_number ? `\n📞 *Contact:* +91 ${business.contact_number}` : '';
+
+    const confirmationText = formatBookingConfirmationWhatsApp({
+      bookingId: booking.id,
+      customerName,
+      businessName,
+      gameType,
+      bookingDate,
+      startTime,
+      durationMinutes: 60,
+      numPlayers,
+      address: business?.address,
+      contactNumber: business?.contact_number,
+      latitude: (business as any)?.latitude,
+      longitude: (business as any)?.longitude
+    });
 
     return {
-      replyText: `✅ *Booking Confirmed!*\n\n*Club:* ${businessName}\n*Booking ID:* ${bookingCode}\n*Name:* ${customerName}\n*Game:* ${gameType.toUpperCase()} (${numPlayers} Players)\n*Time:* ${bookingDate} at ${startTime} (1 Hour)${mapLink}${contactMsg}\n\nSee you on the table! 🎱`,
+      replyText: confirmationText,
       replyType: 'buttons',
       buttons: [
         { id: 'action_my_bookings', title: '📋 View Bookings' },
@@ -568,6 +580,17 @@ export const qcontrolIntelligence = {
     if (ownerStr) msg += `${ownerStr}\n`;
     msg += `${contactStr}\n`;
     msg += `${addressStr}\n`;
+
+    if (business?.address) {
+      const directionsUrl = getGoogleMapsDirectionsUrl({
+        address: business.address,
+        businessName: bName,
+        latitude: (business as any)?.latitude,
+        longitude: (business as any)?.longitude
+      });
+      msg += `🗺️ *Get Directions:* ${directionsUrl}\n`;
+    }
+
     msg += `🎮 *Available Tables:* ${tables.length} tables (${gamesOffered})\n\n`;
     msg += `Everything is synced live from our club profile. What would you like to do next?`;
 
@@ -651,6 +674,17 @@ export const qcontrolIntelligence = {
         buttons.push({ id: `cancel_${b.id}`, title: `❌ Cancel ${code}` });
       }
     });
+
+    const business = await businessManager.getBusiness(businessId);
+    if (business?.address) {
+      const directionsUrl = getGoogleMapsDirectionsUrl({
+        address: business.address,
+        businessName,
+        latitude: (business as any)?.latitude,
+        longitude: (business as any)?.longitude
+      });
+      msg += `📍 *Club Location:* ${business.address}\n🗺️ *Get Directions:* ${directionsUrl}\n\n`;
+    }
 
     buttons.push({ id: 'action_book', title: '📅 New Booking' });
 

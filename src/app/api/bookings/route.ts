@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('bookings')
-      .select('*', { count: 'exact' })
+      .select('*, businesses(business_name, address, contact_number)', { count: 'exact' })
       .eq('business_id', businessId)
       .order('booking_date', { ascending: true })
       .order('start_time', { ascending: true });
@@ -40,8 +40,17 @@ export async function GET(request: Request) {
       throw error;
     }
 
+    const mappedBookings = (bookings || []).map((b: any) => ({
+      ...b,
+      club_name: b.businesses?.business_name || null,
+      club_address: b.businesses?.address || null,
+      club_contact: b.businesses?.contact_number || null,
+      latitude: b.businesses?.latitude || null,
+      longitude: b.businesses?.longitude || null
+    }));
+
     return NextResponse.json({ 
-      bookings: bookings || [], 
+      bookings: mappedBookings, 
       total: count || 0,
       page,
       limit: safeLimit,

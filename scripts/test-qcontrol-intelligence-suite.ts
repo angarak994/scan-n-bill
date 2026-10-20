@@ -8,6 +8,7 @@ import { qcontrolIntelligence } from '../src/lib/services/qcontrolIntelligence';
 import { processAIQuery } from '../src/lib/services/aiAssistantService';
 import { supabase } from '../src/lib/supabaseClient';
 import { getCurrentISTDateStr } from '../src/lib/billing';
+import { getGoogleMapsDirectionsUrl, formatBookingConfirmationWhatsApp } from '../src/lib/utils/locationUtils';
 
 interface TestResult {
   name: string;
@@ -301,6 +302,78 @@ async function runTestSuite() {
     });
   } catch (e: any) {
     results.push({ name: '12. Delivery Logs API', passed: false, details: e.message });
+  }
+
+  // -------------------------------------------------------------------------
+  // TEST 13: Google Maps Universal Directions URL Generator
+  // -------------------------------------------------------------------------
+  try {
+    // 1. With address only
+    const urlFromAddress = getGoogleMapsDirectionsUrl({
+      address: 'FC Road, Deccan Gymkhana, Pune',
+      businessName: 'LevelUP'
+    });
+
+    // 2. With verified GPS coordinates
+    const urlFromGps = getGoogleMapsDirectionsUrl({
+      latitude: 18.52043,
+      longitude: 73.85674,
+      businessName: 'Snooker Star'
+    });
+
+    // 3. Fallback when coordinates missing
+    const urlFallback = getGoogleMapsDirectionsUrl({
+      address: 'Baner Road, Pune'
+    });
+
+    const isUniversalScheme = urlFromAddress.startsWith('https://www.google.com/maps/dir/?api=1&destination=');
+    const hasOriginOmitted = !urlFromAddress.includes('origin='); // Let device GPS supply origin
+    const gpsEncoded = urlFromGps.includes('18.520430%2C73.856740');
+    const addressEncoded = urlFromAddress.includes('FC%20Road');
+
+    const passed = Boolean(isUniversalScheme && hasOriginOmitted && gpsEncoded && addressEncoded);
+
+    results.push({
+      name: '13. Google Maps Dynamic Directions Generator (Device GPS Defaults)',
+      passed,
+      details: `Universal Scheme: ${isUniversalScheme}, Live GPS Default (No Origin Param): ${hasOriginOmitted}, Destination: ${urlFromAddress.substring(0, 75)}...`
+    });
+  } catch (e: any) {
+    results.push({ name: '13. Google Maps Dynamic Directions Generator', passed: false, details: e.message });
+  }
+
+  // -------------------------------------------------------------------------
+  // TEST 14: WhatsApp Booking Confirmation Message with Verified Club Location
+  // -------------------------------------------------------------------------
+  try {
+    const confirmationMsg = formatBookingConfirmationWhatsApp({
+      bookingId: 'test_book_8829',
+      customerName: 'Angarak Tate',
+      businessName: 'LevelUP Billiards',
+      gameType: 'pool',
+      bookingDate: todayStr,
+      startTime: '19:00',
+      durationMinutes: 60,
+      numPlayers: 2,
+      address: 'FC Road, Deccan Gymkhana, Pune',
+      contactNumber: '918208388320'
+    });
+
+    const hasClubName = confirmationMsg.includes('*Club:* LevelUP Billiards');
+    const hasBookingCode = confirmationMsg.includes('*Booking ID:* QC-TEST_B');
+    const hasAddress = confirmationMsg.includes('📍 *Address:* FC Road, Deccan Gymkhana, Pune');
+    const hasDirections = confirmationMsg.includes('🗺️ *Get Directions:* https://www.google.com/maps/dir/?api=1&destination=');
+    const hasContact = confirmationMsg.includes('📞 *Contact / Support:* +91 8208388320');
+
+    const passed = Boolean(hasClubName && hasBookingCode && hasAddress && hasDirections && hasContact);
+
+    results.push({
+      name: '14. Verified WhatsApp Confirmation Message (Clickable Directions Link)',
+      passed,
+      details: `Club Name: ${hasClubName}, Booking ID: ${hasBookingCode}, Address: ${hasAddress}, Directions Link: ${hasDirections}, Contact: ${hasContact}`
+    });
+  } catch (e: any) {
+    results.push({ name: '14. Verified WhatsApp Confirmation Message', passed: false, details: e.message });
   }
 
   // -------------------------------------------------------------------------

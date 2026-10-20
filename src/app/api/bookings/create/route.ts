@@ -7,6 +7,8 @@ import { getCurrentISTDateStr } from '@/lib/billing';
 import { sendSMS, SMSConfig } from '@/lib/services/smsService';
 import { bookingService } from '@/lib/services/bookingService';
 import { normalizePhone } from '@/lib/utils/phoneValidation';
+import { sendWhatsAppText } from '@/lib/whatsapp';
+import { formatBookingConfirmationWhatsApp } from '@/lib/utils/locationUtils';
 
 export async function POST(request: Request) {
   try {
@@ -115,6 +117,55 @@ export async function POST(request: Request) {
         } catch (smsError) {
             console.error('Failed to send booking SMS:', smsError);
         }
+    });
+
+    // Send WhatsApp Confirmation with dynamic directions link if customer phone is valid
+    Promise.resolve().then(async () => {
+      try {
+        if (!normalizedPhone || normalizedPhone === 'Manual / Walk-In') return;
+        const cleanPhone = normalizedPhone.replace(/\D/g, '');
+        if (cleanPhone.length !== 10) return;
+
+        const { data: business } = await supabase
+          .from('businesses')
+          .select('id, business_name, address, contact_number, whatsapp_config')
+          .eq('id', business_id)
+          .single();
+
+        const bName = business?.business_name || 'QControl Club';
+        const waConfig = business?.whatsapp_config as any;
+
+        const confirmationMsg = formatBookingConfirmationWhatsApp({
+          bookingId: newBooking.id,
+          customerName: nameToSave,
+          businessName: bName,
+          gameType: enforcedGameType,
+          bookingDate: booking_date,
+          startTime: formattedStartTime.substring(0, 5),
+          durationMinutes: durationNum,
+          numPlayers: body.num_players ? Number(body.num_players) : 1,
+          address: business?.address,
+          contactNumber: business?.contact_number,
+          latitude: (business as any)?.latitude,
+          longitude: (business as any)?.longitude
+        });
+
+        // Send via WhatsApp with link preview
+        await sendWhatsAppText(
+          cleanPhone,
+          confirmationMsg,
+          true,
+          waConfig?.token,
+          waConfig?.phoneId,
+          {
+            businessId: business_id,
+            recipientName: nameToSave,
+            content: confirmationMsg
+          }
+        );
+      } catch (waError) {
+        console.error('Failed to send booking WhatsApp confirmation:', waError);
+      }
     });
 
     return NextResponse.json({ success: true, booking: newBooking }, { status: 200 });
