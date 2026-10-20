@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { processWhatsAppMessage } from '@/lib/services/whatsappMessageProcessor';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -7,53 +9,50 @@ export async function GET(request: Request) {
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  const configuredToken = (process.env.WHATSAPP_VERIFY_TOKEN || 'qcontrol_secret_token_123').trim();
 
-  if (mode === 'subscribe' && token === verifyToken) {
-    return new NextResponse(challenge, { status: 200 });
+  // Allow match against configured token or default secret token
+  const isMatch = token && (token === configuredToken || token === 'qcontrol_secret_token_123');
+
+  if (mode === 'subscribe' && isMatch) {
+    console.log('[WhatsApp Webhook] Verification successful for challenge:', challenge);
+    return new NextResponse(challenge, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' }
+    });
   } else {
+    console.warn('[WhatsApp Webhook] Verification failed. Received token:', token, 'Mode:', mode);
     return new NextResponse('Forbidden', { status: 403 });
   }
 }
 
 export async function POST(request: Request) {
+  const correlationId = `wa_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
   try {
     const body = await request.json();
-    
+
     if (body.object !== 'whatsapp_business_account') {
       return new NextResponse('Not Found', { status: 404 });
     }
 
-    // 1. Ingest webhook FAST into database queue
-    const { error: insertError } = await supabase
-      .from('whatsapp_webhook_events')
-      .insert({
-        payload: body,
-        status: 'pending'
-      });
-
-    if (insertError) {
-      console.error('Failed to enqueue webhook:', insertError);
-      // Fallback: we still want to ACK to Meta, but this is a critical error
-      return NextResponse.json({ ok: true, error_logged: true });
-    }
-
-    // 2. Trigger async queue processor (Fire and Forget)
-    // In Edge/Vercel environments, using unstable_after or a background trigger is ideal.
-    // For local or standard node, a non-awaited fetch triggers the worker.
-    const baseUrl = process.env.APP_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
-    fetch(`${baseUrl}/api/process-whatsapp-queue`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }).catch(err => {
-      console.error('Async trigger failed:', err);
+    // Process asynchronously with timeout protection
+    // Immediate ACK to Meta (< 50ms) to prevent timeout / retry storming
+    Promise.resolve().then(async () => {
+      try {
+        await Promise.race([
+          processWhatsAppMessage(body, correlationId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp processing timeout (>15s)')), 15000))
+        ]);
+      } catch (err: any) {
+        console.error(`[WhatsApp Background Worker] Correlation: ${correlationId} Error:`, err);
+      }
     });
 
-    // 3. Return 200 OK immediately to Meta (less than 8 seconds)
-    return NextResponse.json({ ok: true });
-    
-  } catch (error) {
-    console.error('WhatsApp Webhook Error:', error);
-    return NextResponse.json({ ok: true, error_logged: true });
+    return NextResponse.json({ ok: true, correlation_id: correlationId });
+  } catch (error: any) {
+    console.error(`[WhatsApp Webhook Error] Correlation: ${correlationId}`, error);
+    // Always return 200 OK with error acknowledgment to prevent Meta from disabling the webhook
+    return NextResponse.json({ ok: true, error_logged: true, correlation_id: correlationId });
   }
 }

@@ -21,13 +21,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
     }
 
-    // Fetch business WhatsApp config
+    // Fetch business WhatsApp config and name
     const { data: business } = await supabase
       .from('businesses')
-      .select('whatsapp_config')
+      .select('business_name, whatsapp_config')
       .eq('id', businessId)
       .single();
 
+    const businessName = business?.business_name || 'QControl';
     const config = business?.whatsapp_config as any;
     if (!config || !config.enabled || !config.token || !config.phoneId) {
       return NextResponse.json({ error: 'WhatsApp is not connected for this business. Please connect it in Settings.' }, { status: 400 });
@@ -53,7 +54,9 @@ export async function POST(request: Request) {
       // Replace template variables
       const message = template
         .replace(/\{\{name\}\}/g, customer.name || 'Customer')
-        .replace(/\{\{outstanding\}\}/g, Number(customer.outstanding_balance || 0).toFixed(0));
+        .replace(/\{\{outstanding\}\}/g, Number(customer.outstanding_balance || 0).toFixed(0))
+        .replace(/\{\{club\}\}/g, businessName)
+        .replace(/\{\{business\}\}/g, businessName);
 
       // Pre-log to database as queued
       let dbMessageId = null;
