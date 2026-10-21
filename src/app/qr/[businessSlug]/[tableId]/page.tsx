@@ -11,12 +11,12 @@ export default async function SessionPage({
 }) {
   const p = await params;
   const sp = await searchParams;
-  
-  const table_id = p.tableId;
+  const rawTableId = p.tableId;
+  const table_id = decodeURIComponent(rawTableId).trim();
   const game_type = sp.type;
   const scanNonce = sp._scan;
 
-  // Resolve business by slug
+  // Resolve business by slug or ID
   const business = await businessManager.getBusinessBySlug(p.businessSlug);
   const business_id = business?.id;
 

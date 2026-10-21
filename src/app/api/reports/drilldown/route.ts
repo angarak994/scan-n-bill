@@ -42,7 +42,8 @@ export async function GET(request: Request) {
           .eq('status', 'COMPLETED')
           .gte('end_time', startIso)
           .lt('end_time', endIso)
-          .order('end_time', { ascending: false });
+          .order('end_time', { ascending: false })
+          .limit(500);
 
         rows = (data || []).map(s => {
           const val = Math.round(Number(s.cost) || 0);
@@ -67,7 +68,8 @@ export async function GET(request: Request) {
           .eq('business_id', businessId)
           .gte('created_at', startIso)
           .lt('created_at', endIso)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(500);
 
         rows = (data || [])
           .filter(p => p.status === 'Paid' && p.metadata?.type !== 'CHARGE')
@@ -94,7 +96,8 @@ export async function GET(request: Request) {
           .select('id, name, phone, outstanding_balance, updated_at')
           .eq('business_id', businessId)
           .gt('outstanding_balance', 0)
-          .order('outstanding_balance', { ascending: false });
+          .order('outstanding_balance', { ascending: false })
+          .limit(500);
 
         rows = (data || []).map(c => {
           const val = Math.round(Number(c.outstanding_balance) || 0);
@@ -121,7 +124,8 @@ export async function GET(request: Request) {
           .gt('discount_amount', 0)
           .gte('end_time', startIso)
           .lt('end_time', endIso)
-          .order('end_time', { ascending: false });
+          .order('end_time', { ascending: false })
+          .limit(500);
 
         rows = (data || []).map(s => {
           const val = Math.round(Number(s.discount_amount) || 0);
@@ -147,7 +151,8 @@ export async function GET(request: Request) {
           .or('status.eq.Refunded,metadata->>type.eq.ORDER_VOID_REVERSAL')
           .gte('created_at', startIso)
           .lt('created_at', endIso)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(500);
 
         rows = (data || []).map(p => {
           const val = Math.round(Number(p.amount) || 0);
@@ -175,7 +180,8 @@ export async function GET(request: Request) {
           .gt('food_cost', 0)
           .gte('end_time', startIso)
           .lt('end_time', endIso)
-          .order('end_time', { ascending: false });
+          .order('end_time', { ascending: false })
+          .limit(500);
 
         rows = (data || []).map(s => {
           const val = Math.round(Number(s.food_cost) || 0);

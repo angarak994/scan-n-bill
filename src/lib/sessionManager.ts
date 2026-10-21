@@ -128,7 +128,10 @@ export async function startSession(table_id: string, game_type: GameType, custom
     // Force game type from configuration mapping and canonicalize table_id
     let tableConfig: any = null;
     if (businessId && business) {
-      tableConfig = business.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
+      tableConfig = business.tables?.find(t => 
+        t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim() ||
+        (t.name && t.name.toLowerCase().trim() === String(table_id).toLowerCase().trim())
+      );
       if (!tableConfig) {
         throw new ApiError(403, 'Invalid table or business mapping.');
       }
@@ -470,7 +473,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
       paused_at: null,
       paused_duration_seconds: totalPausedSecs,
       member_id: (session as any)._matchedMemberId || session.member_id || null,
-    } as any, businessId, true);
+    } as any, businessId, true, true); // skipSheetsSync = true (deferred until ledger & payment records are created below)
 
     // QKhata / Payment logic integration (Synchronous to prevent financial data loss)
     if (businessId) {
@@ -530,15 +533,25 @@ export async function endSession(table_id: string, businessId?: string, source: 
 
     if ((session as any)._matchedMemberId) {
       try {
-        // 1 point per 100 spent (example logic)
         const earnedPoints = Math.floor(totalCost / 100);
+        const memberId = (session as any)._matchedMemberId;
         
-        const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', (session as any)._matchedMemberId).single();
-        if (member) {
-           await supabase.from('memberships').update({
-              total_spend: (member.total_spend || 0) + totalCost,
-              loyalty_points: (member.loyalty_points || 0) + earnedPoints
-           }).eq('id', (session as any)._matchedMemberId);
+        // 1. Attempt Atomic Increment RPC
+        const { error: rpcErr } = await supabase.rpc('increment_member_loyalty', {
+          p_member_id: memberId,
+          p_spend: totalCost,
+          p_points: earnedPoints
+        });
+
+        // Fallback for local environments before migration 51 is applied
+        if (rpcErr) {
+          const { data: member } = await supabase.from('memberships').select('total_spend, loyalty_points').eq('id', memberId).single();
+          if (member) {
+             await supabase.from('memberships').update({
+                total_spend: (member.total_spend || 0) + totalCost,
+                loyalty_points: (member.loyalty_points || 0) + earnedPoints
+             }).eq('id', memberId);
+          }
         }
       } catch (e) {
         console.error('Failed to update member points', e);
@@ -547,12 +560,22 @@ export async function endSession(table_id: string, businessId?: string, source: 
 
     if ((session as any)._usedPromos && (session as any)._usedPromos.length > 0) {
       try {
-        for (const usedPromo of (session as any)._usedPromos) {
-          const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', usedPromo.id).single();
-          if (promo) {
-             await supabase.from('promotions').update({
-                usage_count: (promo.usage_count || 0) + 1
-             }).eq('id', usedPromo.id);
+        const promoIds = (session as any)._usedPromos.map((p: any) => p.id).filter(Boolean);
+        
+        // 1. Attempt Batch Atomic Increment RPC
+        const { error: batchErr } = await supabase.rpc('increment_promotion_usages', {
+          p_promo_ids: promoIds
+        });
+
+        // Fallback for environments before migration 51 is applied
+        if (batchErr) {
+          for (const promoId of promoIds) {
+            const { data: promo } = await supabase.from('promotions').select('usage_count').eq('id', promoId).single();
+            if (promo) {
+               await supabase.from('promotions').update({
+                  usage_count: (promo.usage_count || 0) + 1
+               }).eq('id', promoId);
+            }
           }
         }
       } catch (e) {
@@ -577,7 +600,19 @@ export async function endSession(table_id: string, businessId?: string, source: 
     }
     }).catch(e => console.error(e));
 
-    // Note: sessionRepository.update above already enqueues sheets sync via enqueueSheetsSync
+    // Re-enqueue sheets sync to ensure payment method, status, and ledger data are captured
+    try {
+      const { enqueueSheetsSync } = require('./sheetsSyncQueue');
+      enqueueSheetsSync('SESSION', session.id, businessId);
+    } catch (sheetSyncErr) {
+      console.warn('Post-payment sheets sync enqueue warning:', sheetSyncErr);
+    }
+
+    // Invalidate server reports summary cache for this business
+    try {
+      const { invalidateServerReportsCache } = require('./services/reportsService');
+      invalidateServerReportsCache(businessId);
+    } catch {}
 
     return { 
       session_id: session.id, 
@@ -637,7 +672,10 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       qpayConfig = business?.qpay_config;
       paymentQrConfig = business?.payment_qr_config;
       
-      const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
+      const tableConfig = business?.tables?.find(t => 
+        t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim() ||
+        (t.name && t.name.toLowerCase().trim() === String(table_id).toLowerCase().trim())
+      );
       if (tableConfig) {
         tableName = tableConfig.name || tableConfig.id || table_id;
         if ((tableConfig as any).game_type) {
@@ -697,7 +735,10 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     qpayConfig = business?.qpay_config;
     paymentQrConfig = business?.payment_qr_config;
     
-    const tableConfig = business?.tables?.find(t => t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim());
+    const tableConfig = business?.tables?.find(t => 
+      t.id.toLowerCase().trim() === String(table_id).toLowerCase().trim() ||
+      (t.name && t.name.toLowerCase().trim() === String(table_id).toLowerCase().trim())
+    );
     if (tableConfig) {
       tableName = tableConfig.name || tableConfig.id || table_id;
       if ((tableConfig as any).game_type) {

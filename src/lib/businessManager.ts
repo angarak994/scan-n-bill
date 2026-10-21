@@ -196,26 +196,43 @@ export const businessManager = {
   },
 
   getBusinessBySlug: async (slug: string): Promise<BusinessData | null> => {
-    const normalizedSlug = slug.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    
+    if (!slug) return null;
+    const raw = decodeURIComponent(slug).trim();
+
     // Check if slug is a valid UUID
-    if (slug.length === 36) {
-        return businessManager.getBusiness(slug);
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(raw)) {
+      return businessManager.getBusiness(raw.toLowerCase());
     }
+
+    const normalizedSlug = raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     
     // Check cache first
     const now = Date.now();
     const cachedId = slugCache.get(normalizedSlug);
     if (cachedId && cachedId.expiresAt > now) {
-        return businessManager.getBusiness(cachedId.id);
+      return businessManager.getBusiness(cachedId.id);
     }
 
-    // Try targeted match first
+    // Direct ID check if raw has non-hyphenated 32 chars or matches business id
+    const { data: directMatch } = await supabase
+      .from('businesses')
+      .select('id, business_name')
+      .or(`id.eq.${raw},business_name.ilike.${raw}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (directMatch) {
+      slugCache.set(normalizedSlug, { id: directMatch.id, expiresAt: now + CACHE_TTL_MS });
+      return businessManager.getBusiness(directMatch.id);
+    }
+
+    // Try targeted match by slug or name substring
     const { data: matchedBusinesses } = await supabase
       .from('businesses')
       .select('id, business_name')
-      .ilike('business_name', `%${slug}%`)
-      .limit(10);
+      .ilike('business_name', `%${raw.replace(/[-_]/g, ' ')}%`)
+      .limit(15);
 
     if (matchedBusinesses && matchedBusinesses.length > 0) {
       for (const b of matchedBusinesses) {
@@ -237,10 +254,9 @@ export const businessManager = {
     
     for (const b of businesses) {
       const bSlug = (b.business_name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      // Cache all slugs proactively to save future queries
       slugCache.set(bSlug, { id: b.id, expiresAt: now + CACHE_TTL_MS });
       
-      if (bSlug === normalizedSlug) {
+      if (bSlug === normalizedSlug || b.id.toLowerCase() === raw.toLowerCase()) {
         return businessManager.getBusiness(b.id);
       }
     }

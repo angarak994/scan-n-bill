@@ -13,6 +13,7 @@ import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check,
 import { getMemberPlanInfo } from '@/lib/membershipUtils';
 import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
+import { invalidateReportsCache } from '@/lib/reportsCache';
 import QpulseWidget from '@/components/QpulseWidget';
 import AIAssistantWidget from '@/components/AIAssistantWidget';
 import FancyLanguageToggle from '@/components/FancyLanguageToggle';
@@ -126,7 +127,7 @@ function DashboardContent() {
   const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, address?: string, contact_number?: string, public_contact_number?: string, slug?: string, latitude?: number, longitude?: number, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, address?: string, contact_number?: string, public_contact_number?: string, slug?: string, latitude?: number, longitude?: number, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, google_service_account_email?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -776,6 +777,7 @@ function DashboardContent() {
                     activeSessions: prev.activeSessions.map((s: any) => s.id === newRecord.id ? { ...s, ...newRecord } : s)
                   };
                 } else if (newRecord.status === 'COMPLETED') {
+                  invalidateReportsCache();
                   const wasActive = prev.activeSessions.some((s: any) => s.id === newRecord.id);
                   return {
                     ...prev,
@@ -802,8 +804,11 @@ function DashboardContent() {
         // Fast-path Universal Sync Bus with 100ms debounce (reduced from 400ms for snappy responsiveness)
         const handleSync = (payload: any) => {
           const triggeredTable = payload?.new?.triggered_by;
+          if (triggeredTable === 'sessions' || triggeredTable === 'payments') {
+            invalidateReportsCache();
+          }
           let targetScope: string | undefined = undefined;
-          if (triggeredTable === 'sessions') targetScope = 'sessions';
+          if (triggeredTable === 'sessions' || triggeredTable === 'payments') targetScope = 'sessions';
           else if (triggeredTable === 'notifications') targetScope = 'notifications';
           else if (triggeredTable === 'bookings') targetScope = 'bookings';
           else if (triggeredTable === 'customers' || triggeredTable === 'memberships') targetScope = 'customers';
@@ -832,11 +837,12 @@ function DashboardContent() {
         document.addEventListener('visibilitychange', handleVisibilityChange);
       }
 
+      // Polling relaxed to 30s because Supabase Realtime handles instant deltas and sync bus
       const heartbeatInterval = setInterval(() => {
         if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
           fetchRef.current(undefined, true, 'sessions');
         }
-      }, 8000);
+      }, 30000);
       
       return () => {
         clearInterval(heartbeatInterval);
@@ -891,6 +897,7 @@ function DashboardContent() {
         } else if (action === 'resume') {
           toast.success('Session resumed.');
         } else if (action === 'force_end') {
+          invalidateReportsCache();
           toast.success('Session ended successfully.');
           fetchRef.current(undefined, true, 'customers');
         } else if (action === 'transfer') {
@@ -4234,7 +4241,7 @@ function DashboardContent() {
           </div>
           <div className="mt-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <p className="text-xs text-blue-400 font-bold mb-1">Important:</p>
-            <p className="text-xs text-text-secondary">You must share your Google Sheet with <span className="font-mono text-accent">qcontrol@qr-based-billing-438407.iam.gserviceaccount.com</span> and grant it <b>Editor</b> access.</p>
+            <p className="text-xs text-text-secondary">You must share your Google Sheet with <span className="font-mono text-accent">{data?.google_service_account_email || 'sheet-access@invom-499909.iam.gserviceaccount.com'}</span> and grant it <b>Editor</b> access.</p>
           </div>
         </form>
       </div>

@@ -392,6 +392,7 @@ export async function GET(request: Request) {
       has_logged_in: business.has_logged_in,
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
       google_sheet_id: business.google_sheet_id,
+      google_service_account_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
       whatsapp_config: {
         enabled: Boolean(
           (business.whatsapp_config?.enabled === true && business.whatsapp_config?.token && business.whatsapp_config?.phoneId) ||

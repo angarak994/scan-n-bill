@@ -18,8 +18,27 @@ interface RankedItem {
   weightedScore: number;
 }
 
+interface MostSellingCacheEntry {
+  data: MostSellingItem[];
+  timestamp: number;
+}
+const mostSellingCache = new Map<string, MostSellingCacheEntry>();
+const MOST_SELLING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+
+export function invalidateMostSellingCache(businessId?: string) {
+  if (!businessId) {
+    mostSellingCache.clear();
+    return;
+  }
+  for (const key of mostSellingCache.keys()) {
+    if (key.startsWith(`${businessId}:`)) {
+      mostSellingCache.delete(key);
+    }
+  }
+}
+
 /**
- * Computes authoritative Most Selling items for a business.
+ * Computes authoritative Most Selling items for a business with 5-minute server cache.
  * Rules:
  * 1. Only counts orders with type in ('order_accepted', 'order_served', 'order_pending').
  * 2. Excludes cancelled, rejected, and voided orders.
@@ -37,6 +56,12 @@ export async function getMostSellingItems(
   menuItems: any[] = [],
   limit: number = 6
 ): Promise<MostSellingItem[]> {
+  const cacheKey = `${businessId}:${limit}`;
+  const cached = mostSellingCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < MOST_SELLING_CACHE_TTL_MS)) {
+    return cached.data;
+  }
+
   try {
     // 1. Fetch historical orders from notifications
     const { data: orderNotifs, error } = await supabase
@@ -163,6 +188,7 @@ export async function getMostSellingItems(
     // Filter to available items first, but keep sold-out items if strictly requested
     const finalItems = combined.slice(0, limit);
 
+    mostSellingCache.set(cacheKey, { data: finalItems, timestamp: Date.now() });
     return finalItems;
   } catch (err) {
     console.error('[MostSellingService] Error calculating top sellers:', err);

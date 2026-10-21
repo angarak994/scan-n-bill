@@ -60,7 +60,9 @@ export async function GET(request: Request) {
         .eq('business_id', businessId)
         .eq('status', 'COMPLETED')
         .gte('end_time', startIso)
-        .lt('end_time', endIso),
+        .lt('end_time', endIso)
+        .order('end_time', { ascending: false })
+        .limit(2000),
 
       supabase
         .from('payments')
@@ -78,6 +80,8 @@ export async function GET(request: Request) {
         .eq('business_id', businessId)
         .gte('created_at', startIso)
         .lt('created_at', endIso)
+        .order('created_at', { ascending: false })
+        .limit(2000)
     ]);
 
     const sessions = sessionsRes.data || [];

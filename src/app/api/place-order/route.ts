@@ -32,7 +32,9 @@ export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
     const data = await request.json();
-    let { session_id, business_id, cart } = data;
+    let session_id = data.session_id || data.sessionId;
+    let business_id = data.business_id || data.businessId;
+    let cart = data.cart;
 
     if (!session_id || !business_id || !cart) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -50,13 +52,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
     
-    if (!sessionCookie) {
-      const prefs = (business.pricing_rules?.globalSettings as any)?.preferences || {};
-      if (prefs.auto_qr_billing === false) {
-          return NextResponse.json({ error: 'QR actions are disabled for this business' }, { status: 403 });
-      }
-    }
-
     const session = await sessionRepository.findById(session_id, business_id);
     if (!session || session.status !== 'ACTIVE') {
       return NextResponse.json({ error: 'Active session not found' }, { status: 404 });
@@ -160,6 +155,12 @@ export async function POST(request: Request) {
         console.error("Telegram Order Notification Error:", telegramError);
       }
     }
+
+    // Invalidate most selling cache so food ranking updates promptly
+    try {
+      const { invalidateMostSellingCache } = require('@/lib/services/mostSellingService');
+      invalidateMostSellingCache(business_id);
+    } catch {}
 
     return NextResponse.json({ success: true, new_food_cost: newFoodCost }, { status: 200 });
   } catch (err: unknown) {

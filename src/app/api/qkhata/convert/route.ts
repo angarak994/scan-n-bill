@@ -83,6 +83,15 @@ export async function POST(request: Request) {
     // 4. Update the session itself
     await supabase.from('sessions').update({ payment_status: 'Pending', amount_paid: 0 }).eq('id', session_id);
 
+    // 5. Sync to Google Sheets
+    try {
+      const { syncSessionLifecycle, scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      syncSessionLifecycle(session_id, business_id);
+      scheduleBackgroundTask(async () => {
+        try { await flushSheetsSyncQueue(business_id, 4000); } catch {}
+      });
+    } catch {}
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Convert to QKhata error:', error);

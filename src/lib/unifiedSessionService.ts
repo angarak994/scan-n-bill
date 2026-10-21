@@ -235,9 +235,26 @@ export async function fetchUnifiedSessionData(sessionId: string, explicitBusines
 
     const formattedDate = formatDateInTimezone(session.start_time, timezone);
     const formattedStartTime = formatTimeInTimezone(session.start_time, timezone);
-    const formattedEndTime = session.end_time 
-      ? formatTimeInTimezone(session.end_time, timezone) 
-      : (session.status === 'ACTIVE' ? 'Active' : '');
+
+    // Authoritative End Time resolution:
+    // - Show 'Active' ONLY while a session is genuinely ongoing (ACTIVE or PAUSED).
+    // - Once stopped, completed, or cancelled, write the actual end timestamp in the business timezone.
+    // - Never leave 'Active' or blank for completed sessions.
+    const isOngoing = session.status === 'ACTIVE' || session.status === 'PAUSED';
+    let formattedEndTime: string;
+
+    if (isOngoing) {
+      formattedEndTime = session.end_time ? formatTimeInTimezone(session.end_time, timezone) : 'Active';
+    } else {
+      // Completed, Stopped, or Cancelled session
+      const effectiveEndTime = session.end_time || session.last_activity_at || session.updated_at || new Date().toISOString();
+      formattedEndTime = formatTimeInTimezone(effectiveEndTime, timezone);
+      if (formattedEndTime === 'Active' || !formattedEndTime) {
+        formattedEndTime = formatTimeInTimezone(new Date().toISOString(), timezone);
+      }
+    }
+
+    const effectiveStatus = session.paused_at ? 'PAUSED' : (session.status || 'ACTIVE');
 
     const customerDisplay = session.num_players && session.num_players > 1
       ? `${session.customer_name} (${session.num_players} Players)`
@@ -267,7 +284,7 @@ export async function fetchUnifiedSessionData(sessionId: string, explicitBusines
       grandTotal,                                              // Total Amount (₹)
       paymentMethod,                                           // Payment Method
       paymentStatus,                                           // Payment Status
-      session.status || 'ACTIVE',                              // Status
+      effectiveStatus,                                         // Status
       session.notes || ''                                      // Notes
     ];
 

@@ -2510,8 +2510,9 @@ You can still access other businesses associated with your Telegram account.`, {
           try {
             const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1, (booking as any).member_id);
             await supabase.from('bookings').update({ status: 'active', session_id: session.id }).eq('id', bookingId);
-            const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
-            enqueueSheetsSync('SESSION', session.id, business.id);
+            const { syncSessionLifecycle, scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+            syncSessionLifecycle(session.id, business.id);
+            scheduleBackgroundTask(() => flushSheetsSyncQueue(business.id));
             const msg = `✅ <b>Booking Started</b>
 
 Player: ${booking.customer_name}
@@ -2772,6 +2773,18 @@ export async function POST(request: Request) {
       console.error(`[Webhook Processing Error] update_id: ${updateId}, msg: ${err?.message || err}`);
       tracker.finish('ERROR', err?.message || 'Error');
     }
+
+    // Background Google Sheets flush to guarantee all session starts, stops, pauses, and edits sync reliably
+    try {
+      const { scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      scheduleBackgroundTask(async () => {
+        try {
+          await flushSheetsSyncQueue(undefined, 4000);
+        } catch (flushErr) {
+          console.warn('[TelegramWebhook] Sheets sync background flush warning:', flushErr);
+        }
+      });
+    } catch {}
 
     // Return instant Telegram Webhook Response Method for callback queries if applicable
     if (callbackQueryId) {

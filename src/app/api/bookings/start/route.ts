@@ -79,10 +79,11 @@ export async function POST(request: Request) {
       });
     } catch {}
 
-    // Trigger non-blocking unified sync so Sheets row includes linked Booking ID
+    // Trigger unified sync so Sheets row includes linked Booking ID
     try {
-      const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
-      enqueueSheetsSync('SESSION', session.id, businessId);
+      const { syncSessionLifecycle, scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      syncSessionLifecycle(session.id, businessId);
+      scheduleBackgroundTask(() => flushSheetsSyncQueue(businessId));
     } catch (e) {
       console.warn('Failed to enqueue converted booking session sync', e);
     }

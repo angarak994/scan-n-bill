@@ -48,6 +48,17 @@ export async function POST(request: Request) {
       }
     }).catch(() => {});
 
+    if (business_id) {
+      const { scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      scheduleBackgroundTask(async () => {
+        try {
+          await flushSheetsSyncQueue(business_id, 4000);
+        } catch (sheetSyncErr) {
+          console.warn('[EditSession] Background sheets sync flush warning:', sheetSyncErr);
+        }
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Edit Session Error:', error);

@@ -199,7 +199,7 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
                 }
             });
         }
-    } else if (effectiveAmountPaid > 0) {
+    } else if (effectiveAmountPaid > 0 || (sessionId && totalBilled === 0)) {
         // Single payment method
         records.push({
             id: uuidv4(),
@@ -220,6 +220,11 @@ export async function createLedgerEntryAndPayment(payload: PaymentPayload) {
         const { error: insertErr } = await supabase.from('payments').insert(records);
         if (insertErr) {
             console.error("[paymentService] Failed to insert payments:", insertErr);
+        } else {
+            try {
+                const { invalidateServerReportsCache } = require('./reportsService');
+                invalidateServerReportsCache(businessId);
+            } catch {}
         }
     }
 

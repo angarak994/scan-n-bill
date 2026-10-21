@@ -104,6 +104,28 @@ export async function ensureMonthlySheets(spreadsheetId: string, monthKey: strin
     });
   }
 
+  // Check if master 'Sessions' tab exists and verify its schema
+  if (existingSheets.includes('Sessions')) {
+    try {
+      const headerRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "'Sessions'!A1:P1"
+      });
+      const headerRow = headerRes.data.values?.[0] || [];
+      if (headerRow.length < UNIFIED_SESSION_HEADERS.length || headerRow[6] !== 'End Time') {
+        const endCol = String.fromCharCode(65 + UNIFIED_SESSION_HEADERS.length - 1);
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `'Sessions'!A1:${endCol}1`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [UNIFIED_SESSION_HEADERS] }
+        });
+      }
+    } catch (headErr) {
+      console.warn('[GoogleSheets] Non-critical master Sessions header update warning:', headErr);
+    }
+  }
+
   // Format newly added sheets
   if (addRequests.length > 0) {
     try {
@@ -359,10 +381,185 @@ export async function updateRowDirectly(sheetName: string, rowNum: string, value
 }
 
 /**
+ * Upserts a single unified session row into a target sheet title.
+ * Finds existing session by canonicalId (SES-XXXX), shortId, or UUID.
+ * Updates existing row in-place (never creating duplicate rows).
+ * Automatically cleans up any secondary duplicate rows from prior race conditions.
+ */
+async function upsertSessionRow(
+  sheets: any,
+  spreadsheetId: string,
+  targetSheetTitle: string,
+  sessionRow: (string | number)[],
+  canonicalId: string,
+  shortId: string,
+  fullId?: string
+): Promise<void> {
+  const targetCanonical = canonicalId.toUpperCase();
+  const targetShort = shortId.toUpperCase();
+  const cleanShort = targetShort.replace(/^SES-/, '');
+  const targetFull = fullId ? fullId.toUpperCase() : '';
+
+  // 1. Fetch column A with retry
+  let rows: any[] = [];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${targetSheetTitle}'!A:A`,
+      });
+      rows = res.data.values || [];
+      break;
+    } catch (err: any) {
+      if (attempt === 3) throw err;
+      const is429 = err?.status === 429 || err?.message?.includes('429');
+      await new Promise(resolve => setTimeout(resolve, attempt * (is429 ? 2000 : 800)));
+    }
+  }
+
+  // 2. Find all matching row indices (1-indexed)
+  const matchingRowIndices: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const cellVal = String(rows[i]?.[0] || '').trim().toUpperCase();
+    if (!cellVal) continue;
+    const cleanCell = cellVal.replace(/^SES-/, '');
+
+    const isMatch = (
+      cellVal === targetCanonical ||
+      cellVal === targetShort ||
+      cleanCell === cleanShort ||
+      (cleanShort.length >= 6 && cleanCell.startsWith(cleanShort)) ||
+      (targetFull && (cellVal === targetFull || cellVal.includes(targetFull)))
+    );
+
+    if (isMatch) {
+      matchingRowIndices.push(i + 1);
+    }
+  }
+
+  const endColLetter = String.fromCharCode(65 + sessionRow.length - 1);
+
+  if (matchingRowIndices.length > 0) {
+    const primaryRowIndex = matchingRowIndices[0];
+
+    // Update primary matching row with retry
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `'${targetSheetTitle}'!A${primaryRowIndex}:${endColLetter}${primaryRowIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [sessionRow] }
+        });
+        break;
+      } catch (err: any) {
+        if (attempt === 3) throw err;
+        const is429 = err?.status === 429 || err?.message?.includes('429');
+        await new Promise(resolve => setTimeout(resolve, attempt * (is429 ? 2000 : 800)));
+      }
+    }
+
+    // Clean up duplicate rows if multiple rows exist for this session
+    if (matchingRowIndices.length > 1) {
+      try {
+        const sheetMetadata = await sheets.spreadsheets.get({ spreadsheetId });
+        const sheetObj = sheetMetadata.data.sheets?.find((s: any) => s.properties?.title === targetSheetTitle);
+        const sheetId = sheetObj?.properties?.sheetId;
+        if (sheetId !== undefined) {
+          const deleteRequests = matchingRowIndices
+            .slice(1)
+            .sort((a, b) => b - a)
+            .map(rowIndex => ({
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: 'ROWS',
+                  startIndex: rowIndex - 1,
+                  endIndex: rowIndex
+                }
+              }
+            }));
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: { requests: deleteRequests }
+          });
+        }
+      } catch (dedupErr) {
+        console.warn(`[GoogleSheets] Non-fatal duplicate cleanup warning for ${targetSheetTitle}:`, dedupErr);
+      }
+    }
+  } else {
+    // Append new row with retry
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `'${targetSheetTitle}'!A1`,
+          valueInputOption: 'USER_ENTERED',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [sessionRow] }
+        });
+        break;
+      } catch (err: any) {
+        if (attempt === 3) throw err;
+        const is429 = err?.status === 429 || err?.message?.includes('429');
+        await new Promise(resolve => setTimeout(resolve, attempt * (is429 ? 2000 : 800)));
+      }
+    }
+  }
+}
+
+/**
+ * Upserts an itemized F&B order row into a target sheet title.
+ */
+async function upsertOrderRow(
+  sheets: any,
+  spreadsheetId: string,
+  targetSheetTitle: string,
+  itemRowValues: any[]
+): Promise<void> {
+  const ordersRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${targetSheetTitle}'!A:F`,
+  });
+  const existingOrderRows = ordersRes.data.values || [];
+  const ordId = String(itemRowValues[0] || '').trim().toUpperCase();
+  const itemName = String(itemRowValues[5] || '').trim().toLowerCase();
+
+  let itemRowIndex = -1;
+  for (let r = 1; r < existingOrderRows.length; r++) {
+    const rowOrdId = String(existingOrderRows[r]?.[0] || '').trim().toUpperCase();
+    const rowItemName = String(existingOrderRows[r]?.[5] || '').trim().toLowerCase();
+    if (rowOrdId === ordId && rowItemName === itemName) {
+      itemRowIndex = r + 1;
+      break;
+    }
+  }
+
+  if (itemRowIndex > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${targetSheetTitle}'!A${itemRowIndex}:J${itemRowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [itemRowValues] }
+    });
+  } else {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${targetSheetTitle}'!A1`,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [itemRowValues] }
+    });
+  }
+}
+
+/**
  * UNIFIED CENTRAL SYNCHRONIZER
  * 
  * Synchronizes an operational session and all associated bookings, members, and
- * itemized F&B orders into Google Sheets under the appropriate monthly partition.
+ * itemized F&B orders into Google Sheets under the appropriate monthly partition
+ * AND into the master 'Sessions' and 'Food Orders' tabs so all views are up to date.
  */
 export async function syncUnifiedSessionToSheet(sessionId: string, explicitBusinessId?: string): Promise<boolean> {
   try {
@@ -379,57 +576,22 @@ export async function syncUnifiedSessionToSheet(sessionId: string, explicitBusin
     const { sessionsSheetTitle, ordersSheetTitle } = await ensureMonthlySheets(spreadsheetId, unified.monthKey);
 
     const sheets = await getGoogleSheetsClient();
-
-    // 2. Fetch existing rows from the monthly Sessions sheet to find matching Session ID (target Column A only to minimize payload)
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${sessionsSheetTitle}'!A:A`,
-    });
-    const rows = res.data.values || [];
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const existingSheetTitles = spreadsheet.data.sheets?.map((s: any) => s.properties?.title) || [];
 
     const shortId = unified.sessionId.split('-')[0].toUpperCase();
-    const targetCanonical = unified.canonicalId.toUpperCase();
 
-    let existingRowIndex = -1;
-    // Check from row index 1 (skipping headers at row index 0)
-    for (let i = 1; i < rows.length; i++) {
-      const cellVal = String(rows[i][0] || '').trim().toUpperCase();
-      if (cellVal === targetCanonical || cellVal === shortId || cellVal.includes(shortId)) {
-        existingRowIndex = i + 1; // 1-based index in Google Sheets
-        break;
-      }
+    // 2. Synchronize to the monthly Sessions sheet (e.g. Sessions_2026_10)
+    await upsertSessionRow(sheets, spreadsheetId, sessionsSheetTitle, unified.sessionRow, unified.canonicalId, shortId, unified.sessionId);
+
+    // 3. If master 'Sessions' sheet exists, ALSO synchronize to 'Sessions' so the owner's primary tab is never blank!
+    if (existingSheetTitles.includes('Sessions') && sessionsSheetTitle !== 'Sessions') {
+      await upsertSessionRow(sheets, spreadsheetId, 'Sessions', unified.sessionRow, unified.canonicalId, shortId, unified.sessionId);
     }
 
-    const endColLetter = String.fromCharCode(65 + unified.sessionRow.length - 1);
-
-    if (existingRowIndex > 0) {
-      // Update existing row in place
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `'${sessionsSheetTitle}'!A${existingRowIndex}:${endColLetter}${existingRowIndex}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [unified.sessionRow] }
-      });
-    } else {
-      // Append new canonical row
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `'${sessionsSheetTitle}'!A1`,
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: { values: [unified.sessionRow] }
-      });
-    }
-
-    // 3. Synchronize itemized Food & Beverage orders into Orders_YYYY_MM
+    // 4. Synchronize itemized Food & Beverage orders into monthly Orders sheet AND master Food Orders tab
     if (unified.orderItems.length > 0) {
       try {
-        const ordersRes = await sheets.spreadsheets.values.get({
-          spreadsheetId,
-          range: `'${ordersSheetTitle}'!A:A`,
-        });
-        const existingOrderRows = ordersRes.data.values || [];
-
         for (const item of unified.orderItems) {
           const itemRowValues = [
             item.orderId,
@@ -444,32 +606,10 @@ export async function syncUnifiedSessionToSheet(sessionId: string, explicitBusin
             item.orderStatus
           ];
 
-          // Search if this order item is already present (match by Order ID + Item Name)
-          let itemRowIndex = -1;
-          for (let r = 1; r < existingOrderRows.length; r++) {
-            const rowOrdId = String(existingOrderRows[r][0] || '').trim().toUpperCase();
-            const rowItemName = String(existingOrderRows[r][5] || '').trim().toLowerCase();
-            if (rowOrdId === item.orderId.toUpperCase() && rowItemName === item.itemName.toLowerCase()) {
-              itemRowIndex = r + 1;
-              break;
-            }
-          }
+          await upsertOrderRow(sheets, spreadsheetId, ordersSheetTitle, itemRowValues);
 
-          if (itemRowIndex > 0) {
-            await sheets.spreadsheets.values.update({
-              spreadsheetId,
-              range: `'${ordersSheetTitle}'!A${itemRowIndex}:J${itemRowIndex}`,
-              valueInputOption: 'USER_ENTERED',
-              requestBody: { values: [itemRowValues] }
-            });
-          } else {
-            await sheets.spreadsheets.values.append({
-              spreadsheetId,
-              range: `'${ordersSheetTitle}'!A1`,
-              valueInputOption: 'USER_ENTERED',
-              insertDataOption: 'INSERT_ROWS',
-              requestBody: { values: [itemRowValues] }
-            });
+          if (existingSheetTitles.includes('Food Orders') && ordersSheetTitle !== 'Food Orders') {
+            await upsertOrderRow(sheets, spreadsheetId, 'Food Orders', itemRowValues);
           }
         }
       } catch (orderSyncErr) {
@@ -477,7 +617,7 @@ export async function syncUnifiedSessionToSheet(sessionId: string, explicitBusin
       }
     }
 
-    // 4. Mark session sync_status = 'SYNCED' in Supabase
+    // 5. Mark session sync_status = 'SYNCED' in Supabase
     await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', sessionId);
     return true;
   } catch (err: any) {
@@ -527,12 +667,149 @@ export async function syncMemberToSheet(customerId: string, businessId?: string)
 }
 
 /**
+ * Helper to reconcile a single sessions sheet (monthly or master Sessions tab).
+ */
+async function reconcileSessionsSheet(
+  sheets: any,
+  spreadsheetId: string,
+  targetSheetTitle: string,
+  sessions: any[],
+  businessId: string,
+  spreadsheetData: any,
+  result: { createdInSheet: number; updatedInSheet: number; duplicatesResolved: number; errors: string[] }
+) {
+  try {
+    const sheetRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${targetSheetTitle}'!A:P`,
+    });
+    const sheetRows = sheetRes.data.values || [];
+
+    // Map existing sheet rows by normalized Session ID and collect duplicate row indices
+    const sheetRowMap = new Map<string, { rowIndex: number; rowData: any[] }>();
+    const duplicateRowIndices: number[] = [];
+
+    for (let r = 1; r < sheetRows.length; r++) {
+      const rowId = String(sheetRows[r]?.[0] || '').trim().toUpperCase();
+      if (rowId) {
+        if (sheetRowMap.has(rowId)) {
+          duplicateRowIndices.push(r + 1); // 1-based index in Google Sheets
+          result.duplicatesResolved++;
+        } else {
+          sheetRowMap.set(rowId, { rowIndex: r + 1, rowData: sheetRows[r] });
+        }
+      }
+    }
+
+    // Delete physically detected duplicate rows if any
+    if (duplicateRowIndices.length > 0) {
+      const targetSheetObj = spreadsheetData.sheets?.find((s: any) => s.properties?.title === targetSheetTitle);
+      const targetSheetId = targetSheetObj?.properties?.sheetId;
+      if (targetSheetId !== undefined) {
+        // Sort descending so deletion of higher row indices doesn't affect lower row indices
+        duplicateRowIndices.sort((a, b) => b - a);
+        const deleteRequests = duplicateRowIndices.map(rIndex => ({
+          deleteDimension: {
+            range: {
+              sheetId: targetSheetId,
+              dimension: 'ROWS',
+              startIndex: rIndex - 1, // 0-based
+              endIndex: rIndex
+            }
+          }
+        }));
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: { requests: deleteRequests }
+          });
+        } catch (delErr) {
+          console.warn(`[GoogleSheets] Warning deleting duplicate rows in '${targetSheetTitle}':`, delErr);
+        }
+      }
+    }
+
+    // Reconcile each DB session
+    for (const session of sessions) {
+      try {
+        const unified = await fetchUnifiedSessionData(session.id, businessId);
+        if (!unified) continue;
+
+        const targetCanonical = unified.canonicalId.toUpperCase();
+        const shortId = session.id.split('-')[0].toUpperCase();
+        const existing = sheetRowMap.get(targetCanonical) || sheetRowMap.get(shortId);
+
+        if (existing) {
+          // Compare authoritative financial, status, duration, and time values
+          // Column Indices in UNIFIED_SESSION_HEADERS:
+          // 0: Session ID, 1: Date, 2: Customer, 3: Table, 4: Game, 5: Start Time, 6: End Time,
+          // 7: Duration, 8: Table Fee, 9: F&B Total, 10: Discount, 11: Total Amount,
+          // 12: Payment Method, 13: Payment Status, 14: Status, 15: Notes
+          const currentEndTime = String(existing.rowData[6] || '').trim();
+          const currentDuration = String(existing.rowData[7] || '').trim();
+          const currentTotalAmount = String(existing.rowData[11] || '').trim();
+          const currentPayMethod = String(existing.rowData[12] || '').trim();
+          const currentPayStatus = String(existing.rowData[13] || '').trim();
+          const currentStatus = String(existing.rowData[14] || '').trim();
+
+          const targetEndTime = String(unified.sessionRow[6] || '').trim();
+          const targetDuration = String(unified.sessionRow[7] || '').trim();
+          const targetTotalAmount = String(unified.sessionRow[11] || '').trim();
+          const targetPayMethod = String(unified.sessionRow[12] || '').trim();
+          const targetPayStatus = String(unified.sessionRow[13] || '').trim();
+          const targetStatus = String(unified.sessionRow[14] || '').trim();
+
+          const needsUpdate = (
+            currentStatus !== targetStatus ||
+            currentTotalAmount !== targetTotalAmount ||
+            currentEndTime !== targetEndTime ||
+            currentDuration !== targetDuration ||
+            currentPayStatus !== targetPayStatus ||
+            currentPayMethod !== targetPayMethod
+          );
+
+          if (needsUpdate) {
+            // Preserve user-written notes from the sheet if DB notes are blank
+            if (!unified.sessionRow[15] && existing.rowData[15]) {
+              unified.sessionRow[15] = existing.rowData[15];
+            }
+
+            const endColLetter = String.fromCharCode(65 + unified.sessionRow.length - 1);
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: `'${targetSheetTitle}'!A${existing.rowIndex}:${endColLetter}${existing.rowIndex}`,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: { values: [unified.sessionRow] }
+            });
+            result.updatedInSheet++;
+          }
+        } else {
+          // Missing row in sheet -> Append canonical row
+          await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range: `'${targetSheetTitle}'!A1`,
+            valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS',
+            requestBody: { values: [unified.sessionRow] }
+          });
+          result.createdInSheet++;
+        }
+      } catch (itemErr: any) {
+        result.errors.push(`Error reconciling session ${session.id} in '${targetSheetTitle}': ${itemErr?.message || itemErr}`);
+      }
+    }
+  } catch (sheetErr: any) {
+    result.errors.push(`Error reading '${targetSheetTitle}': ${sheetErr?.message || sheetErr}`);
+  }
+}
+
+/**
  * MONTHLY RECONCILIATION AND RECOVERY ENGINE
  * 
- * Compares authoritative database records with the corresponding monthly Google Sheets data.
- * - Detects missing rows and appends them.
+ * Compares authoritative database records with the corresponding Google Sheets data.
+ * - Detects missing rows and appends them across monthly partition AND master Sessions/Food Orders tabs.
  * - Detects outdated statuses, mismatched amounts, or durations and repairs them.
- * - Resolves duplicates.
+ * - Eliminates duplicate rows physically via Google Sheets batchUpdate.
  * - Synchronizes associated itemized F&B orders.
  * - Returns a clear audit summary of changes.
  */
@@ -601,95 +878,51 @@ export async function reconcileMonthlySheets(businessId: string, monthKey: strin
     // 2. Ensure monthly sheets exist
     const { sessionsSheetTitle, ordersSheetTitle } = await ensureMonthlySheets(spreadsheetId, monthKey);
     const sheets = await getGoogleSheetsClient();
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const existingSheetTitles = spreadsheet.data.sheets?.map((s: any) => s.properties?.title) || [];
 
-    // 3. Read existing rows from Sessions_YYYY_MM
-    const sheetRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${sessionsSheetTitle}'!A:Z`,
-    });
-    const sheetRows = sheetRes.data.values || [];
+    // 3. Reconcile monthly Sessions sheet (e.g. Sessions_2026_10)
+    await reconcileSessionsSheet(sheets, spreadsheetId, sessionsSheetTitle, sessions, businessId, spreadsheet.data, result);
 
-    // Map existing sheet rows by normalized Session ID
-    const sheetRowMap = new Map<string, { rowIndex: number; rowData: any[] }>();
-    for (let r = 1; r < sheetRows.length; r++) {
-      const rowId = String(sheetRows[r][0] || '').trim().toUpperCase();
-      if (rowId) {
-        if (sheetRowMap.has(rowId)) {
-          // Detected duplicate row in Sheet
-          result.duplicatesResolved++;
-        } else {
-          sheetRowMap.set(rowId, { rowIndex: r + 1, rowData: sheetRows[r] });
-        }
-      }
+    // 4. Reconcile master 'Sessions' sheet if present so the default tab is never empty
+    if (existingSheetTitles.includes('Sessions') && sessionsSheetTitle !== 'Sessions') {
+      await reconcileSessionsSheet(sheets, spreadsheetId, 'Sessions', sessions, businessId, spreadsheet.data, result);
     }
 
-    // 4. Reconcile each DB session
+    // 5. Reconcile associated F&B order items
     for (const session of sessions) {
       try {
         const unified = await fetchUnifiedSessionData(session.id, businessId);
-        if (!unified) continue;
+        if (!unified || unified.orderItems.length === 0) continue;
 
-        const targetCanonical = unified.canonicalId.toUpperCase();
-        const shortId = session.id.split('-')[0].toUpperCase();
-        const existing = sheetRowMap.get(targetCanonical) || sheetRowMap.get(shortId);
+        for (const item of unified.orderItems) {
+          const itemRow = [
+            item.orderId,
+            item.sessionId,
+            item.timestamp,
+            item.tableNo,
+            item.customerName,
+            item.itemName,
+            item.quantity,
+            item.unitPrice,
+            item.itemTotal,
+            item.orderStatus
+          ];
 
-        if (existing) {
-          // Compare if key operational values differ (Amount, Status, Duration)
-          const currentAmount = String(existing.rowData[9] || '').trim();
-          const currentStatus = String(existing.rowData[10] || '').trim();
-          const targetAmount = String(unified.sessionRow[9]).trim();
-          const targetStatus = String(unified.sessionRow[10]).trim();
-
-          if (currentAmount !== targetAmount || currentStatus !== targetStatus) {
-            // Outdated status or mismatched amount -> Update in place
-            const endColLetter = String.fromCharCode(65 + unified.sessionRow.length - 1);
-            await sheets.spreadsheets.values.update({
-              spreadsheetId,
-              range: `'${sessionsSheetTitle}'!A${existing.rowIndex}:${endColLetter}${existing.rowIndex}`,
-              valueInputOption: 'USER_ENTERED',
-              requestBody: { values: [unified.sessionRow] }
-            });
-            result.updatedInSheet++;
+          await upsertOrderRow(sheets, spreadsheetId, ordersSheetTitle, itemRow);
+          if (existingSheetTitles.includes('Food Orders') && ordersSheetTitle !== 'Food Orders') {
+            await upsertOrderRow(sheets, spreadsheetId, 'Food Orders', itemRow);
           }
-        } else {
-          // Missing row in sheet -> Append canonical row
-          await sheets.spreadsheets.values.append({
-            spreadsheetId,
-            range: `'${sessionsSheetTitle}'!A1`,
-            valueInputOption: 'USER_ENTERED',
-            insertDataOption: 'INSERT_ROWS',
-            requestBody: { values: [unified.sessionRow] }
-          });
-          result.createdInSheet++;
-        }
-
-        // Reconcile associated F&B order items
-        if (unified.orderItems.length > 0) {
-          for (const item of unified.orderItems) {
-            const itemRow = [
-              item.orderId,
-              item.sessionId,
-              item.timestamp,
-              item.tableNo,
-              item.customerName,
-              item.itemName,
-              item.quantity,
-              item.unitPrice,
-              item.itemTotal,
-              item.orderStatus
-            ];
-            await upsertRow(ordersSheetTitle, 0, item.orderId, itemRow, businessId);
-            result.ordersSynced++;
-          }
+          result.ordersSynced++;
         }
 
         await supabase.from('sessions').update({ sync_status: 'SYNCED' }).eq('id', session.id);
       } catch (itemErr: any) {
-        result.errors.push(`Error reconciling session ${session.id}: ${itemErr?.message || itemErr}`);
+        result.errors.push(`Error reconciling orders for session ${session.id}: ${itemErr?.message || itemErr}`);
       }
     }
 
-    result.success = true;
+    result.success = result.errors.length === 0;
     return result;
   } catch (err: any) {
     result.errors.push(`Reconciliation error: ${err?.message || err}`);

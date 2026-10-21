@@ -95,13 +95,10 @@ export async function handleSessionIntervention(params: {
 
   if (action === 'force_end') {
     // Session is already updated inside endSession
+    const { syncSessionLifecycle } = require('../sheetsSyncQueue');
+    syncSessionLifecycle(session_id, business_id);
   } else {
-    const { error: updateError } = await supabase
-      .from('sessions')
-      .update(dbUpdates)
-      .eq('id', session_id);
-      
-    if (updateError) throw updateError;
+    await sessionRepository.update(session_id, dbUpdates, business_id);
   }
 
   // Log intervention (non-blocking / non-fatal)

@@ -138,9 +138,16 @@ export const sessionRepository = {
     // We intentionally skip a secondary DB-level activeCheck here to shave off ~150ms of latency,
     // ensuring startSession resolves nearly instantly for the user.
     // -----------------------------------------------------------
+    // 2. Enqueue Google Sheets synchronization for session creation
+    try {
+      const { syncSessionLifecycle } = require('../sheetsSyncQueue');
+      syncSessionLifecycle(session.id, businessId);
+    } catch (sheetError) {
+      console.warn("Google Sheets Sync Queue Error on Create:", sheetError);
+    }
   },
 
-  update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean): Promise<void> => {
+  update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean, skipSheetsSync?: boolean): Promise<void> => {
     const updatePayload: Record<string, any> = {};
     if (updates.end_time !== undefined) updatePayload.end_time = updates.end_time;
     if (updates.duration !== undefined) updatePayload.duration = updates.duration;
@@ -177,12 +184,14 @@ export const sessionRepository = {
       throw new Error("Failed to update session in Database: " + error?.message);
     }
 
-    // 2. Sync update to Google Sheets via non-blocking asynchronous queue
-    try {
-      const { enqueueSheetsSync } = require('../sheetsSyncQueue');
-      enqueueSheetsSync('SESSION', id, businessId || updatedData.business_id);
-    } catch (sheetError) {
-      console.error("Google Sheets Sync Queue Error on Update:", sheetError);
+    // 2. Sync update to Google Sheets via non-blocking asynchronous queue (unless deferred to caller)
+    if (!skipSheetsSync) {
+      try {
+        const { syncSessionLifecycle } = require('../sheetsSyncQueue');
+        syncSessionLifecycle(id, businessId || updatedData.business_id);
+      } catch (sheetError) {
+        console.error("Google Sheets Sync Queue Error on Update:", sheetError);
+      }
     }
   }
 };

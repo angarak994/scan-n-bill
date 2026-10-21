@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { handleSessionIntervention } from '@/lib/services/interventionService';
 import { getSession } from '@/lib/auth';
 
@@ -27,6 +27,17 @@ export async function POST(request: Request) {
       split_payments,
       performed_by: 'dashboard_user'
     });
+
+    if (business_id) {
+      const { scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      scheduleBackgroundTask(async () => {
+        try {
+          await flushSheetsSyncQueue(business_id, 4000);
+        } catch (sheetSyncErr) {
+          console.warn('[InterveneSession] Background sheets sync flush warning:', sheetSyncErr);
+        }
+      });
+    }
 
     return NextResponse.json({ success: true, sessionResult: result.sessionResult });
   } catch (error: any) {

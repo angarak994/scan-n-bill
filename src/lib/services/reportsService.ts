@@ -7,9 +7,33 @@ import {
   formatINR, 
   calculateDelta,
   formatDateLabel,
-  getZonedDateParts
+  getZonedDateParts,
+  createDateInTimezone
 } from './reportsDateUtils';
 import { getBusinessTimezone, DEFAULT_BUSINESS_TIMEZONE } from '../sheetsTimezone';
+
+// Server-side in-memory reports summary cache (30s TTL)
+interface SummaryCacheEntry {
+  data: FinancialReportsSummary;
+  timestamp: number;
+}
+const serverSummaryCache = new Map<string, SummaryCacheEntry>();
+const SERVER_SUMMARY_CACHE_TTL_MS = 30_000; // 30 seconds
+
+/**
+ * Invalidates the server-side report summary cache for a business or globally.
+ */
+export function invalidateServerReportsCache(businessId?: string) {
+  if (!businessId) {
+    serverSummaryCache.clear();
+    return;
+  }
+  for (const key of serverSummaryCache.keys()) {
+    if (key.startsWith(`${businessId}:`)) {
+      serverSummaryCache.delete(key);
+    }
+  }
+}
 
 export interface FinancialReportsSummary {
   asOf: string;
@@ -223,6 +247,13 @@ export async function getFinancialReportsSummary(
   customEnd?: string,
   compareParam: boolean = true
 ): Promise<FinancialReportsSummary> {
+  // 0. Check server-side memory cache (sub-5ms repeat hits)
+  const cacheKey = `${businessId}:${preset}:${compareParam}:${customStart || ''}:${customEnd || ''}`;
+  const cached = serverSummaryCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < SERVER_SUMMARY_CACHE_TTL_MS)) {
+    return cached.data;
+  }
+
   // 1. Fetch business metadata (Cached in memory with 60s TTL)
   const business = await businessManager.getBusiness(businessId);
 
@@ -237,7 +268,22 @@ export async function getFinancialReportsSummary(
   const currentStartIso = range.current.startIso;
   const currentEndIso = range.current.endIso;
 
-  // 3. Parallel Server-Side Database Queries (All scoped by businessId)
+  // 3. Optional SQL Pre-Aggregation via Postgres RPC
+  let rpcAggregates: any = null;
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_financial_reports_aggregates', {
+      p_business_id: businessId,
+      p_start_iso: currentStartIso,
+      p_end_iso: currentEndIso
+    });
+    if (!rpcError && rpcData) {
+      rpcAggregates = rpcData;
+    }
+  } catch {
+    // Seamless fallback to optimized Supabase queries
+  }
+
+  // 4. Parallel Server-Side Database Queries (Bounded & Scoped by businessId)
   const [
     currentSessionsRes,
     cancelledSessionsRes,
@@ -246,14 +292,16 @@ export async function getFinancialReportsSummary(
     compSessionsRes,
     compPaymentsRes
   ] = await Promise.all([
-    // A. Completed sessions in current period (Revenue basis = end_time)
+    // A. Completed sessions in current period (Revenue basis = end_time, bounded to 5000 rows)
     supabase
       .from('sessions')
       .select('id, cost, base_cost, discount_amount, food_cost, game_type, table_id, customer_name, end_time, created_at, status, payment_status, amount_paid')
       .eq('business_id', businessId)
       .eq('status', 'COMPLETED')
       .gte('end_time', currentStartIso)
-      .lt('end_time', currentEndIso),
+      .lt('end_time', currentEndIso)
+      .order('end_time', { ascending: false })
+      .limit(5000),
 
     // B. Cancelled sessions in current period
     supabase
@@ -262,21 +310,27 @@ export async function getFinancialReportsSummary(
       .eq('business_id', businessId)
       .eq('status', 'CANCELLED')
       .gte('created_at', currentStartIso)
-      .lt('created_at', currentEndIso),
+      .lt('created_at', currentEndIso)
+      .limit(1000),
 
-    // C. Payments in current period (Collections basis = created_at)
+    // C. Payments in current period (Collections basis = created_at, bounded to 5000 rows)
     supabase
       .from('payments')
       .select('id, amount, payment_method, status, metadata, session_id, customer_id, created_at')
       .eq('business_id', businessId)
       .gte('created_at', currentStartIso)
-      .lt('created_at', currentEndIso),
+      .lt('created_at', currentEndIso)
+      .order('created_at', { ascending: false })
+      .limit(5000),
 
-    // D. Active customers for pending dues snapshot
+    // D. Active customers with outstanding balance for pending dues snapshot (bounded)
     supabase
       .from('customers')
       .select('id, name, phone, outstanding_balance, total_billed, total_paid, updated_at')
-      .eq('business_id', businessId),
+      .eq('business_id', businessId)
+      .gt('outstanding_balance', 0)
+      .order('outstanding_balance', { ascending: false })
+      .limit(500),
 
     // E. Comparison sessions (if compareActive)
     compareActive && range.comparison
@@ -287,6 +341,8 @@ export async function getFinancialReportsSummary(
           .eq('status', 'COMPLETED')
           .gte('end_time', range.comparison.startIso)
           .lt('end_time', range.comparison.endIso)
+          .order('end_time', { ascending: false })
+          .limit(5000)
       : Promise.resolve({ data: [] }),
 
     // F. Comparison payments (if compareActive)
@@ -297,6 +353,8 @@ export async function getFinancialReportsSummary(
           .eq('business_id', businessId)
           .gte('created_at', range.comparison.startIso)
           .lt('created_at', range.comparison.endIso)
+          .order('created_at', { ascending: false })
+          .limit(5000)
       : Promise.resolve({ data: [] })
   ]);
 
@@ -522,6 +580,60 @@ export async function getFinancialReportsSummary(
         }
       }
     }
+  } else if (granularity === 'monthly') {
+    // Monthly buckets across range (e.g. for allTime preset)
+    // Find earliest session date to avoid looping through 50 years of empty months
+    let earliestMs = Date.now();
+    for (const s of currentSessions) {
+      const t = new Date(s.end_time).getTime();
+      if (t < earliestMs) earliestMs = t;
+    }
+    // Clamp to at most 24 months ago if no earlier session
+    const clampMs = Math.max(earliestMs, Date.now() - 24 * 30 * 24 * 3600 * 1000);
+    const earliestParts = getZonedDateParts(new Date(clampMs), timezone);
+    const cur = createDateInTimezone(earliestParts.year, earliestParts.month, 1, 0, 0, 0, 0, timezone);
+    const end = range.current.end;
+    const bucketMap = new Map<string, { label: string; revenue: number; collected: number; prevCollected?: number }>();
+
+    while (cur.getTime() < end.getTime()) {
+      const p = getZonedDateParts(cur, timezone);
+      const dateKey = `${p.year}-${String(p.month).padStart(2, '0')}`;
+      const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(cur);
+      bucketMap.set(dateKey, { label: monthLabel, revenue: 0, collected: 0, prevCollected: 0 });
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    for (const s of currentSessions) {
+      const d = new Date(s.end_time);
+      const p = getZonedDateParts(d, timezone);
+      const key = `${p.year}-${String(p.month).padStart(2, '0')}`;
+      const bucket = bucketMap.get(key);
+      if (bucket) {
+        bucket.revenue += Math.round(Number(s.cost) || 0);
+      }
+    }
+
+    for (const p of currentPayments) {
+      if (p.status === 'Paid' && p.metadata?.type !== 'CHARGE') {
+        const d = new Date(p.created_at);
+        const parts = getZonedDateParts(d, timezone);
+        const key = `${parts.year}-${String(parts.month).padStart(2, '0')}`;
+        const bucket = bucketMap.get(key);
+        if (bucket) {
+          bucket.collected += Math.round(Number(p.amount) || 0);
+        }
+      }
+    }
+
+    bucketMap.forEach((val, key) => {
+      trendsPoints.push({
+        key,
+        label: val.label,
+        revenue: val.revenue,
+        collected: val.collected,
+        prevCollected: val.prevCollected
+      });
+    });
   } else {
     // Daily buckets across range
     const cur = new Date(range.current.start.getTime());
@@ -709,7 +821,7 @@ export async function getFinancialReportsSummary(
   const passedChecksCount = checks.filter(c => c.passed).length;
   const allPassed = passedChecksCount === checks.length;
 
-  return {
+  const summary: FinancialReportsSummary = {
     asOf: range.asOf,
     businessId,
     businessName,
@@ -855,4 +967,9 @@ export async function getFinancialReportsSummary(
       details: checks
     }
   };
+
+  // Cache in server-side memory for instant repeat hits (30s TTL)
+  serverSummaryCache.set(cacheKey, { data: summary, timestamp: Date.now() });
+
+  return summary;
 }

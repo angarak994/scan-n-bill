@@ -54,6 +54,15 @@ export async function GET(request: Request) {
       console.warn('Non-critical dashboard_syncs cleanup warning:', cleanupErr);
     }
 
+    if (cutoffCount > 0) {
+      try {
+        const { flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+        await flushSheetsSyncQueue(undefined, 5000);
+      } catch (sheetSyncErr) {
+        console.warn('[AutoCutoff] Sheets sync flush warning:', sheetSyncErr);
+      }
+    }
+
     return NextResponse.json({ 
       success: true, 
       cutoffCount, 

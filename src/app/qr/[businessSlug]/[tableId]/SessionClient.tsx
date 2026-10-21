@@ -186,7 +186,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     if (!table_id) return;
     
     try {
-      const res = await fetch(`/api/station-status?table_id=${table_id}${business_id ? `&b=${business_id}` : ''}`);
+      const res = await fetch(`/api/station-status?table_id=${encodeURIComponent(table_id)}${business_id ? `&b=${encodeURIComponent(business_id)}` : ''}`);
       const data = await res.json();
       if (!res.ok) {
         setSession({ status: 'error', message: data.error || 'Failed to load table status' });

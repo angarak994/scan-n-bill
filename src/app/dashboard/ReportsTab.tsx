@@ -23,15 +23,14 @@ import {
 import { toast } from 'react-hot-toast';
 import { ReportPreset, formatINR } from '@/lib/services/reportsDateUtils';
 import type { FinancialReportsSummary } from '@/lib/services/reportsService';
+import { clientSummaryCache, clientTransactionsCache, invalidateReportsCache, REPORTS_CACHE_INVALIDATED_EVENT } from '@/lib/reportsCache';
+
+export { invalidateReportsCache };
 
 interface ReportsTabProps {
   onToggleLegacy?: () => void;
   isPrivacyMode?: boolean;
 }
-
-// Module-level client cache for instant (0ms) tab switching
-const clientSummaryCache = new Map<string, { data: FinancialReportsSummary; timestamp: number }>();
-const clientTransactionsCache = new Map<string, { transactions: any[]; totalCount: number; timestamp: number }>();
 
 export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: ReportsTabProps) {
   // Preset and Range State
@@ -180,6 +179,20 @@ export default function ReportsTab({ onToggleLegacy, isPrivacyMode = false }: Re
   useEffect(() => {
     fetchTransactions();
   }, [fetchTransactions]);
+
+  // Realtime Cache Invalidation Listener: Automatically refetches if sessions/payments change
+  useEffect(() => {
+    const handleInvalidation = () => {
+      fetchSummary(true);
+      fetchTransactions(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(REPORTS_CACHE_INVALIDATED_EVENT, handleInvalidation);
+      return () => {
+        window.removeEventListener(REPORTS_CACHE_INVALIDATED_EVENT, handleInvalidation);
+      };
+    }
+  }, [fetchSummary, fetchTransactions]);
 
   // CSV Export
   const handleExportCSV = useCallback(async () => {

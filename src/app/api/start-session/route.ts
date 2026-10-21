@@ -11,15 +11,23 @@ export async function POST(request: Request) {
 
     const ip = getIpAddress(request);
     
-    // Strict Rate Limiting: 
-    // Unauthenticated users (QR Scans) can only start 5 sessions per 10 mins
-    // Authenticated owners get higher limit (50 per 10 mins)
-    const limit = isOwner ? 50 : 5;
+    // Venue-friendly Rate Limiting: 
+    // Unauthenticated users (QR Scans) get 60 sessions per 10 mins (supports shared Wi-Fi)
+    // Authenticated owners get 100 per 10 mins
+    const limit = isOwner ? 100 : 60;
     if (!checkRateLimit(`start_sess_${ip}`, limit, 10 * 60 * 1000)) {
        return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
     }
 
-    let { table_id, game_type, customer_name, business_id, num_players, member_id, start_time, notes } = await request.json();
+    const body = await request.json();
+    let table_id = body.table_id || body.tableId;
+    let game_type = body.game_type || body.gameType;
+    let customer_name = body.customer_name || body.customerName;
+    let business_id = body.business_id || body.businessId;
+    let num_players = body.num_players || body.numPlayers;
+    let member_id = body.member_id || body.memberId;
+    let start_time = body.start_time || body.startTime;
+    let notes = body.notes;
     
     // If an owner is logged in, strictly enforce their business ID to prevent cross-business IDOR attacks.
     // If no session exists, it falls back to the client-provided business_id (for unauthenticated QR code scans).
@@ -27,8 +35,8 @@ export async function POST(request: Request) {
        business_id = sessionCookie.businessId;
     }
 
-    if (!table_id || !game_type || !customer_name) {
-      return NextResponse.json({ error: 'table_id, game_type, and customer_name are required' }, { status: 400 });
+    if (!table_id || !customer_name) {
+      return NextResponse.json({ error: 'table_id and customer_name are required' }, { status: 400 });
     }
 
     // Verify Business and Table Ownership
@@ -39,19 +47,18 @@ export async function POST(request: Request) {
     }
 
     const configuredTables = business.tables || [];
-    const isValidTable = configuredTables.length === 0 || configuredTables.some((t: any) =>
-      String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase()
+    const matchedTable = configuredTables.find((t: any) =>
+      String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase() ||
+      String(t.name).trim().toLowerCase() === String(table_id).trim().toLowerCase()
     );
-    if (!isValidTable) {
+    if (configuredTables.length > 0 && !matchedTable) {
       return NextResponse.json({ error: `Table '${table_id}' is not configured for this business.` }, { status: 400 });
     }
-
-    if (!isOwner) {
-       // Unauthenticated QR Flow: Verify business allows QR actions
-       const prefs = business.pricing_rules?.globalSettings?.preferences || {};
-       if (prefs.auto_qr_billing === false) {
-           return NextResponse.json({ error: 'QR billing is disabled for this business' }, { status: 403 });
-       }
+    if (matchedTable) {
+      table_id = matchedTable.id; // Canonicalize table_id
+      if (!game_type) {
+        game_type = matchedTable.game_type || matchedTable.type || 'pool';
+      }
     }
 
     if (member_id && business_id) {
@@ -103,8 +110,18 @@ export async function POST(request: Request) {
     }
 
     const result = await startSession(table_id, game_type as GameType, customer_name, business_id, num_players || 1, member_id, start_time, notes);
-    
-    
+
+    if (result && result.id && business_id) {
+      const { scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
+      scheduleBackgroundTask(async () => {
+        try {
+          await flushSheetsSyncQueue(business_id, 4000);
+        } catch (sheetSyncErr) {
+          console.warn('[StartSession] Background sheets sync flush warning:', sheetSyncErr);
+        }
+      });
+    }
+
     return NextResponse.json(result, { status: 201 });
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };

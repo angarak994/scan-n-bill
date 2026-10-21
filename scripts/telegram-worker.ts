@@ -107,6 +107,10 @@ async function handleUpdate(update: any) {
     });
 
     await POST(req);
+    try {
+      const { flushSheetsSyncQueue } = require('../src/lib/sheetsSyncQueue');
+      await flushSheetsSyncQueue(undefined, 4000);
+    } catch {}
     tracker.finish('SUCCESS');
   } catch (err: any) {
     console.error(`[Worker Error] update_id: ${updateId}`, err?.message || err);

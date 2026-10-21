@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const table_id = searchParams.get('table_id');
-    const business_id = searchParams.get('b') || undefined;
+    const table_id = searchParams.get('table_id') || searchParams.get('tableId') || searchParams.get('table');
+    const business_id = searchParams.get('business_id') || searchParams.get('businessId') || searchParams.get('b') || undefined;
 
     if (!table_id) {
       return NextResponse.json({ error: 'table_id is required' }, { status: 400 });
