@@ -53,17 +53,17 @@ export default function OnboardPage() {
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.get('trial') === 'true') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setIsTrial(true);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setOnboardMode('production');
       }
       const plan = searchParams.get('plan');
       if (plan === 'essential' || plan === 'growth') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setSelectedPlan(plan);
         if (!searchParams.get('trial')) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
+           
           setOnboardMode('production');
         }
       }

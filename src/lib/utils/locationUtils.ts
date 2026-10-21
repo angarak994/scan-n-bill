@@ -16,7 +16,7 @@ export interface GoogleMapsDirectionsOptions {
  * Generates a dynamic Google Maps Universal Directions URL.
  * Automatically defaults the origin to the customer's current GPS position.
  */
-export function getGoogleMapsDirectionsUrl(options: GoogleMapsDirectionsOptions): string {
+export function getGoogleMapsDirectionsUrl(options: GoogleMapsDirectionsOptions): string | null {
   const { address, businessName, latitude, longitude } = options;
 
   let destination = '';
@@ -51,37 +51,54 @@ export function getGoogleMapsDirectionsUrl(options: GoogleMapsDirectionsOptions)
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
 }
 
-/**
- * Formats an authoritative WhatsApp booking confirmation message with verified address and directions link.
- */
-export function formatBookingConfirmationWhatsApp(params: {
+export interface BookingConfirmationParams {
   bookingId: string;
   customerName: string;
   businessName: string;
   gameType: string;
+  tableId?: string | null;
   bookingDate: string;
   startTime: string;
   durationMinutes?: number;
   numPlayers?: number;
+  ratePerHour?: number | null;
+  estimatedTotal?: number | null;
+  paymentStatus?: 'pending' | 'deposit_paid' | 'paid' | 'pay_on_arrival';
+  status?: 'confirmed' | 'pending';
   address?: string | null;
   contactNumber?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-}): string {
+}
+
+/**
+ * Formats an authoritative WhatsApp booking confirmation message with verified address,
+ * table assignment, authoritative price breakdown, and clear cancellation/rescheduling terms.
+ */
+export function formatBookingConfirmationWhatsApp(params: BookingConfirmationParams): string {
   const {
     bookingId,
     customerName,
     businessName,
     gameType,
+    tableId,
     bookingDate,
     startTime,
     durationMinutes = 60,
     numPlayers = 1,
+    ratePerHour,
+    estimatedTotal,
+    paymentStatus = 'pay_on_arrival',
+    status = 'confirmed',
     address,
     contactNumber,
     latitude,
     longitude
   } = params;
+
+  const isConfirmed = status === 'confirmed';
+  const headerIcon = isConfirmed ? '✅' : '⏳';
+  const headerTitle = isConfirmed ? '*Booking Confirmed!*' : '*Booking Request Received (Pending)*';
 
   const bookingCode = bookingId.startsWith('QC-')
     ? bookingId
@@ -98,6 +115,26 @@ export function formatBookingConfirmationWhatsApp(params: {
     ? `${(durationMinutes / 60).toFixed(durationMinutes % 60 === 0 ? 0 : 1)} Hour${durationMinutes > 60 ? 's' : ''}`
     : `${durationMinutes} Minutes`;
 
+  const cleanContact = contactNumber ? contactNumber.replace(/\D/g, '') : '';
+  const formattedContact = cleanContact.length >= 10 ? `+91 ${cleanContact.slice(-10)}` : null;
+
+  // Table assignment display
+  const tableDisplay = tableId ? `Table ${tableId}` : 'Assigned on arrival';
+
+  // Authoritative Pricing breakdown
+  let pricingSection = '';
+  if (estimatedTotal !== undefined && estimatedTotal !== null && estimatedTotal > 0) {
+    const rateSnippet = ratePerHour ? ` (₹${ratePerHour}/hr)` : '';
+    pricingSection = `\n💰 *Price:* ₹${estimatedTotal}${rateSnippet}`;
+    if (paymentStatus === 'paid') {
+      pricingSection += ` • *Status:* Paid in full`;
+    } else if (paymentStatus === 'deposit_paid') {
+      pricingSection += ` • *Status:* Deposit received, balance due at club`;
+    } else {
+      pricingSection += ` • *Payment:* Pay at venue`;
+    }
+  }
+
   const addressLine = address && address.trim()
     ? `\n📍 *Address:* ${address.trim()}`
     : '';
@@ -106,20 +143,27 @@ export function formatBookingConfirmationWhatsApp(params: {
     ? `\n🗺️ *Get Directions:* ${directionsUrl}`
     : '';
 
-  const contactLine = contactNumber && contactNumber.trim()
-    ? `\n📞 *Contact / Support:* +91 ${contactNumber.replace(/\D/g, '').slice(-10)}`
+  const contactLine = formattedContact
+    ? `\n📞 *Contact / Support:* ${formattedContact}`
     : '';
 
+  const policySection =
+    `\n\nℹ️ *Need to reschedule or cancel?*\n` +
+    `Reply *"cancel booking"* or *"reschedule"* here, or contact the club directly at least 1 hour before your slot.`;
+
   return (
-    `✅ *Booking Confirmed!*\n\n` +
+    `${headerIcon} ${headerTitle}\n\n` +
     `*Club:* ${businessName}\n` +
     `*Booking ID:* ${bookingCode}\n` +
-    `*Name:* ${customerName}\n` +
+    `*Player:* ${customerName}\n` +
     `*Game:* ${gameType.toUpperCase()} (${numPlayers} Player${numPlayers > 1 ? 's' : ''})\n` +
+    `*Table:* ${tableDisplay}\n` +
     `*Time:* ${bookingDate} at ${startTime} (${durationStr})` +
+    `${pricingSection}` +
     `${addressLine}` +
     `${directionsLine}` +
-    `${contactLine}\n\n` +
+    `${contactLine}` +
+    `${policySection}\n\n` +
     `See you on the table! 🎱`
   );
 }

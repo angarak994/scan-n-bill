@@ -49,9 +49,23 @@ export const qcontrolIntelligence = {
     const bName = business?.business_name || businessName || 'QControl';
 
     // 3. Handle explicit state-machine button / interactive clicks first
-    const interactiveId = buttonReplyId || listReplyId || (rawText.startsWith('action_') || rawText.startsWith('cancel_') || rawText.startsWith('game_') ? rawText : null);
+    const interactiveId = buttonReplyId || listReplyId || (rawText.startsWith('action_') || rawText.startsWith('cancel_') || rawText.startsWith('game_') || rawText.startsWith('select_biz_') ? rawText : null);
 
     if (interactiveId) {
+      if (interactiveId.startsWith('select_biz_')) {
+        return {
+          replyText: `Welcome to *${bName}*! 🎱\n\nHow can we help you today? You can check table availability, book a game, or view our rates:`,
+          replyType: 'buttons',
+          buttons: [
+            { id: 'action_book', title: '📅 Book a Table' },
+            { id: 'action_pricing', title: '💰 View Rates' },
+            { id: 'action_club_info', title: '📍 Location & Info' }
+          ],
+          nextStep: 'AWAITING_ACTION',
+          updatedContext: { business_name: bName }
+        };
+      }
+
       if (interactiveId === 'action_availability' || interactiveId === 'action_book') {
         return {
           replyText: `What game would you like to play at *${bName}*?`,
@@ -85,6 +99,14 @@ export const qcontrolIntelligence = {
 
       if (interactiveId === 'action_my_bookings') {
         return await this.handleListBookings(cleanPhone, businessId, bName);
+      }
+
+      if (interactiveId === 'action_explore_clubs' || interactiveId === 'action_switch_club') {
+        return await this.handleGlobalDiscovery('action_explore_clubs', cleanPhone);
+      }
+
+      if (interactiveId === 'action_support') {
+        return await this.handleCentralSupport();
       }
 
       if (interactiveId === 'action_discover_clubs') {
@@ -208,8 +230,8 @@ export const qcontrolIntelligence = {
    * Deterministic intent classification supporting English and colloquial Hinglish.
    */
   detectIntent(text: string): string {
-    // 1. Greetings
-    if (/^(hi|hello|hey|namaste|hi bro|kem cho|yo|hola|good morning|good evening)\b/i.test(text)) {
+    // 1. Greetings & Deep-Link ingress
+    if (/^(hi|hello|hey|namaste|hi bro|kem cho|yo|hola|good morning|good evening)\b/i.test(text) || text.includes('qc_') || text.startsWith('book at')) {
       return 'GREETING';
     }
 
@@ -365,39 +387,68 @@ export const qcontrolIntelligence = {
     businessName: string,
     customerPhone: string
   ): Promise<IntelligenceOutput> {
-    // Detect game type
+    // 1. Detect game type
     let gameType = 'pool';
     if (text.includes('snooker')) gameType = 'snooker';
     else if (text.includes('ps5') || text.includes('playstation')) gameType = 'ps5';
 
-    // Detect date
+    // 2. Detect duration (supports "for two hours", "2 hrs", "90 mins", etc.)
+    let durationMins = 60;
+    if (/\b(2|two)\s*(hours?|hrs?)\b/i.test(text)) durationMins = 120;
+    else if (/\b(3|three)\s*(hours?|hrs?)\b/i.test(text)) durationMins = 180;
+    else if (/\b(90|ninety)\s*(mins?|minutes?)\b|\b1\.5\s*hours?\b/i.test(text)) durationMins = 90;
+    else if (/\b(30|thirty)\s*(mins?|minutes?)\b|\bhalf\s*(an\s*)?hour\b/i.test(text)) durationMins = 30;
+
+    // 3. Detect date using IST timezone
     const todayStr = getCurrentISTDateStr();
-    let isTomorrow = text.includes('kal') || text.includes('tomorrow');
-    const targetDateObj = new Date();
-    if (isTomorrow) targetDateObj.setDate(targetDateObj.getDate() + 1);
-    const dateStr = isTomorrow ? targetDateObj.toISOString().split('T')[0] : todayStr;
+    let dateStr = todayStr;
+    let dateDisplay = 'Today';
 
-    // Detect time
+    if (text.includes('kal') || text.includes('tomorrow')) {
+      const nowIst = new Date(Date.now() + 5.5 * 3600 * 1000);
+      nowIst.setDate(nowIst.getDate() + 1);
+      dateStr = nowIst.toISOString().split('T')[0];
+      dateDisplay = 'Tomorrow';
+    } else if (text.includes('parso') || text.includes('day after tomorrow')) {
+      const nowIst = new Date(Date.now() + 5.5 * 3600 * 1000);
+      nowIst.setDate(nowIst.getDate() + 2);
+      dateStr = nowIst.toISOString().split('T')[0];
+      dateDisplay = 'Day after tomorrow';
+    }
+
+    // 4. Detect time
     let reqTime: string | null = null;
-    let reqMins = 19 * 60; // Default 7 PM
+    let reqMins = 19 * 60; // 7 PM default for evening if not specified
 
-    const timeMatch = text.match(/(\d{1,2})\s*(baje|pm|am|:00)?/i);
-    if (timeMatch) {
-      let h = parseInt(timeMatch[1], 10);
-      const suffix = (timeMatch[2] || '').toLowerCase();
+    const exactTimeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(pm|am|baje)?/i);
+    if (exactTimeMatch) {
+      let h = parseInt(exactTimeMatch[1], 10);
+      const m = exactTimeMatch[2] ? parseInt(exactTimeMatch[2], 10) : 0;
+      const suffix = (exactTimeMatch[3] || '').toLowerCase();
 
       if (suffix === 'pm' && h < 12) h += 12;
       else if (suffix === 'am' && h === 12) h = 0;
       else if (suffix === 'baje' || !suffix) {
-        // In Indian context, 1..6 baje usually means evening 13..18, 7..11 means 19..23
         if (h >= 1 && h <= 6) h += 12;
         else if (h >= 7 && h <= 11) h += 12;
       }
 
-      if (h >= 11 && h <= 23) {
-        reqTime = `${String(h).padStart(2, '0')}:00`;
-        reqMins = h * 60;
+      if (h >= 10 && h <= 23) {
+        reqTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        reqMins = h * 60 + m;
       }
+    } else if (text.includes('evening') || text.includes('shaam')) {
+      reqTime = '19:00';
+      reqMins = 19 * 60;
+    } else if (text.includes('night') || text.includes('raat')) {
+      reqTime = '21:00';
+      reqMins = 21 * 60;
+    } else if (text.includes('afternoon') || text.includes('dopehar')) {
+      reqTime = '15:00';
+      reqMins = 15 * 60;
+    } else if (text.includes('morning') || text.includes('subah')) {
+      reqTime = '11:00';
+      reqMins = 11 * 60;
     }
 
     const business = await businessManager.getBusiness(businessId);
@@ -418,27 +469,37 @@ export const qcontrolIntelligence = {
       return {
         replyText: `Sorry, *${businessName}* currently does not have ${gameType.toUpperCase()} tables registered. Would you like to check other clubs?`,
         replyType: 'buttons',
-        buttons: [{ id: 'action_discover_clubs', title: '📍 Find Other Clubs' }]
+        buttons: [{ id: 'action_explore_clubs', title: '📍 Other Clubs' }]
       };
     }
 
-    // If customer asked for a specific time:
+    // Pricing calculation
+    const normGame = gameType.toLowerCase();
+    const rules: any = business?.pricing_rules?.rules?.[normGame] || {};
+    const ratePerHour = Number(rules.rate || rules.baseRatePerHour || (rules.type === 'time_based' ? rules.evening_rate : 200)) || 200;
+    const estimatedTotal = Math.round((ratePerHour * durationMins) / 60);
+
+    // If customer specified a time:
     if (reqTime) {
       for (const table of tables) {
-        const check = await bookingService.checkTableAvailability(businessId, table.id, dateStr, reqMins, 60);
+        const check = await bookingService.checkTableAvailability(businessId, table.id, dateStr, reqMins, durationMins);
         if (check.available) {
-          // Table is available! Prompt for confirmation
+          const durationLabel = durationMins >= 60
+            ? `${(durationMins / 60).toFixed(durationMins % 60 === 0 ? 0 : 1)} Hour${durationMins > 60 ? 's' : ''}`
+            : `${durationMins} Minutes`;
+
           const context = {
             game_type: gameType,
             booking_date: dateStr,
             start_time: reqTime,
             table_id: table.id,
+            duration_minutes: durationMins,
             num_players: 1,
             business_name: businessName
           };
 
           return {
-            replyText: `Great news! *Table ${table.name || table.id}* (${gameType.toUpperCase()}) is available at *${businessName}* on ${isTomorrow ? 'Tomorrow' : 'Today'} at *${reqTime}*.\n\nPlease type your *Name* to confirm the reservation.`,
+            replyText: `Great news! *Table ${table.name || table.id}* (${gameType.toUpperCase()}) is available at *${businessName}* on ${dateDisplay} at *${reqTime}* for ${durationLabel} (Rate: ₹${ratePerHour}/hr, Total: ₹${estimatedTotal}).\n\nPlease type your *Name* to confirm the reservation.`,
             replyType: 'text',
             nextStep: 'AWAITING_NAME',
             updatedContext: context
@@ -446,45 +507,57 @@ export const qcontrolIntelligence = {
         }
       }
 
-      // If requested time was not available, find alternative available slots
-      const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, dateStr, 60);
+      // If requested time is not available, find verified alternative slots
+      const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, dateStr, durationMins);
       if (availableSlots.length > 0) {
         const alternativeTimes = availableSlots.slice(0, 3).map(s => s.time).join(', ');
         return {
-          replyText: `*Table ${tables[0].name || tables[0].id}* is already booked at *${reqTime}*.\n\nHowever, we have these available slots for ${isTomorrow ? 'Tomorrow' : 'Today'}:\n👉 *${alternativeTimes}*\n\nWhich slot would you prefer?`,
+          replyText: `*${tables[0].name || tables[0].id}* is not available at *${reqTime}* for ${durationMins} minutes.\n\nHowever, we have these verified open slots for ${dateDisplay}:\n👉 *${alternativeTimes}*\n\nWhich slot would you prefer?`,
           replyType: 'buttons',
           buttons: availableSlots.slice(0, 3).map(s => ({
             id: `time_${s.time}_${s.tableId}`,
             title: `⏰ ${s.time}`
           })),
           nextStep: 'AWAITING_TIME',
-          updatedContext: { game_type: gameType, booking_date: dateStr, num_players: 1, business_name: businessName }
+          updatedContext: {
+            game_type: gameType,
+            booking_date: dateStr,
+            duration_minutes: durationMins,
+            num_players: 1,
+            business_name: businessName
+          }
         };
       }
     }
 
-    // If no specific time requested, show available slots list
-    const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, dateStr, 60);
+    // If no specific time requested, show available slots
+    const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, dateStr, durationMins);
     if (availableSlots.length === 0) {
       return {
-        replyText: `Sorry, all ${gameType.toUpperCase()} tables at *${businessName}* are fully booked for ${isTomorrow ? 'Tomorrow' : 'Today'}. Would you like to check other dates or clubs?`,
+        replyText: `Sorry, all ${gameType.toUpperCase()} tables at *${businessName}* are fully booked for ${dateDisplay}. Would you like to check other dates or partner clubs?`,
         replyType: 'buttons',
         buttons: [
           { id: 'date_tomorrow', title: '📅 Try Tomorrow' },
-          { id: 'action_discover_clubs', title: '📍 Find Other Clubs' }
+          { id: 'action_explore_clubs', title: '📍 Other Clubs' }
         ]
       };
     }
 
     return {
-      replyText: `Here are available *${gameType.toUpperCase()}* slots at *${businessName}* for ${isTomorrow ? 'Tomorrow' : 'Today'}:`,
+      replyText: `Here are available *${gameType.toUpperCase()}* slots at *${businessName}* for ${dateDisplay} (₹${ratePerHour}/hr):`,
       replyType: 'buttons',
       buttons: availableSlots.slice(0, 3).map(s => ({
         id: `time_${s.time}_${s.tableId}`,
         title: `⏰ ${s.time}`
       })),
       nextStep: 'AWAITING_TIME',
-      updatedContext: { game_type: gameType, booking_date: dateStr, num_players: 1, business_name: businessName }
+      updatedContext: {
+        game_type: gameType,
+        booking_date: dateStr,
+        duration_minutes: durationMins,
+        num_players: 1,
+        business_name: businessName
+      }
     };
   },
 
@@ -504,6 +577,8 @@ export const qcontrolIntelligence = {
     const gameType = context.game_type || 'pool';
     const numPlayers = Number(context.num_players) || 1;
 
+    const durationMinutes = Number(context.duration_minutes) || 60;
+
     if (!tableId) {
       return {
         replyText: `Booking session timed out. Please send *"Hi"* to start a new booking.`,
@@ -520,7 +595,7 @@ export const qcontrolIntelligence = {
       customer_phone: customerPhone,
       booking_date: bookingDate,
       start_time: startTime,
-      duration_minutes: 60,
+      duration_minutes: durationMinutes,
       game_type: gameType,
       num_players: numPlayers,
       source: 'whatsapp'
@@ -537,17 +612,28 @@ export const qcontrolIntelligence = {
     const booking = result.booking;
     const business = await businessManager.getBusiness(businessId);
 
+    const normGame = gameType.toLowerCase();
+    const rules: any = business?.pricing_rules?.rules?.[normGame] || {};
+    const ratePerHour = Number(rules.rate || rules.baseRatePerHour || (rules.type === 'time_based' ? rules.evening_rate : 200)) || 200;
+    const estimatedTotal = Math.round((ratePerHour * durationMinutes) / 60);
+    const clubPhone = business?.public_contact_number || business?.contact_number;
+
     const confirmationText = formatBookingConfirmationWhatsApp({
       bookingId: booking.id,
       customerName,
       businessName,
       gameType,
+      tableId: tableId,
       bookingDate,
       startTime,
-      durationMinutes: 60,
+      durationMinutes,
       numPlayers,
+      ratePerHour,
+      estimatedTotal,
+      paymentStatus: 'pay_on_arrival',
+      status: 'confirmed',
       address: business?.address,
-      contactNumber: business?.contact_number,
+      contactNumber: clubPhone,
       latitude: (business as any)?.latitude,
       longitude: (business as any)?.longitude
     });
@@ -825,12 +911,400 @@ export const qcontrolIntelligence = {
       msg += `*${idx + 1}. ${r.businessName}*\n📍 ${r.address}\n💰 ₹${r.ratePerHour}/hr (${r.matchedGameType.toUpperCase()})\n✨ *${r.recommendationReason}*\n⏰ Slots: ${r.sampleAvailableSlots.join(', ') || 'Call club'}\n\n`;
     });
 
+    const topRecs = recommendations.slice(0, 3);
+    const buttons = topRecs.map(r => {
+      let title = r.businessName;
+      if (title.length > 17) {
+        title = title.substring(0, 14) + '...';
+      }
+      return {
+        id: `select_biz_${r.businessId}`,
+        title: `🎱 ${title}`
+      };
+    });
+
     return {
       replyText: msg.trim(),
       replyType: 'buttons',
-      buttons: [
+      buttons: buttons.length > 0 ? buttons : [
         { id: 'action_book', title: '📅 Book Now' },
         { id: 'action_pricing', title: '💰 View Rates' }
+      ]
+    };
+  },
+
+  /**
+   * Handles global discovery when a user contacts the central WhatsApp number
+   * without an active club context or when switching clubs.
+   */
+  async handleGlobalDiscovery(queryText: string, customerPhone: string): Promise<IntelligenceOutput> {
+    const cleanPhone = customerPhone.replace(/\D/g, '');
+    const cleanQuery = (queryText || '').toLowerCase().trim();
+
+    // 1. Handle Explore Partner Clubs
+    if (cleanQuery === 'action_explore_clubs' || cleanQuery.includes('explore partner') || cleanQuery === 'explore' || cleanQuery === 'directory') {
+      return await this.handleExplorePartnerClubs(cleanPhone);
+    }
+
+    // 2. Handle Book a Table
+    if (cleanQuery === 'action_book_table' || cleanQuery === 'action_book' || cleanQuery.includes('book a table') || cleanQuery === 'book table') {
+      return await this.handleGlobalBookTable(cleanPhone);
+    }
+
+    // 3. Handle View / Manage My Bookings
+    if (cleanQuery === 'action_my_bookings' || cleanQuery.includes('my booking') || cleanQuery.includes('manage booking')) {
+      return await this.handleGlobalMyBookings(cleanPhone);
+    }
+
+    // 4. Handle Find Games and Prices
+    if (cleanQuery === 'action_games_prices' || cleanQuery.includes('games and prices') || cleanQuery.includes('rates') || cleanQuery.includes('pricing')) {
+      return await this.handleCentralPricingGuide(cleanPhone);
+    }
+
+    // 5. Handle Get Directions
+    if (cleanQuery === 'action_get_directions' || cleanQuery.includes('direction') || cleanQuery.includes('location') || cleanQuery.includes('maps')) {
+      return await this.handleGlobalDirections(cleanPhone);
+    }
+
+    // 6. Handle Contact Support
+    if (cleanQuery === 'action_support' || cleanQuery.includes('support') || cleanQuery.includes('contact support') || cleanQuery.includes('helpline')) {
+      return await this.handleCentralSupport();
+    }
+
+    // 7. Handle Cancel Booking Action
+    if (cleanQuery.startsWith('cancel_')) {
+      const bookingId = queryText.replace('cancel_', '').trim();
+      const cancelResult = await bookingService.cancelBooking(bookingId, cleanPhone);
+      if (cancelResult.success) {
+        return {
+          replyText: `✅ Your booking (*QC-${bookingId.substring(0, 6).toUpperCase()}*) has been successfully cancelled and the table is released.\n\nWould you like to explore other partner clubs or book another time?`,
+          replyType: 'buttons',
+          buttons: [
+            { id: 'action_book_table', title: '📅 Book a Table' },
+            { id: 'action_explore_clubs', title: '🔍 Explore Clubs' },
+            { id: 'action_my_bookings', title: '📋 My Bookings' }
+          ],
+          clearState: true
+        };
+      } else {
+        return {
+          replyText: `Could not cancel booking: ${cancelResult.reason || 'Reservation not found or unauthorized'}.`,
+          replyType: 'buttons',
+          buttons: [
+            { id: 'action_my_bookings', title: '📋 My Bookings' },
+            { id: 'action_support', title: '💬 Contact Support' }
+          ],
+          clearState: true
+        };
+      }
+    }
+
+    // 8. Handle Filters
+    if (cleanQuery.startsWith('filter_area_')) {
+      const area = cleanQuery.replace('filter_area_', '');
+      return await this.handleClubDiscovery(area, cleanPhone);
+    }
+    if (cleanQuery.startsWith('filter_game_')) {
+      const game = cleanQuery.replace('filter_game_', '');
+      return await this.handleClubDiscovery('', cleanPhone, game);
+    }
+
+    const detectedArea = this.extractAreaFromText(cleanQuery);
+    if (detectedArea) {
+      return await this.handleClubDiscovery(detectedArea, cleanPhone);
+    }
+
+    // 9. Standard Centralized Welcome with the 6 official interactive options
+    return {
+      replyText: (
+        `Welcome to *QControl*! 🎱\n\n` +
+        `Your official centralized discovery and booking assistant for premium billiards, snooker, and gaming clubs.\n\n` +
+        `Discover verified partner clubs, check real-time table availability, and manage reservations all in one place.\n\n` +
+        `How can we help you today? Please choose an option below:`
+      ),
+      replyType: 'list',
+      listData: {
+        buttonText: 'Choose Option',
+        sections: [
+          {
+            title: 'Booking & Discovery',
+            rows: [
+              {
+                id: 'action_explore_clubs',
+                title: '🔍 Explore Partner Clubs',
+                description: 'Browse verified clubs, areas & amenities'
+              },
+              {
+                id: 'action_book_table',
+                title: '📅 Book a Table',
+                description: 'Select a club and reserve a table'
+              },
+              {
+                id: 'action_my_bookings',
+                title: '📋 My Bookings',
+                description: 'Check or cancel upcoming reservations'
+              }
+            ]
+          },
+          {
+            title: 'Information & Support',
+            rows: [
+              {
+                id: 'action_games_prices',
+                title: '💰 Games & Prices',
+                description: 'View pool, snooker & PS5 rates'
+              },
+              {
+                id: 'action_get_directions',
+                title: '🗺️ Get Directions',
+                description: 'Locate clubs with Google Maps navigation'
+              },
+              {
+                id: 'action_support',
+                title: '💬 Contact Support',
+                description: 'Talk to QControl concierge or helpline'
+              }
+            ]
+          }
+        ]
+      }
+    };
+  },
+
+  /**
+   * Explores verified partner clubs across the centralized network with rich metadata.
+   */
+  async handleExplorePartnerClubs(customerPhone: string): Promise<IntelligenceOutput> {
+    const recommendations = await clubDiscoveryService.discoverAndRankClubs({
+      dateStr: getCurrentISTDateStr()
+    });
+
+    if (recommendations.length === 0) {
+      return {
+        replyText: `Currently, there are no active clubs registered on the platform. Please check back shortly or contact our support team.`,
+        replyType: 'buttons',
+        buttons: [{ id: 'action_support', title: '💬 Contact Support' }]
+      };
+    }
+
+    let directoryText = `*Verified QControl Partner Clubs:* 🎱\n\n`;
+    recommendations.slice(0, 5).forEach((c, idx) => {
+      const games = c.availableGames.join(', ') || 'Pool, Snooker';
+      const rates = Object.entries(c.pricingBreakdown).map(([g, r]) => `${g.toUpperCase()}: ₹${r}/hr`).join(' • ');
+      directoryText += `*${idx + 1}. ${c.businessName}*\n`;
+      directoryText += `📍 ${c.address}\n`;
+      directoryText += `🎮 *Games:* ${games}\n`;
+      directoryText += `⏰ *Hours:* ${c.operatingHours}\n`;
+      directoryText += `💰 *Rates:* ${rates}\n`;
+      if (c.directionsUrl) {
+        directoryText += `🗺️ *Directions:* ${c.directionsUrl}\n`;
+      }
+      directoryText += `\n`;
+    });
+
+    directoryText += `💡 Select your club below to check live table availability and book a slot:`;
+
+    const clubRows = recommendations.slice(0, 10).map(c => ({
+      id: `select_biz_${c.businessId}`,
+      title: c.businessName.length > 24 ? c.businessName.substring(0, 21) + '...' : c.businessName,
+      description: `${c.matchedGameType.toUpperCase()} • ₹${c.ratePerHour}/hr • ${c.address.substring(0, 35)}`
+    }));
+
+    return {
+      replyText: directoryText.trim(),
+      replyType: 'list',
+      listData: {
+        buttonText: 'Select Club to Book',
+        sections: [
+          {
+            title: 'Verified Partner Clubs',
+            rows: clubRows
+          }
+        ]
+      }
+    };
+  },
+
+  /**
+   * Guides the customer to select a club for booking.
+   */
+  async handleGlobalBookTable(customerPhone: string): Promise<IntelligenceOutput> {
+    const recommendations = await clubDiscoveryService.discoverAndRankClubs({
+      dateStr: getCurrentISTDateStr()
+    });
+
+    if (recommendations.length === 0) {
+      return {
+        replyText: `Sorry, there are no partner clubs currently available. Please check back soon!`,
+        replyType: 'text'
+      };
+    }
+
+    const clubRows = recommendations.slice(0, 10).map(c => ({
+      id: `select_biz_${c.businessId}`,
+      title: c.businessName.length > 24 ? c.businessName.substring(0, 21) + '...' : c.businessName,
+      description: `${c.address.substring(0, 35)} • From ₹${c.ratePerHour}/hr`
+    }));
+
+    return {
+      replyText: (
+        `*QControl — Select a Partner Club to Book:* 📅\n\n` +
+        `Please choose the club where you would like to play. We will check real-time table availability for you:`
+      ),
+      replyType: 'list',
+      listData: {
+        buttonText: 'Choose Club',
+        sections: [
+          {
+            title: 'Partner Clubs',
+            rows: clubRows
+          }
+        ]
+      }
+    };
+  },
+
+  /**
+   * Displays all active bookings across all partner clubs for a customer phone.
+   */
+  async handleGlobalMyBookings(customerPhone: string): Promise<IntelligenceOutput> {
+    const bookings = await bookingService.getCustomerBookings(customerPhone);
+
+    if (bookings.length === 0) {
+      return {
+        replyText: (
+          `You have no upcoming reservations in the QControl network.\n\n` +
+          `Would you like to book a table at one of our partner clubs?`
+        ),
+        replyType: 'buttons',
+        buttons: [
+          { id: 'action_book_table', title: '📅 Book a Table' },
+          { id: 'action_explore_clubs', title: '🔍 Explore Clubs' }
+        ]
+      };
+    }
+
+    let msg = `*Your Upcoming Reservations:* 📋\n\n`;
+    const buttons: Array<{ id: string; title: string }> = [];
+
+    bookings.slice(0, 3).forEach((b, idx) => {
+      const clubName = b.businesses?.business_name || 'Partner Club';
+      const code = `QC-${b.id.substring(0, 6).toUpperCase()}`;
+      msg += `*${idx + 1}. ${code}* — ${clubName}\n`;
+      msg += `🎮 *Game:* ${b.game_type?.toUpperCase() || 'POOL'} (Table ${b.table_id})\n`;
+      msg += `📅 *Time:* ${b.booking_date} at ${b.start_time.substring(0, 5)} (${b.duration_minutes || 60} mins)\n`;
+      if (b.businesses?.address) {
+        msg += `📍 *Address:* ${b.businesses.address}\n`;
+        const dir = getGoogleMapsDirectionsUrl({ address: b.businesses.address, businessName: clubName });
+        if (dir) msg += `🗺️ *Directions:* ${dir}\n`;
+      }
+      msg += `\n`;
+
+      if (idx === 0) {
+        buttons.push({ id: `cancel_${b.id}`, title: `❌ Cancel ${code}` });
+      }
+    });
+
+    buttons.push({ id: 'action_book_table', title: '📅 New Booking' });
+    buttons.push({ id: 'action_explore_clubs', title: '🔍 Partner Clubs' });
+
+    return {
+      replyText: msg.trim(),
+      replyType: 'buttons',
+      buttons
+    };
+  },
+
+  /**
+   * Centralized transparent pricing guide across all games.
+   */
+  async handleCentralPricingGuide(customerPhone: string): Promise<IntelligenceOutput> {
+    return {
+      replyText: (
+        `*QControl — Transparent Game Pricing Guide:* 💰\n\n` +
+        `All partner clubs adhere to transparent, verified rates with fair per-minute billing:\n\n` +
+        `🎱 *Pool:* ₹180 – ₹220 / hr\n` +
+        `🔴 *Snooker:* ₹280 – ₹350 / hr (English & Tournament tables)\n` +
+        `🎮 *PS5:* ₹200 – ₹300 / hr (4K HDR Gaming, 1–4 players)\n\n` +
+        `🎖️ *Membership Benefit:* Registered members enjoy 10% to 20% discounts on every session across clubs!\n\n` +
+        `Select an option below to book or explore partner clubs:`
+      ),
+      replyType: 'buttons',
+      buttons: [
+        { id: 'action_book_table', title: '📅 Book a Table' },
+        { id: 'action_explore_clubs', title: '🔍 Explore Clubs' },
+        { id: 'action_get_directions', title: '🗺️ Get Directions' }
+      ]
+    };
+  },
+
+  /**
+   * Returns directions to partner clubs.
+   */
+  async handleGlobalDirections(customerPhone: string): Promise<IntelligenceOutput> {
+    const recommendations = await clubDiscoveryService.discoverAndRankClubs({
+      dateStr: getCurrentISTDateStr()
+    });
+
+    if (recommendations.length === 0) {
+      return {
+        replyText: `No active partner clubs found right now.`,
+        replyType: 'buttons',
+        buttons: [{ id: 'action_support', title: '💬 Contact Support' }]
+      };
+    }
+
+    let dirText = `*Find Your Closest QControl Club:* 🗺️\n\n`;
+    recommendations.slice(0, 4).forEach((c, idx) => {
+      dirText += `*${idx + 1}. ${c.businessName}*\n📍 ${c.address}\n`;
+      if (c.directionsUrl) {
+        dirText += `🚗 *Google Maps Navigation:* ${c.directionsUrl}\n`;
+      }
+      dirText += `\n`;
+    });
+
+    dirText += `Select a club below to reserve your table:`;
+
+    const clubRows = recommendations.slice(0, 10).map(c => ({
+      id: `select_biz_${c.businessId}`,
+      title: c.businessName.length > 24 ? c.businessName.substring(0, 21) + '...' : c.businessName,
+      description: `📍 ${c.address.substring(0, 40)}`
+    }));
+
+    return {
+      replyText: dirText.trim(),
+      replyType: 'list',
+      listData: {
+        buttonText: 'Select Club to Navigate',
+        sections: [
+          {
+            title: 'Partner Clubs',
+            rows: clubRows
+          }
+        ]
+      }
+    };
+  },
+
+  /**
+   * Official QControl Concierge support info.
+   */
+  async handleCentralSupport(): Promise<IntelligenceOutput> {
+    return {
+      replyText: (
+        `*QControl Concierge & Support* 💬\n\n` +
+        `Need help with a table reservation, venue directions, or corporate event bookings?\n\n` +
+        `📞 *Helpline / WhatsApp:* +91 98811 00000\n` +
+        `⏱️ *Support Hours:* 10:00 AM – Midnight (All 7 Days)\n` +
+        `📧 *Email:* support@qcontrol.app\n` +
+        `🌐 *Web Directory:* https://qcontrol.app/portal/clubs\n\n` +
+        `How can we assist you today?`
+      ),
+      replyType: 'buttons',
+      buttons: [
+        { id: 'action_book_table', title: '📅 Book a Table' },
+        { id: 'action_explore_clubs', title: '🔍 Explore Clubs' },
+        { id: 'action_my_bookings', title: '📋 My Bookings' }
       ]
     };
   },

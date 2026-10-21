@@ -1,8 +1,22 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Phone, Navigation, MapPin } from 'lucide-react';
+import { 
+  Phone, 
+  Navigation, 
+  MapPin, 
+  User, 
+  MessageSquare, 
+  Calendar, 
+  Clock, 
+  CreditCard, 
+  ShieldCheck, 
+  X, 
+  Wallet, 
+  Award, 
+  Loader2 
+} from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { t } from '@/lib/i18n';
 import { getGoogleMapsDirectionsUrl } from '@/lib/utils/locationUtils';
@@ -70,6 +84,210 @@ export default function BookingsTab({
     });
   };
 
+  // Customer Profile Hover & Sheet State
+  const [profileCache, setProfileCache] = useState<Record<string, any>>({});
+  const [loadingProfileKey, setLoadingProfileKey] = useState<string | null>(null);
+  const [hoveredCustomer, setHoveredCustomer] = useState<{
+    booking: Booking;
+    position: { top: number; left: number };
+  } | null>(null);
+  const [activeCustomerSheet, setActiveCustomerSheet] = useState<Booking | null>(null);
+
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const leaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    };
+  }, []);
+
+  const getCleanPhone = (phone?: string) => {
+    if (!phone) return '';
+    return phone.replace(/\D/g, '');
+  };
+
+  const getPhone10 = (phone?: string) => {
+    const clean = getCleanPhone(phone);
+    return clean.length >= 10 ? clean.slice(-10) : clean;
+  };
+
+  const fetchCustomerProfile = async (phone: string, name: string) => {
+    const cacheKey = `${phone || ''}_${name || ''}`;
+    if (profileCache[cacheKey]) return profileCache[cacheKey];
+
+    setLoadingProfileKey(cacheKey);
+    try {
+      const res = await fetch(`/api/bookings/customer-profile?phone=${encodeURIComponent(phone || '')}&name=${encodeURIComponent(name || '')}`);
+      if (res.ok) {
+        const json = await res.json();
+        const profile = json.profile || null;
+        setProfileCache(prev => ({ ...prev, [cacheKey]: profile }));
+        return profile;
+      }
+    } catch (err) {
+      console.error('Failed to fetch customer profile:', err);
+    } finally {
+      setLoadingProfileKey(null);
+    }
+    return null;
+  };
+
+  const handleCustomerMouseEnter = (e: React.MouseEvent<HTMLElement>, booking: Booking) => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const top = rect.bottom + 8;
+    const left = Math.max(16, Math.min(window.innerWidth - 320, rect.left));
+
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredCustomer({
+        booking,
+        position: { top, left }
+      });
+      fetchCustomerProfile(booking.customer_phone, booking.customer_name);
+    }, 150);
+  };
+
+  const handleCustomerMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    leaveTimeoutRef.current = setTimeout(() => {
+      setHoveredCustomer(null);
+    }, 150);
+  };
+
+  const handlePopoverMouseEnter = () => {
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+  };
+
+  const handlePopoverMouseLeave = () => {
+    leaveTimeoutRef.current = setTimeout(() => {
+      setHoveredCustomer(null);
+    }, 150);
+  };
+
+  const handleCustomerClick = (booking: Booking) => {
+    setActiveCustomerSheet(booking);
+    fetchCustomerProfile(booking.customer_phone, booking.customer_name);
+  };
+
+  const renderCustomerCardContent = (booking: Booking, isMobile = false) => {
+    const cacheKey = `${booking.customer_phone || ''}_${booking.customer_name || ''}`;
+    const profile = profileCache[cacheKey];
+    const isLoading = loadingProfileKey === cacheKey;
+    const phone10 = getPhone10(booking.customer_phone);
+    const hasPhone = Boolean(phone10 && phone10.length === 10);
+    const balance = profile?.outstanding_balance || 0;
+    const isMember = Boolean(profile?.membership_name || profile?.membership_status === 'ACTIVE');
+
+    return (
+      <div className="flex flex-col gap-3">
+        {/* Header: User avatar + Name & Ref */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
+              <User className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-bold text-sm text-text-primary truncate">{booking.customer_name}</h4>
+              <div className="text-xs text-text-secondary font-mono flex items-center gap-1 mt-0.5">
+                <Phone className="w-3 h-3 text-text-disabled" />
+                <span>{booking.customer_phone || 'No phone recorded'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="text-[10px] font-mono font-bold text-text-secondary bg-bg-primary/80 border border-border-theme px-2 py-0.5 rounded">
+              #{booking.id.substring(0, 8).toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Contact Actions */}
+        {hasPhone && (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <a
+              href={`https://wa.me/91${phone10}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 text-xs font-bold transition-colors shadow-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>WhatsApp</span>
+            </a>
+            <a
+              href={`tel:+91${phone10}`}
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 text-xs font-bold transition-colors shadow-sm"
+              onClick={e => e.stopPropagation()}
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>Call</span>
+            </a>
+          </div>
+        )}
+
+        {/* Intelligence Metrics Grid */}
+        <div className="border-t border-border-theme/60 pt-3">
+          {isLoading && !profile ? (
+            <div className="py-4 flex items-center justify-center gap-2 text-xs text-text-secondary">
+              <Loader2 className="w-4 h-4 animate-spin text-accent" />
+              <span>Loading ledger history...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {/* Completed Visits */}
+              <div className="p-2.5 rounded-lg bg-bg-primary/60 border border-border-theme/40">
+                <div className="text-[10px] text-text-secondary font-bold uppercase tracking-wider flex items-center gap-1 mb-1">
+                  <Calendar className="w-3 h-3 text-text-disabled" />
+                  <span>Visits</span>
+                </div>
+                <div className="text-sm font-bold text-text-primary font-mono">
+                  {profile?.completed_bookings_count ?? (profile?.total_visits || 0)} Completed
+                </div>
+              </div>
+
+              {/* QKhata Ledger Balance */}
+              <div className="p-2.5 rounded-lg bg-bg-primary/60 border border-border-theme/40">
+                <div className="text-[10px] text-text-secondary font-bold uppercase tracking-wider flex items-center gap-1 mb-1">
+                  <Wallet className="w-3 h-3 text-text-disabled" />
+                  <span>QKhata</span>
+                </div>
+                <div className={`text-sm font-bold font-mono ${balance > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {balance > 0 ? `₹${balance} Due` : 'Clear (₹0)'}
+                </div>
+              </div>
+
+              {/* Membership Status */}
+              <div className="col-span-2 p-2.5 rounded-lg bg-bg-primary/60 border border-border-theme/40 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                  <Award className="w-3.5 h-3.5 text-accent" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Membership</span>
+                </div>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                  isMember 
+                    ? 'bg-accent/15 text-accent border-accent/30' 
+                    : 'bg-bg-surface text-text-secondary border-border-theme'
+                }`}>
+                  {profile?.membership_name || (isMember ? 'Active Member' : 'Regular Guest')}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // Selection & Bulk Action States
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -94,21 +312,6 @@ export default function BookingsTab({
     start_time: '',
     duration_minutes: 60,
   });
-
-  // Sync prop bookings when changed
-  useEffect(() => {
-    setLocalBookings(bookings);
-  }, [bookings]);
-
-  // Sync prop tables when provided, avoiding redundant /api/dashboard-data calls
-  useEffect(() => {
-    if (propTables && propTables.length > 0) {
-      setTables(propTables);
-      setFormData(prev => ({ ...prev, table_id: prev.table_id || propTables[0].id }));
-    } else {
-      fetchTables();
-    }
-  }, [propTables]);
 
   const fetchTables = async () => {
     try {
@@ -143,6 +346,23 @@ export default function BookingsTab({
       setIsLoading(false);
     }
   };
+
+  // Sync prop bookings when changed
+  useEffect(() => {
+     
+    setLocalBookings(bookings);
+  }, [bookings]);
+
+  // Sync prop tables when provided, avoiding redundant /api/dashboard-data calls
+  useEffect(() => {
+    if (propTables && propTables.length > 0) {
+       
+      setTables(propTables);
+      setFormData(prev => ({ ...prev, table_id: prev.table_id || propTables[0].id }));
+    } else {
+      fetchTables();
+    }
+  }, [propTables]);
 
   // Filtered Bookings based on status and search query
   const filteredBookings = useMemo(() => {
@@ -456,9 +676,15 @@ export default function BookingsTab({
                       {/* Booking Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-bold text-sm text-text-primary truncate">
-                            {b.customer_name}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCustomerClick(b)}
+                            className="font-bold text-sm text-text-primary truncate text-left hover:text-accent transition-colors flex items-center gap-1.5 focus:outline-none"
+                            aria-label={`View profile for ${b.customer_name}`}
+                          >
+                            <span className="truncate">{b.customer_name}</span>
+                            <User className="w-3.5 h-3.5 text-text-disabled shrink-0" />
+                          </button>
                           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shrink-0 ${
                             statusLower === 'confirmed' ? 'border-success/50 text-success bg-success/10' :
                             statusLower === 'active' ? 'border-accent/50 text-accent bg-accent/10' :
@@ -595,8 +821,18 @@ export default function BookingsTab({
                             {b.booking_date} <span className="font-bold text-text-primary">{b.start_time.substring(0, 5)}</span>
                           </td>
                           <td className="p-5 text-sm font-bold text-text-primary">
-                            {b.customer_name}
-                            <div className="text-xs text-text-secondary font-normal font-mono">{b.customer_phone || 'No phone'}</div>
+                            <div
+                              className="inline-flex flex-col cursor-pointer group"
+                              onMouseEnter={(e) => handleCustomerMouseEnter(e, b)}
+                              onMouseLeave={handleCustomerMouseLeave}
+                              onClick={() => handleCustomerClick(b)}
+                            >
+                              <span className="group-hover:text-accent transition-colors flex items-center gap-1.5">
+                                {b.customer_name}
+                                <User className="w-3.5 h-3.5 text-text-disabled opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </span>
+                              <div className="text-xs text-text-secondary font-normal font-mono">{b.customer_phone || 'No phone'}</div>
+                            </div>
                           </td>
                           <td className="p-5 text-sm font-bold text-accent font-mono uppercase">{b.table_id}</td>
                           <td className="p-5 text-sm text-center text-text-secondary font-mono">{b.duration_minutes}m</td>
@@ -832,6 +1068,48 @@ export default function BookingsTab({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Hover Popover Card */}
+      {hoveredCustomer && (
+        <div
+          className="fixed z-50 w-72 bg-bg-surface border border-border-theme rounded-xl shadow-2xl p-4 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md"
+          style={{
+            top: `${hoveredCustomer.position.top}px`,
+            left: `${hoveredCustomer.position.left}px`
+          }}
+          onMouseEnter={handlePopoverMouseEnter}
+          onMouseLeave={handlePopoverMouseLeave}
+        >
+          {renderCustomerCardContent(hoveredCustomer.booking)}
+        </div>
+      )}
+
+      {/* Mobile Tap Bottom Sheet / Modal */}
+      {activeCustomerSheet && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setActiveCustomerSheet(null)}
+        >
+          <div 
+            className="w-full sm:max-w-md bg-bg-surface border-t sm:border border-border-theme rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-4 duration-200 max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border-theme/60 pb-3 mb-4">
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+                Customer Profile
+              </span>
+              <button 
+                onClick={() => setActiveCustomerSheet(null)}
+                className="p-1 rounded-lg hover:bg-bg-primary text-text-secondary hover:text-text-primary transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {renderCustomerCardContent(activeCustomerSheet, true)}
           </div>
         </div>
       )}

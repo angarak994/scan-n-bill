@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { Check, Star, Zap, CreditCard, Calendar, Clock, AlertCircle, FileText, ArrowRight, ShieldCheck, X } from 'lucide-react';
@@ -28,13 +28,7 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
   const [activeTab, setActiveTab] = useState<TabType>('plan');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-    fetchPlans();
-    fetchHistory();
-  }, [businessId]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const res = await fetch('/api/subscriptions/details');
       const data = await res.json();
@@ -47,9 +41,9 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/subscriptions/history');
       const data = await res.json();
@@ -59,9 +53,9 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
-  const fetchPlans = async () => {
+  const fetchPlans = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('subscription_plans')
@@ -73,7 +67,13 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    fetchPlans();
+    fetchHistory();
+  }, [businessId, fetchData, fetchPlans, fetchHistory]);
 
   const handleCheckout = async (planId: string) => {
     try {
@@ -171,6 +171,10 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
     }
   };
 
+  const currentPlan = subData?.subscription_plans;
+  const isExpired = Boolean(subData && new Date(subData.current_period_end).getTime() < Date.now());
+  const isCancelling = subData?.cancel_at_period_end;
+
   if (loading) return (
     <div className="w-full space-y-6 pb-20">
       <div className="w-64 h-10 bg-border-light/50 rounded-lg animate-pulse mb-6" />
@@ -178,10 +182,6 @@ export default function SubscriptionTab({ businessId }: SubscriptionTabProps) {
       <div className="w-full h-[400px] bg-border-light/50 rounded-2xl animate-pulse" />
     </div>
   );
-
-  const currentPlan = subData?.subscription_plans;
-  const isExpired = subData && new Date(subData.current_period_end).getTime() < Date.now();
-  const isCancelling = subData?.cancel_at_period_end;
   
   let statusBadge = null;
   if (isExpired) {

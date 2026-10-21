@@ -21,21 +21,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
     }
 
-    // Fetch business WhatsApp config and name
+    // Fetch authoritative business WhatsApp config and name
     const { data: business } = await supabase
       .from('businesses')
-      .select('business_name, whatsapp_config')
+      .select('business_name, whatsapp_config, payment_qr_config, pricing_rules')
       .eq('id', businessId)
       .single();
 
-    const businessName = business?.business_name || 'QControl';
-    const config = business?.whatsapp_config as any;
+    if (!business || !business.business_name?.trim()) {
+      return NextResponse.json({ error: 'Business not found or business name missing' }, { status: 404 });
+    }
+
+    const businessName = business.business_name.trim();
+    const config = business.whatsapp_config as any;
     if (!config || !config.enabled || !config.token || !config.phoneId) {
       return NextResponse.json({ error: 'WhatsApp is not connected for this business. Please connect it in Settings.' }, { status: 400 });
     }
 
+    const qrConfig = business.payment_qr_config as any;
+    const pricingRules = business.pricing_rules as any;
+    const upiId = qrConfig?.upi_id || pricingRules?.globalSettings?.preferences?.business_upi_id || (business as any).upi_id || null;
+
+    const isPaymentReminder = template.toLowerCase().includes('payment reminder') || template.includes('{{outstanding}}');
+
     let successCount = 0;
     let failureCount = 0;
+    let skippedCount = 0;
     const errors: any[] = [];
 
     // Process sequentially to respect rate limits or use a controlled Promise.all
@@ -51,19 +62,46 @@ export async function POST(request: Request) {
         continue;
       }
 
+      let outstanding = Number(customer.outstanding_balance || 0);
+
+      // Real-time verification for payment reminders: never send unverified or ₹0 balances
+      if (isPaymentReminder) {
+        if (customer.id) {
+          const { data: freshCust } = await supabase
+            .from('customers')
+            .select('outstanding_balance')
+            .eq('id', customer.id)
+            .eq('business_id', businessId)
+            .maybeSingle();
+          if (freshCust) {
+            outstanding = Number(freshCust.outstanding_balance || 0);
+          }
+        }
+
+        // Skip reminders if balance is zero or settled
+        if (outstanding <= 0) {
+          skippedCount++;
+          continue;
+        }
+      }
+
       // Replace template variables
-      const message = template
-        .replace(/\{\{name\}\}/g, customer.name || 'Customer')
-        .replace(/\{\{outstanding\}\}/g, Number(customer.outstanding_balance || 0).toFixed(0))
+      let message = template
+        .replace(/\{\{name\}\}/g, customer.name || 'Member')
+        .replace(/\{\{outstanding\}\}/g, outstanding.toFixed(0))
         .replace(/\{\{club\}\}/g, businessName)
         .replace(/\{\{business\}\}/g, businessName);
+
+      if (isPaymentReminder && upiId && !message.includes('UPI ID:') && !message.includes(upiId)) {
+        message += `\n\nUPI ID: ${upiId}`;
+      }
 
       // Pre-log to database as queued
       let dbMessageId = null;
       const { data: dbMsg } = await supabase.from('whatsapp_messages').insert({
         business_id: businessId,
         recipient_phone: cleanPhone,
-        recipient_name: customer.name || 'Customer',
+        recipient_name: customer.name || 'Member',
         content: message,
         status: 'queued'
       }).select('id').single();
@@ -111,6 +149,7 @@ export async function POST(request: Request) {
         success: true, 
         successCount, 
         failureCount,
+        skippedCount,
         errors: errors.length > 0 ? errors : undefined 
     });
 

@@ -2690,23 +2690,17 @@ function isDuplicateUpdate(updateId?: number, callbackQueryId?: string): boolean
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
-    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
     const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
-    const isSecretValid = Boolean(clientSecret && clientSecret === WEBHOOK_SECRET);
-    
-    // Strict secret verification: If secret is sent, reject mismatched secret token.
-    if (clientSecret && !isSecretValid) {
-      console.warn('Unauthorized Telegram Webhook attempt: invalid secret token.');
-      return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
-    }
-    
-    // Rate Limit: Prevent brute force or spam on webhook from unauthenticated callers.
-    // Authenticated Telegram delivery is not IP throttled to avoid dropping genuine batch retries.
-    if (!isSecretValid) {
-      const ip = getIpAddress(request);
-      if (!checkRateLimit(`tg_webhook_${ip}`, 120, 60 * 1000)) {
-        return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+
+    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is set, require valid token
+    if (WEBHOOK_SECRET) {
+      if (!clientSecret || clientSecret !== WEBHOOK_SECRET) {
+        console.warn('Unauthorized Telegram Webhook attempt: invalid or missing secret token.');
+        return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
       }
+    } else if (clientSecret && clientSecret !== 'qcontrol_secure_webhook_123') {
+      return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
     }
 
     const update = await request.json();

@@ -385,6 +385,8 @@ export async function GET(request: Request) {
       ownerName: business.owner_name,
       address: business.address || null,
       contact_number: business.contact_number || null,
+      public_contact_number: business.public_contact_number || null,
+      slug: business.slug || null,
       latitude: business.latitude || null,
       longitude: business.longitude || null,
       has_logged_in: business.has_logged_in,

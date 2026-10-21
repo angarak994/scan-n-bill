@@ -79,9 +79,7 @@ export default function SessionCompletionModal({
   formatINR,
   t = (_key, fallback) => fallback || String(_key)
 }: SessionCompletionModalProps) {
-  if (!isOpen || !data || !data.session) return null;
-
-  const resolveTierName = (rawTier?: string) => {
+  const resolveTierName = useCallback((rawTier?: string) => {
     if (!rawTier) return 'Member';
     const matchedPlan = (membershipPlans || []).find(
       (p: any) => String(p.id).toLowerCase() === String(rawTier).toLowerCase() ||
@@ -92,16 +90,16 @@ export default function SessionCompletionModal({
       return 'VIP';
     }
     return rawTier;
-  };
+  }, [membershipPlans]);
 
-  const session = data.session;
-  const initialCost = Math.max(0, Math.round(data.cost || 0));
-  const breakdown = data.breakdown;
+  const session = data?.session;
+  const initialCost = Math.max(0, Math.round(data?.cost || 0));
+  const breakdown = data?.breakdown;
 
   // Resolve customer & membership details
   const customerMeta = useMemo(() => {
-    const rawName = (session.customer_name || '').trim();
-    const memberId = session.member_id;
+    const rawName = (session?.customer_name || '').trim();
+    const memberId = session?.member_id;
 
     // Check membershipByIdMap first
     if (memberId && membershipByIdMap?.has(memberId)) {
@@ -147,7 +145,7 @@ export default function SessionCompletionModal({
       outstandingBalance: 0,
       loyaltyPoints: 0
     };
-  }, [session, customerByPhoneMap, customerByNameMap, customerByIdMap, membershipByIdMap, getDisplayName]);
+  }, [session, customerByPhoneMap, customerByNameMap, customerByIdMap, membershipByIdMap, getDisplayName, resolveTierName]);
 
   // Clean discount label logic: FIX MISLEADING "Discount: None"
   const discountInfo = useMemo(() => {
@@ -182,7 +180,7 @@ export default function SessionCompletionModal({
 
       if (matchedPlan) {
         const rawTable = Number(breakdown?.baseTableCost || initialCost);
-        const rawFood = Number(breakdown?.foodCost || session.food_cost || 0);
+        const rawFood = Number(breakdown?.foodCost || session?.food_cost || 0);
         const eligibleAmount = rawTable + rawFood;
 
         if (eligibleAmount > 0) {
@@ -206,28 +204,28 @@ export default function SessionCompletionModal({
     }
 
     return null;
-  }, [breakdown, customerMeta, membershipPlans, initialCost, session.food_cost]);
+  }, [breakdown, customerMeta, membershipPlans, initialCost, session?.food_cost]);
 
   const totalCost = discountInfo?.isAutoApplied
-    ? Math.max(0, (Number(breakdown?.baseTableCost || initialCost) + Number(breakdown?.foodCost || session.food_cost || 0)) - discountInfo.amount)
+    ? Math.max(0, (Number(breakdown?.baseTableCost || initialCost) + Number(breakdown?.foodCost || session?.food_cost || 0)) - discountInfo.amount)
     : initialCost;
 
   // Form State
   const [paymentMode, setPaymentMode] = useState<'now' | 'credit'>(
-    data.paymentMode === 'credit' && customerMeta.isMember ? 'credit' : 'now'
+    data?.paymentMode === 'credit' && customerMeta.isMember ? 'credit' : 'now'
   );
-  const [isSplitPayment, setIsSplitPayment] = useState<boolean>(Boolean(data.isSplitPayment));
-  const [paymentMethod, setPaymentMethod] = useState<string>(data.paymentMethodOption || 'Cash');
+  const [isSplitPayment, setIsSplitPayment] = useState<boolean>(Boolean(data?.isSplitPayment));
+  const [paymentMethod, setPaymentMethod] = useState<string>(data?.paymentMethodOption || 'Cash');
   const [amountReceived, setAmountReceived] = useState<string>(
-    data.amountReceived !== undefined && data.amountReceived !== '' ? String(data.amountReceived) : String(totalCost)
+    data?.amountReceived !== undefined && data?.amountReceived !== '' ? String(data.amountReceived) : String(totalCost)
   );
-  const [cashTendered, setCashTendered] = useState<string>(data.cashTendered || '');
-  const [splitCash, setSplitCash] = useState<string>(data.splitCash || '');
-  const [splitUpi, setSplitUpi] = useState<string>(data.splitUpi || '');
-  const [splitCard, setSplitCard] = useState<string>(data.splitCard || '');
-  const [splitWays, setSplitWays] = useState<number>(data.splitWays && data.splitWays > 1 ? data.splitWays : 1);
+  const [cashTendered, setCashTendered] = useState<string>(data?.cashTendered || '');
+  const [splitCash, setSplitCash] = useState<string>(data?.splitCash || '');
+  const [splitUpi, setSplitUpi] = useState<string>(data?.splitUpi || '');
+  const [splitCard, setSplitCard] = useState<string>(data?.splitCard || '');
+  const [splitWays, setSplitWays] = useState<number>(data?.splitWays && data.splitWays > 1 ? data.splitWays : 1);
   const [dueDate, setDueDate] = useState<string>(() => {
-    if (data.dueDate) return data.dueDate;
+    if (data?.dueDate) return data.dueDate;
     const d = new Date();
     d.setMonth(d.getMonth() + 1);
     return d.toISOString().split('T')[0];
@@ -246,10 +244,13 @@ export default function SessionCompletionModal({
   }, [isSubmitting, onClose]);
 
   useEffect(() => {
-    if (discountInfo?.isAutoApplied && (data.amountReceived === undefined || data.amountReceived === '')) {
-      setAmountReceived(String(totalCost));
+    if (discountInfo?.isAutoApplied && (data?.amountReceived === undefined || data?.amountReceived === '')) {
+      const timer = setTimeout(() => {
+        setAmountReceived(String(totalCost));
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [discountInfo?.isAutoApplied, totalCost, data.amountReceived]);
+  }, [discountInfo?.isAutoApplied, totalCost, data?.amountReceived]);
 
   // Calculations for Single Payment
   const numericAmountReceived = amountReceived === '' ? totalCost : Number(amountReceived);
@@ -437,6 +438,8 @@ export default function SessionCompletionModal({
     }
     return Array.from(opts).filter(n => n >= base).slice(0, 4);
   }, [numericAmountReceived, totalCost]);
+
+  if (!isOpen || !data || !session) return null;
 
   return (
     <div

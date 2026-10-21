@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { normalizePhone } from '@/lib/utils/phoneValidation';
 import { handleOptionsResponse, withCorsHeaders } from '@/lib/utils/cors';
 import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
+import { bookingService } from '@/lib/services/bookingService';
 
 export async function OPTIONS(request: Request) {
   return handleOptionsResponse(request);
@@ -42,50 +43,25 @@ export async function POST(request: Request) {
         }
     }
 
-    // Server-side check for double booking on the same table
-    const { data: existingBookings, error: checkError } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('business_id', business_id)
-        .eq('table_id', table_id)
-        .eq('booking_date', booking_date)
-        .in('status', ['confirmed']);
-        
-    if (checkError) throw checkError;
+    // Delegate to centralized atomic booking service
+    const bookingResult = await bookingService.createAtomicBooking({
+      business_id,
+      table_id,
+      customer_name: customer_name || 'Guest',
+      customer_phone: normalizedPhone || '',
+      booking_date,
+      start_time,
+      duration_minutes: duration_minutes || 60,
+      game_type: game_type || 'pool',
+      source: 'portal'
+    });
 
-    // Strict overlap logic to prevent double bookings
-    const hasOverlap = (existingBookings || []).some(b => b.start_time === start_time);
-    if (hasOverlap) {
-        return withCorsHeaders(NextResponse.json({ error: 'Time slot is already booked' }, { status: 409 }), request);
+    if (!bookingResult.success) {
+      const status = bookingResult.reason?.includes('unavailable') || bookingResult.reason?.includes('occupied') || bookingResult.reason?.includes('hours') ? 409 : 400;
+      return withCorsHeaders(NextResponse.json({ error: bookingResult.reason || 'Could not complete booking' }, { status }), request);
     }
 
-    // Create the booking
-    const { data: newBooking, error: insertError } = await supabase
-        .from('bookings')
-        .insert({
-            business_id,
-            global_customer_id,
-            customer_name,
-            customer_phone: normalizedPhone,
-            table_id,
-            booking_date,
-            start_time,
-            duration_minutes: duration_minutes || 60,
-            status: 'confirmed',
-            source: 'portal'
-        })
-        .select()
-        .single();
-        
-    if (insertError) {
-        // Handle race conditions where Unique Constraint fails
-        if (insertError.code === '23505') {
-            return withCorsHeaders(NextResponse.json({ error: 'Time slot is already booked' }, { status: 409 }), request);
-        }
-        throw insertError;
-    }
-
-    return withCorsHeaders(NextResponse.json({ booking: newBooking }, { status: 201 }), request);
+    return withCorsHeaders(NextResponse.json({ booking: bookingResult.booking }, { status: 201 }), request);
   } catch (error: any) {
     return withCorsHeaders(NextResponse.json({ error: error.message }, { status: 500 }), request);
   }

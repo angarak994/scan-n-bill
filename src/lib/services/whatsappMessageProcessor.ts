@@ -1,7 +1,6 @@
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { businessManager } from '@/lib/businessManager';
 import { supabase } from '@/lib/supabaseClient';
-import { getCurrentISTDateStr } from '@/lib/billing';
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from '@/lib/whatsapp';
 import { bookingService } from '@/lib/services/bookingService';
 import { qcontrolIntelligence } from '@/lib/services/qcontrolIntelligence';
@@ -44,29 +43,80 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     return;
   }
 
-  // 2. Resolve Business Context
+  // 2. Extract incoming text / interactive selections FIRST
+  const text = message.type === 'text' ? (message.text?.body || '') : '';
+  const buttonReplyId = message.type === 'interactive' && message.interactive?.type === 'button_reply' ? message.interactive.button_reply.id : null;
+  const listReplyId = message.type === 'interactive' && message.interactive?.type === 'list_reply' ? message.interactive.list_reply.id : null;
+  const incomingText = buttonReplyId || listReplyId || text;
+  const lower = (incomingText || '').toLowerCase().trim();
+
+  // 3. Resolve Business Context
   let detectedBusiness: any = null;
   let overrideToken: string | undefined = undefined;
   let overridePhoneId: string | undefined = undefined;
 
-  // Strategy A: Match by WhatsApp Phone Number ID
-  if (phoneNumberId) {
-    const { data: businesses } = await supabase.from('businesses').select('*');
-    if (businesses) {
-      detectedBusiness = businesses.find(b => b.whatsapp_config?.enabled && b.whatsapp_config?.phoneId === phoneNumberId);
-      if (detectedBusiness) {
+  // Ingress Step A: QR Code / Deep-Link Ingress Detection (Takes highest precedence)
+  // Matches QC_<SLUG>, Code: QC_<SLUG>, or "Book at <ClubName>"
+  const deepLinkMatch = incomingText.match(/\bQC_([A-Za-z0-9_]+)\b/i) || incomingText.match(/Code:\s*QC_([A-Za-z0-9_]+)/i);
+  const bookAtMatch = incomingText.match(/Book at\s+([^(\n\r]+)/i);
+
+  if (deepLinkMatch || bookAtMatch || incomingText.startsWith('select_biz_')) {
+    const { data: activeBusinesses } = await supabase.from('businesses').select('*').eq('status', 'ACTIVE');
+    const clubs = activeBusinesses || [];
+
+    if (deepLinkMatch) {
+      const slugOrId = deepLinkMatch[1].toLowerCase().trim();
+      detectedBusiness = clubs.find(b => {
+        const clubSlug = ((b.slug || b.business_name) as string).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        return clubSlug === slugOrId ||
+          clubSlug.includes(slugOrId) ||
+          slugOrId.includes(clubSlug) ||
+          b.id.toLowerCase().startsWith(slugOrId) ||
+          b.business_name.toLowerCase().includes(slugOrId);
+      });
+    } else if (bookAtMatch) {
+      const targetName = bookAtMatch[1].toLowerCase().trim();
+      detectedBusiness = clubs.find(b => b.business_name.toLowerCase().includes(targetName) || targetName.includes(b.business_name.toLowerCase()));
+    } else if (incomingText.startsWith('select_biz_')) {
+      const selectedId = incomingText.replace('select_biz_', '').trim();
+      detectedBusiness = clubs.find(b => b.id === selectedId);
+    }
+
+    if (detectedBusiness) {
+      // Lock context into the selected business
+      await whatsappRepository.updateState(phone, detectedBusiness.id, 'IDLE', {
+        business_name: detectedBusiness.business_name,
+        switched_at: new Date().toISOString()
+      }, 'CLUB');
+
+      if (detectedBusiness.whatsapp_config?.enabled) {
         overrideToken = detectedBusiness.whatsapp_config.token;
         overridePhoneId = detectedBusiness.whatsapp_config.phoneId;
       }
     }
   }
 
-  // Strategy B: Check active conversation state for this phone
+  // Ingress Step B: Dedicated Phone Number ID match (for enterprise clubs with their own Meta WABA)
+  if (!detectedBusiness && phoneNumberId) {
+    const { data: businesses } = await supabase.from('businesses').select('*').eq('status', 'ACTIVE');
+    if (businesses) {
+      const matched = businesses.find(b => b.whatsapp_config?.enabled && b.whatsapp_config?.phoneId === phoneNumberId);
+      if (matched) {
+        detectedBusiness = matched;
+        overrideToken = matched.whatsapp_config.token;
+        overridePhoneId = matched.whatsapp_config.phoneId;
+      }
+    }
+  }
+
+  // Ingress Step C: Active Conversation Continuity (Respects 30-min TTL)
   if (!detectedBusiness) {
     const state = await whatsappRepository.getState(phone);
-    if (state?.business_id) {
-      const b = await businessManager.getBusiness(state.business_id);
-      if (b) {
+    const activeBizId = state?.active_business_id || state?.business_id;
+
+    if (activeBizId && state?.conversation_mode === 'CLUB') {
+      const b = await businessManager.getBusiness(activeBizId);
+      if (b && b.status === 'ACTIVE') {
         detectedBusiness = b;
         if (b.whatsapp_config?.enabled) {
           overrideToken = b.whatsapp_config.token;
@@ -76,30 +126,41 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     }
   }
 
-  // Strategy C: Resolve primary active club with WhatsApp enabled (e.g. LevelUP)
-  if (!detectedBusiness) {
-    const { data: businesses } = await supabase.from('businesses').select('*');
-    if (businesses && businesses.length > 0) {
-      detectedBusiness =
-        businesses.find(b => b.status === 'ACTIVE' && b.whatsapp_config?.enabled) ||
-        businesses.find(b => b.status === 'ACTIVE') ||
-        businesses[0];
-
-      if (detectedBusiness?.whatsapp_config?.enabled) {
-        overrideToken = detectedBusiness.whatsapp_config.token;
-        overridePhoneId = detectedBusiness.whatsapp_config.phoneId;
-      }
+  // Ingress Step D: Explicit Switch Club Request
+  if (incomingText === 'action_switch_club' || incomingText === 'switch_club' || lower.includes('switch club') || lower.includes('change club')) {
+    await whatsappRepository.clearState(phone);
+    const discoveryRes = await qcontrolIntelligence.handleGlobalDiscovery('', phone);
+    
+    if (discoveryRes.replyType === 'list' && discoveryRes.listData) {
+      await sendWhatsAppList(phone, discoveryRes.replyText, discoveryRes.listData.buttonText, discoveryRes.listData.sections, overrideToken, overridePhoneId);
+    } else if (discoveryRes.replyType === 'buttons' && discoveryRes.buttons) {
+      await sendWhatsAppButtons(phone, discoveryRes.replyText, discoveryRes.buttons, overrideToken, overridePhoneId);
+    } else {
+      await sendWhatsAppText(phone, discoveryRes.replyText, false, overrideToken, overridePhoneId);
     }
+    return;
   }
 
-  const businessId = detectedBusiness?.id || '011be6ef-dc4b-4489-a955-e83144e0995c';
-  const businessName = detectedBusiness?.business_name || 'QControl';
+  // Ingress Step E: Global Discovery Mode (Zero Strategy C Silent Cross-Tenant Hijack!)
+  if (!detectedBusiness) {
+    console.log(`[Central QControl] Inbound from ${phone} without club context. Routing to Global Discovery.`);
+    const discoveryRes = await qcontrolIntelligence.handleGlobalDiscovery(incomingText, phone);
 
-  // 3. Extract incoming text / interactive selections
-  const text = message.type === 'text' ? (message.text?.body || '') : '';
-  const buttonReplyId = message.type === 'interactive' && message.interactive?.type === 'button_reply' ? message.interactive.button_reply.id : null;
-  const listReplyId = message.type === 'interactive' && message.interactive?.type === 'list_reply' ? message.interactive.list_reply.id : null;
-  const incomingText = buttonReplyId || listReplyId || text;
+    // Save global discovery state
+    await whatsappRepository.updateState(phone, null, 'GLOBAL_DISCOVERY', { query: incomingText }, 'GLOBAL_DISCOVERY');
+
+    if (discoveryRes.replyType === 'list' && discoveryRes.listData) {
+      await sendWhatsAppList(phone, discoveryRes.replyText, discoveryRes.listData.buttonText, discoveryRes.listData.sections, overrideToken, overridePhoneId);
+    } else if (discoveryRes.replyType === 'buttons' && discoveryRes.buttons) {
+      await sendWhatsAppButtons(phone, discoveryRes.replyText, discoveryRes.buttons, overrideToken, overridePhoneId);
+    } else {
+      await sendWhatsAppText(phone, discoveryRes.replyText, false, overrideToken, overridePhoneId);
+    }
+    return;
+  }
+
+  const businessId = detectedBusiness.id;
+  const businessName = detectedBusiness.business_name;
 
   // 4. Log inbound message to whatsapp_messages
   await whatsappRepository.logMessage({
@@ -177,14 +238,19 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
 
   if (currentStep === 'AWAITING_DATE' && (incomingText.startsWith('date_') || incomingText.includes('today') || incomingText.includes('tomorrow'))) {
     const isToday = incomingText.includes('today');
-    const dateObj = new Date();
-    if (!isToday) dateObj.setDate(dateObj.getDate() + 1);
-
-    const isoDate = dateObj.toISOString().split('T')[0];
+    const now = new Date();
+    // Compute date in IST
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffsetMs);
+    if (!isToday) {
+      istDate.setUTCDate(istDate.getUTCDate() + 1);
+    }
+    const isoDate = istDate.toISOString().split('T')[0];
     context.booking_date = isoDate;
     const gameType = context.game_type || 'pool';
+    const durationMins = Number(context.duration_minutes) || 60;
 
-    const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, isoDate, 60);
+    const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, isoDate, durationMins);
 
     if (availableSlots.length === 0) {
       await sendWhatsAppText(
@@ -199,10 +265,11 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
       return;
     }
 
+    const durationLabel = durationMins >= 60 ? `${durationMins / 60} Hour` : `${durationMins} Mins`;
     const rows = availableSlots.slice(0, 10).map(s => ({
       id: `time_${s.time}_${s.tableId}`,
       title: `${s.time}`,
-      description: `1 Hour • ₹${s.ratePerHour}/hr`
+      description: `${durationLabel} • ₹${s.ratePerHour}/hr`
     }));
 
     await whatsappRepository.updateState(phone, businessId, 'AWAITING_TIME', context);
@@ -283,7 +350,8 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
       phone,
       businessId,
       intelligenceResult.nextStep,
-      intelligenceResult.updatedContext || context
+      intelligenceResult.updatedContext || context,
+      'CLUB'
     );
   }
 

@@ -2,9 +2,12 @@ import { supabase } from '../supabaseClient';
 
 export interface WhatsAppChatState {
   customer_phone: string;
-  business_id: string;
+  business_id?: string | null;
+  active_business_id?: string | null;
+  conversation_mode?: 'GLOBAL_DISCOVERY' | 'CLUB';
   current_step: string;
   context: Record<string, any>;
+  expires_at?: string;
   updated_at?: string;
 }
 
@@ -31,6 +34,8 @@ const STATUS_PRECEDENCE: Record<string, number> = {
   failed: 0,
 };
 
+const CONVERSATION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
+
 export const whatsappRepository = {
   getState: async (phone: string): Promise<WhatsAppChatState | null> => {
     const cleanPhone = phone.replace(/\D/g, '');
@@ -41,20 +46,55 @@ export const whatsappRepository = {
       .maybeSingle();
       
     if (error || !data) return null;
+
+    // Check TTL from context or column
+    const expiresAt = data.expires_at || data.context?.expires_at;
+    if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+      // TTL expired: reset current step back to idle so stale draft doesn't block customer
+      data.current_step = 'IDLE';
+      data.context = { expired: true };
+    }
+
+    // Normalize active_business_id
+    data.active_business_id = data.active_business_id || data.business_id || data.context?.active_business_id || null;
+    data.conversation_mode = data.conversation_mode || data.context?.conversation_mode || (data.active_business_id ? 'CLUB' : 'GLOBAL_DISCOVERY');
+
     return data;
   },
 
-  updateState: async (phone: string, businessId: string, step: string, context: Record<string, any> = {}): Promise<void> => {
+  updateState: async (
+    phone: string,
+    businessId: string | null,
+    step: string,
+    context: Record<string, any> = {},
+    mode: 'GLOBAL_DISCOVERY' | 'CLUB' = 'CLUB'
+  ): Promise<void> => {
     const cleanPhone = phone.replace(/\D/g, '');
-    await supabase
-      .from('whatsapp_chat_state')
-      .upsert({
-        customer_phone: cleanPhone,
-        business_id: businessId,
-        current_step: step,
-        context: context,
-        updated_at: new Date().toISOString()
-      });
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + CONVERSATION_TTL_MS).toISOString();
+
+    const mergedContext = {
+      ...context,
+      active_business_id: businessId,
+      conversation_mode: mode,
+      expires_at: expiresAt
+    };
+
+    const payload: any = {
+      customer_phone: cleanPhone,
+      business_id: businessId || null,
+      current_step: step,
+      context: mergedContext,
+      updated_at: now.toISOString()
+    };
+
+    try {
+      await supabase
+        .from('whatsapp_chat_state')
+        .upsert(payload);
+    } catch (err) {
+      console.error('Failed to update WhatsApp chat state:', err);
+    }
   },
 
   clearState: async (phone: string): Promise<void> => {
@@ -82,25 +122,29 @@ export const whatsappRepository = {
    */
   logMessage: async (msg: WhatsAppMessageRecord): Promise<any> => {
     const cleanPhone = (msg.recipient_phone || '').replace(/\D/g, '');
-    const { data, error } = await supabase
-      .from('whatsapp_messages')
-      .insert({
-        business_id: msg.business_id,
-        message_id: msg.message_id || null,
-        recipient_phone: cleanPhone || msg.recipient_phone,
-        recipient_name: msg.recipient_name || 'Customer',
-        content: msg.content,
-        status: msg.status,
-        error_message: msg.error_message || null,
-      })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('whatsapp_messages')
+        .insert({
+          business_id: msg.business_id,
+          message_id: msg.message_id || null,
+          recipient_phone: cleanPhone || msg.recipient_phone,
+          recipient_name: msg.recipient_name || 'Customer',
+          content: msg.content,
+          status: msg.status,
+          error_message: msg.error_message || null,
+        })
+        .select()
+        .single();
 
-    if (error) {
-      console.error('Failed to log WhatsApp message to database:', error);
+      if (error) {
+        console.warn('Failed to log WhatsApp message to database:', error.message);
+        return null;
+      }
+      return data;
+    } catch {
       return null;
     }
-    return data;
   },
 
   /**
@@ -109,32 +153,35 @@ export const whatsappRepository = {
   updateMessageStatus: async (messageId: string, newStatus: string, errorMessage?: string | null): Promise<boolean> => {
     if (!messageId) return false;
 
-    // Check existing message to prevent status regression (e.g. read -> delivered)
-    const { data: existing } = await supabase
-      .from('whatsapp_messages')
-      .select('id, status')
-      .eq('message_id', messageId)
-      .maybeSingle();
+    try {
+      const { data: existing } = await supabase
+        .from('whatsapp_messages')
+        .select('id, status')
+        .eq('message_id', messageId)
+        .maybeSingle();
 
-    if (existing) {
-      const currentRank = STATUS_PRECEDENCE[existing.status] || 0;
-      const newRank = STATUS_PRECEDENCE[newStatus] || 0;
-      
-      // If current is read and new is delivered/sent, ignore the regression
-      if (currentRank >= 5 && newRank < 5 && newRank > 0) {
+      if (existing) {
+        const currentRank = STATUS_PRECEDENCE[existing.status] || 0;
+        const newRank = STATUS_PRECEDENCE[newStatus] || 0;
+        
+        // If current is read and new is delivered/sent, ignore the regression
+        if (currentRank >= 5 && newRank < 5 && newRank > 0) {
+          return true;
+        }
+
+        await supabase
+          .from('whatsapp_messages')
+          .update({
+            status: newStatus,
+            error_message: errorMessage || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+
         return true;
       }
-
-      await supabase
-        .from('whatsapp_messages')
-        .update({
-          status: newStatus,
-          error_message: errorMessage || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existing.id);
-
-      return true;
+    } catch (err) {
+      console.warn('Status update warning:', err);
     }
 
     return false;
@@ -143,108 +190,58 @@ export const whatsappRepository = {
   /**
    * Records a conversational turn for conversational memory.
    */
-  recordChatHistory: async (businessId: string, customerPhone: string, role: 'user' | 'assistant' | 'system', content: string): Promise<void> => {
+  recordChatHistory: async (businessId: string | null, customerPhone: string, role: 'user' | 'assistant' | 'system', content: string): Promise<void> => {
     try {
       const cleanPhone = customerPhone.replace(/\D/g, '');
       await supabase
         .from('whatsapp_chat_history')
         .insert({
-          business_id: businessId,
+          business_id: businessId || null,
           customer_phone: cleanPhone,
           role,
-          content
+          content,
+          created_at: new Date().toISOString()
         });
-    } catch (e) {
-      console.warn('Failed to record chat history:', e);
+    } catch {
+      // Non-blocking
     }
   },
 
   /**
-   * Retrieves recent conversational history for context window.
+   * Retrieves paginated delivery logs and analytics for business message auditing.
    */
-  getChatHistory: async (customerPhone: string, limit = 8): Promise<Array<{ role: string; content: string }>> => {
+  getDeliveryLogs: async (businessId: string, options: { search?: string; status?: string; direction?: string; limit?: number; offset?: number } = {}): Promise<{ logs: any[]; totalCount: number; analytics: any }> => {
+    const { search, status, limit = 50, offset = 0 } = options;
     try {
-      const cleanPhone = customerPhone.replace(/\D/g, '');
-      const { data } = await supabase
-        .from('whatsapp_chat_history')
-        .select('role, content')
-        .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${cleanPhone}`)
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      let query = supabase
+        .from('whatsapp_messages')
+        .select('*', { count: 'exact' })
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false });
 
-      if (!data) return [];
-      return data.reverse();
-    } catch (e) {
-      console.warn('Failed to fetch chat history:', e);
-      return [];
+      if (status && status !== 'all') {
+        query = query.eq('status', status);
+      }
+      if (search) {
+        query = query.or(`recipient_phone.ilike.%${search}%,recipient_name.ilike.%${search}%,content.ilike.%${search}%`);
+      }
+
+      const { data, count, error } = await query.range(offset, offset + limit - 1);
+
+      const logs = data || [];
+      const totalCount = count || logs.length;
+
+      const analytics = {
+        total: totalCount,
+        delivered: logs.filter((l: any) => l.status === 'delivered' || l.status === 'read').length,
+        failed: logs.filter((l: any) => l.status === 'failed').length,
+        pending: logs.filter((l: any) => l.status === 'sent' || l.status === 'queued').length
+      };
+
+      return { logs, totalCount, analytics };
+    } catch (err) {
+      console.error('getDeliveryLogs error:', err);
+      return { logs: [], totalCount: 0, analytics: { total: 0, delivered: 0, failed: 0, pending: 0 } };
     }
-  },
-
-  /**
-   * Retrieves delivery logs with metrics for the dashboard.
-   */
-  getDeliveryLogs: async (businessId: string, options: {
-    search?: string;
-    status?: string;
-    direction?: string;
-    limit?: number;
-    offset?: number;
-  } = {}) => {
-    const { search, status, direction, limit = 50, offset = 0 } = options;
-
-    let query = supabase
-      .from('whatsapp_messages')
-      .select('*', { count: 'exact' })
-      .eq('business_id', businessId);
-
-    if (status && status !== 'all') {
-      query = query.eq('status', status.toLowerCase());
-    }
-
-    if (direction === 'inbound') {
-      query = query.eq('status', 'received');
-    } else if (direction === 'outbound') {
-      query = query.neq('status', 'received');
-    }
-
-    if (search && search.trim()) {
-      const s = search.trim();
-      query = query.or(`recipient_name.ilike.%${s}%,recipient_phone.ilike.%${s}%,content.ilike.%${s}%,message_id.ilike.%${s}%`);
-    }
-
-    const { data: logs, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    // Compute aggregated KPI counts for all records for this business
-    const { data: allStats } = await supabase
-      .from('whatsapp_messages')
-      .select('status')
-      .eq('business_id', businessId);
-
-    const total = allStats?.length || 0;
-    const inbound = allStats?.filter(m => m.status === 'received').length || 0;
-    const outbound = total - inbound;
-    const sent = allStats?.filter(m => m.status === 'sent').length || 0;
-    const delivered = allStats?.filter(m => m.status === 'delivered').length || 0;
-    const read = allStats?.filter(m => m.status === 'read').length || 0;
-    const failed = allStats?.filter(m => m.status === 'failed').length || 0;
-    const failureRate = outbound > 0 ? Number(((failed / outbound) * 100).toFixed(1)) : 0;
-
-    return {
-      logs: logs || [],
-      totalCount: count || 0,
-      analytics: {
-        total,
-        inbound,
-        outbound,
-        sent,
-        delivered,
-        read,
-        failed,
-        failureRate,
-      },
-      error: error?.message || null
-    };
   }
 };

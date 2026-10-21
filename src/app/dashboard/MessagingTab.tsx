@@ -6,11 +6,13 @@ import toast from 'react-hot-toast';
 
 export default function MessagingTab({
     businessId,
+    businessName,
     isWhatsAppConnected,
     dbCustomers = [],
     memberships = []
 }: {
     businessId: string;
+    businessName?: string;
     isWhatsAppConnected: boolean;
     dbCustomers?: any[];
     memberships?: any[];
@@ -175,7 +177,14 @@ export default function MessagingTab({
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to send messages');
 
-            toast.success(`Successfully sent ${result.successCount} messages.`, { id: toastId });
+            if (result.successCount > 0) {
+                toast.success(`Successfully sent ${result.successCount} message(s).`, { id: toastId });
+            } else if (result.skippedCount > 0 && result.failureCount === 0) {
+                toast(`All ${result.skippedCount} member(s) have ₹0 balance. Reminders safely skipped.`, { id: toastId, icon: '🛡️' });
+            }
+            if (result.skippedCount > 0 && result.successCount > 0) {
+                toast(`${result.skippedCount} member(s) with ₹0 balance were safely skipped.`, { icon: '🛡️' });
+            }
             if (result.failureCount > 0) {
                 const errorStr = result.errors?.map((e: any) => e.error).join(', ') || 'Unknown error';
                 toast.error(`Failed to send ${result.failureCount} message(s). Reason: ${errorStr}`, { duration: 8000 });
@@ -358,15 +367,31 @@ export default function MessagingTab({
                                 className="flex-1 min-h-[140px] bg-bg-primary border border-border-theme rounded-xl p-4 text-base sm:text-sm outline-none resize-none input-premium mb-4 font-medium"
                             />
 
-                            <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-4 sm:mb-6 shrink-0">
-                                <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled mb-2">Message Preview (WhatsApp Formatted)</h4>
-                                <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap">
-                                    {messageTemplate
-                                        .replace(/\{\{name\}\}/g, selectedCustomers.size > 0 ? (customers.find(c => c.id === Array.from(selectedCustomers)[0])?.name || 'Customer') : 'Customer')
-                                        .replace(/\{\{outstanding\}\}/g, selectedCustomers.size > 0 ? (Number(customers.find(c => c.id === Array.from(selectedCustomers)[0])?.outstanding_balance || 0).toFixed(0)) : '0')
-                                        .replace(/\{\{club\}\}/g, 'Your Club')}
-                                </p>
-                            </div>
+                            {(() => {
+                                const selectedCust = selectedCustomers.size > 0 ? customers.find(c => c.id === Array.from(selectedCustomers)[0]) : null;
+                                const isZeroBalance = Number(selectedCust?.outstanding_balance || 0) <= 0;
+                                const isPaymentTemplate = messageTemplate.toLowerCase().includes('payment reminder') || messageTemplate.includes('{{outstanding}}');
+                                
+                                return (
+                                    <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-4 sm:mb-6 shrink-0">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">Message Preview (WhatsApp Formatted)</h4>
+                                            {selectedCust && isPaymentTemplate && isZeroBalance && (
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                    Settled (₹0 balance) — Safely Skipped
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap">
+                                            {messageTemplate
+                                                .replace(/\{\{name\}\}/g, selectedCust?.name || 'Customer')
+                                                .replace(/\{\{outstanding\}\}/g, selectedCust ? Number(selectedCust.outstanding_balance || 0).toFixed(0) : '0')
+                                                .replace(/\{\{club\}\}/g, businessName || 'Your Club')
+                                                .replace(/\{\{business\}\}/g, businessName || 'Your Club')}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
 
                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
                                 <span className="text-xs font-bold text-text-secondary">

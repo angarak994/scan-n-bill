@@ -35,7 +35,7 @@ async function runTests() {
   console.log(`✅ Fetched ${businesses.length} businesses from Supabase.`);
 
   // Test 1: Verify TestClub menu rendering
-  const testClub = businesses.find(b => b.business_name.trim() === 'TestClub');
+  const testClub: any = businesses.find(b => b.business_name.trim() === 'TestClub');
   if (testClub) {
     console.log(`\n--- [TEST 1: TestClub (${testClub.id})] ---`);
     console.log(`Raw menu items count: ${testClub.menu_items?.length || 0}`);
@@ -72,7 +72,7 @@ async function runTests() {
   }
 
   // Test 2: Verify TestClub101 menu rendering
-  const testClub101 = businesses.find(b => b.business_name.trim() === 'TestClub101');
+  const testClub101: any = businesses.find(b => b.business_name.trim() === 'TestClub101');
   if (testClub101) {
     console.log(`\n--- [TEST 2: TestClub101 (${testClub101.id})] ---`);
     const activeItems = getActiveMenuItems(testClub101);
@@ -100,7 +100,7 @@ async function runTests() {
   }
 
   // Test 3: Aliasing test (e.g. Level UP has category 'drink' / 'drinks', user opens 'Beverages')
-  const levelUp = businesses.find(b => b.business_name.trim() === 'Level UP');
+  const levelUp: any = businesses.find(b => b.business_name.trim() === 'Level UP');
   if (levelUp) {
     console.log(`\n--- [TEST 3: Level UP Aliasing (${levelUp.id})] ---`);
     const activeItems = getActiveMenuItems(levelUp);
@@ -125,8 +125,8 @@ async function runTests() {
   // Test 4: Business Isolation
   console.log(`\n--- [TEST 4: Business Isolation] ---`);
   if (testClub && testClub101) {
-    const itemsClub = getActiveMenuItems(testClub).map((i: any) => i.name.trim());
-    const items101 = getActiveMenuItems(testClub101).map((i: any) => i.name.trim());
+    const itemsClub = getActiveMenuItems(testClub as any).map((i: any) => i.name.trim());
+    const items101 = getActiveMenuItems(testClub101 as any).map((i: any) => i.name.trim());
     
     // Coffee in TestClub must not be in TestClub101
     if (items101.includes('Coffee')) {

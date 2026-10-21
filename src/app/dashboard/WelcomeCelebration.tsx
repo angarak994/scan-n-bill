@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 
 interface WelcomeCelebrationProps {
@@ -45,7 +45,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
     }, 250);
   };
 
-  async function handleClose() {
+  const handleClose = useCallback(async () => {
     setIsClosing(true);
     
     try {
@@ -57,7 +57,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
     setTimeout(() => {
       onComplete();
     }, 400); // Wait for exit animation
-  };
+  }, [onComplete]);
 
   useEffect(() => {
     // Smooth entrance
@@ -82,7 +82,7 @@ export default function WelcomeCelebration({ ownerName, onComplete }: WelcomeCel
       clearTimeout(progressTimer);
       clearTimeout(closeTimer);
     };
-  }, []);
+  }, [handleClose]);
 
   return (
     <div className={`fixed inset-0 z-[9990] flex items-center justify-center p-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${isVisible && !isClosing ? 'bg-black/40 backdrop-blur-md' : 'bg-transparent pointer-events-none'}`}>

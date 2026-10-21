@@ -13,7 +13,10 @@
     "webhook:verify": "npx tsx scripts/verify-webhook.ts",
     "webhook:restore": "npx tsx scripts/restore-webhook.ts",
     "test:tg-perf": "npx tsx scripts/test-telegram-performance.ts",
-    "test:tg-reliability": "npx tsx scripts/test-telegram-reliability.ts",
+    "test:local": "npx tsx scripts/test-all-local.ts",
+    "whatsapp:sim": "npx tsx scripts/simulate-whatsapp.ts",
+    "test:intelligence": "npx tsx scripts/test-qcontrol-intelligence-suite.ts",
+    "test:routing": "npx tsx scripts/test-central-whatsapp-routing.ts",
     "lint": "eslint"
   },
   "dependencies": {

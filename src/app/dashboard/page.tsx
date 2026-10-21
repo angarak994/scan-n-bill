@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { EnhancedTableView } from './EnhancedTableView';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
 import { toast } from 'react-hot-toast';
-import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles, TrendingUp, Users, DollarSign, Award, Clock } from 'lucide-react';
+import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles, TrendingUp, Users, DollarSign, Award, Clock, Copy, MessageSquare, ExternalLink } from 'lucide-react';
 import { getMemberPlanInfo } from '@/lib/membershipUtils';
 import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
@@ -109,11 +109,24 @@ const IconEyeOff = () => <svg className="w-5 h-5 shrink-0" fill="none" stroke="c
 
 
 
+const DEFAULT_PREFERENCES = {
+  simple_mode: false,
+  require_customer_name: true,
+  require_phone: false,
+  enable_memberships: true,
+  enable_qkhata: true,
+  show_pricing_on_dashboard: true,
+  show_member_details: true,
+  auto_qr_billing: true,
+  enhanced_tables: false,
+  default_view: 'overview'
+};
+
 function DashboardContent() {
   const { language, setLanguage, t } = useLanguage();
   const [businessId, setBusinessId] = useState<string | null>(null);
 
-  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, address?: string, contact_number?: string, latitude?: number, longitude?: number, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
+  const [data, setData] = useState<{ activeSessions: SessionData[], completedSessions: SessionData[], dailyRevenue: number, revenueIntelligence?: { currentRevenue: number; previousRevenue: number; growthPercentage: number; formattedGrowth: string; isPositive: boolean; trend: 'up' | 'down' | 'flat'; comparisonLabel: string; revenueDiff: number }, todayStr: string, pricingRules?: any, tables?: any[], activeDiscounts?: Record<string, { percent: number; applyToFood: boolean }>, manualClosuresToday?: number, revenueSavedToday?: number, bookings?: any[], activePromotions?: ActivePromotion[], businessName?: string, ownerName?: string, address?: string, contact_number?: string, public_contact_number?: string, slug?: string, latitude?: number, longitude?: number, has_logged_in?: boolean, goals?: any, google_sheet_id?: string, dbCustomers?: any[], memberships?: any[], whatsapp_config?: { enabled: boolean }, sms_config?: { enabled: boolean, provider: string, authKey: string, senderId: string }, menu_items?: any[], entitlement?: any, foodOrders?: any[] } | null>(null);
   const [reportsData, setReportsData] = useState<{ completedSessions: SessionData[], dailyRevenue: number, manualClosuresToday?: number, revenueSavedToday?: number } | null>(null);
   const [revenueDateRange, setRevenueDateRange] = useState({ start: '', end: '' });
   const [revenueKpis, setRevenueKpis] = useState<{totalRevenue: number, totalSessions: number, avgMinutes: number} | null>(null);
@@ -229,20 +242,7 @@ function DashboardContent() {
     return () => clearInterval(interval);
   }, [otpCooldown]);
 
-  
-  const defaultPreferences = {
-    simple_mode: false,
-    require_customer_name: true,
-    require_phone: false,
-    enable_memberships: true,
-    enable_qkhata: true,
-    show_pricing_on_dashboard: true,
-    show_member_details: true,
-    auto_qr_billing: true,
-    enhanced_tables: false,
-    default_view: 'overview'
-  };
-  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [isUpdatingPreferences, setIsUpdatingPreferences] = useState(false);
 
   const handleUpdatePreference = async (key: string, value: any) => {
@@ -599,7 +599,7 @@ function DashboardContent() {
          setIsReportsLoading(false);
       }
     }
-  }, [businessId, currentDay, reportDateRange.start, reportDateRange.end]);
+  }, [currentDay, reportDateRange.start, reportDateRange.end]);
 
   const fetchData = useCallback(async (pinToUse?: string, isBackground = false, scope?: string) => {
     return fetchDashboardData(currentDay, currentDay, isBackground, scope);
@@ -654,7 +654,7 @@ function DashboardContent() {
       if (data.pricingRules?.globalSettings) {
         
       if (data.pricingRules?.globalSettings?.preferences) {
-        setTimeout(() => setPreferences({ ...defaultPreferences, ...data.pricingRules.globalSettings.preferences }), 0);
+        setTimeout(() => setPreferences({ ...DEFAULT_PREFERENCES, ...data.pricingRules.globalSettings.preferences }), 0);
       }
 
         setTimeout(() => setTelegramOwners(data.pricingRules.globalSettings.authorized_telegram_owners || []), 0);
@@ -1059,7 +1059,7 @@ function DashboardContent() {
     }
   };
 
-  const getAvailableGameTypesForTable = (tableId: string): string[] => {
+  const getAvailableGameTypesForTable = useCallback((tableId: string): string[] => {
     if (!tableId || !data?.tables) {
       return Object.keys(data?.pricingRules?.rules || { pool: {} });
     }
@@ -1069,7 +1069,7 @@ function DashboardContent() {
     }
     const assigned = t.type.split(/[,/]/).map((s: string) => s.trim().toLowerCase()).filter(Boolean);
     return assigned.length > 0 ? assigned : Object.keys(data?.pricingRules?.rules || { pool: {} });
-  };
+  }, [data?.tables, data?.pricingRules?.rules]);
 
   const availableTableOptions = useMemo(() => {
     if (!data?.tables) return [];
@@ -1099,7 +1099,7 @@ function DashboardContent() {
       value: type,
       label: type.charAt(0).toUpperCase() + type.slice(1)
     }));
-  }, [manualTable, data?.tables, data?.pricingRules]);
+  }, [manualTable, getAvailableGameTypesForTable]);
 
   useEffect(() => {
     if (!isManualModalOpen) return;
@@ -1127,7 +1127,7 @@ function DashboardContent() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isManualModalOpen, manualTable, data?.tables, data?.activeSessions]);
+  }, [isManualModalOpen, manualTable, data?.tables, data?.activeSessions, getAvailableGameTypesForTable, manualGame]);
 
   const handleSaveConfig = async (newRules?: any, newTables?: any[], googleSheetId?: string, businessProfile?: any) => {
     if (!businessId) return;
@@ -1141,6 +1141,7 @@ function DashboardContent() {
         payload.business_name = businessProfile.business_name;
         payload.owner_name = businessProfile.owner_name;
         payload.contact_number = businessProfile.contact_number;
+        payload.public_contact_number = businessProfile.public_contact_number;
         payload.address = businessProfile.address;
         payload.business_type = businessProfile.business_type;
       }
@@ -4032,11 +4033,20 @@ function DashboardContent() {
             business_name: formData.get('business_name'),
             owner_name: formData.get('owner_name'),
             contact_number: formData.get('contact_number'),
+            public_contact_number: formData.get('public_contact_number'),
             address: formData.get('address'),
             business_type: formData.get('business_type')
           };
           await handleSaveConfig(undefined, undefined, undefined, profile);
-          setData(prev => prev ? { ...prev, businessName: profile.business_name as string, ownerName: profile.owner_name as string, contact_number: profile.contact_number as string, address: profile.address as string, business_type: profile.business_type as string } : prev);
+          setData(prev => prev ? { 
+            ...prev, 
+            businessName: profile.business_name as string, 
+            ownerName: profile.owner_name as string, 
+            contact_number: profile.contact_number as string, 
+            public_contact_number: profile.public_contact_number as string,
+            address: profile.address as string, 
+            business_type: profile.business_type as string 
+          } : prev);
         }} className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Club Name</label>
@@ -4047,8 +4057,18 @@ function DashboardContent() {
             <input type="text" name="owner_name" defaultValue={data?.ownerName || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Contact Number</label>
-            <input type="text" name="contact_number" defaultValue={(data as any)?.contact_number || ''} required className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Owner Login Phone</label>
+              <span className="text-[10px] text-text-secondary font-mono">Private • OTP Login</span>
+            </div>
+            <input type="text" name="contact_number" defaultValue={(data as any)?.contact_number || ''} required placeholder="9876543210" className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Public Contact Phone</label>
+              <span className="text-[10px] text-text-secondary font-mono">Customer Support</span>
+            </div>
+            <input type="text" name="public_contact_number" defaultValue={(data as any)?.public_contact_number || ''} placeholder="Displayed on WhatsApp & Directions" className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary min-h-[44px]" />
           </div>
           <div>
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Business Type</label>
@@ -4058,6 +4078,10 @@ function DashboardContent() {
               <option value="Turf / Sports Arena">Turf / Sports Arena</option>
               <option value="Other">Other</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Club Deep-Link Slug</label>
+            <input type="text" disabled value={(data as any)?.slug || (data?.businessName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')} className="w-full px-4 py-3 bg-bg-primary/50 border border-border-light/60 rounded-lg text-base sm:text-sm text-text-secondary min-h-[44px] cursor-not-allowed font-mono" />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Address</label>
@@ -4069,6 +4093,52 @@ function DashboardContent() {
             </button>
           </div>
         </form>
+
+        {/* Central WhatsApp Booking Deep-Link Card */}
+        {(() => {
+          const clubSlug = (data as any)?.slug || (data?.businessName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          const deepLinkText = `Book at ${data?.businessName || 'Club'} (Code: QC_${clubSlug})`;
+          const deepLinkUrl = `https://wa.me/${process.env.NEXT_PUBLIC_CENTRAL_WHATSAPP_NUMBER || '919876543210'}?text=${encodeURIComponent(deepLinkText)}`;
+
+          return (
+            <div className="mt-6 pt-6 border-t border-border-theme bg-bg-primary/40 rounded-xl p-4 sm:p-5 border border-border-theme/60">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Central WhatsApp Booking Deep-Link
+                  </h3>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Share this link on Instagram, Google Maps, or print it as a QR code for your reception counter.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(deepLinkUrl);
+                    toast.success('Copied WhatsApp booking link!');
+                  }}
+                  className="px-4 py-2 bg-accent/15 hover:bg-accent/25 text-accent border border-accent/30 rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1.5 self-start sm:self-center"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Link</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 bg-bg-surface border border-border-theme rounded-lg p-2.5 font-mono text-xs text-text-secondary overflow-x-auto select-all">
+                <span className="text-accent font-bold">URL:</span>
+                <span className="truncate">{deepLinkUrl}</span>
+              </div>
+              <div className="mt-2 text-[11px] text-text-secondary flex flex-wrap items-center gap-2">
+                <span className="font-bold text-text-primary">Ingress Code:</span>
+                <span className="px-2 py-0.5 rounded bg-accent/10 border border-accent/20 font-mono text-accent font-bold">
+                  QC_{clubSlug}
+                </span>
+                <span>• Automatically detects and routes customers to {data?.businessName || 'your club'}.</span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Google Sheets Integration */}
@@ -4280,7 +4350,7 @@ function DashboardContent() {
                                 ? 'bg-accent/10 text-accent border border-accent/30 ring-1 ring-accent/50 shadow-sm' 
                                 : 'text-text-secondary hover:text-text-primary hover:bg-bg-primary/50 border border-transparent'
                             }`}
-                            aria-pressed={isActive}
+                            aria-selected={isActive}
                             role="tab"
                           >
                             {isActive && <svg className="w-3.5 h-3.5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>}
@@ -6738,7 +6808,7 @@ function DashboardContent() {
           {sidebarTab === 'payments' && <PaymentsTab />}
                     {sidebarTab === 'messaging' && (
             data?.entitlement?.features?.has_whatsapp ?
-            <MessagingTab businessId={businessId!} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} /> :
+            <MessagingTab businessId={businessId!} businessName={data?.businessName || (data as any)?.business_name} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} /> :
             <FeatureLock featureName="WhatsApp Automation" requiredPlan="Growth" description="Send automated session receipts, OTPs, and promotional broadcasts directly to customers' WhatsApp." />
           )}
         </div>

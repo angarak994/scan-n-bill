@@ -22,6 +22,11 @@ export interface BusinessData {
   qpulse_config?: { enabled: boolean; frequency: string; last_shown_date: string | null };
   payment_qr_config?: { enabled: boolean; qr_url: string | null };
   whatsapp_config?: { enabled: boolean; token: string; phoneId: string };
+  sms_config?: { enabled: boolean; provider: string; authKey: string; senderId: string };
+  public_contact_number?: string | null;
+  slug?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
 }
 

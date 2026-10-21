@@ -15,7 +15,7 @@ export default function FeatureLock({ featureName, requiredPlan, description }: 
 
   React.useEffect(() => {
     if (typeof window !== 'undefined' && window.location.pathname.includes('/demo')) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setTargetHref('/pricing');
     }
   }, []);

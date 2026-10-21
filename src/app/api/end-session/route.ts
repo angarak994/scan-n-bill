@@ -34,6 +34,14 @@ export async function POST(request: Request) {
       if (prefs.auto_qr_billing === false) {
           return NextResponse.json({ error: 'QR billing is disabled for this business' }, { status: 403 });
       }
+
+      const configuredTables = business.tables || [];
+      const isValidTable = configuredTables.length === 0 || configuredTables.some((t: any) =>
+        String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase()
+      );
+      if (!isValidTable) {
+        return NextResponse.json({ error: `Table '${table_id}' is not configured for this business.` }, { status: 400 });
+      }
     }
 
     if (!table_id) {
