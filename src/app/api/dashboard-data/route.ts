@@ -392,9 +392,13 @@ export async function GET(request: Request) {
       has_logged_in: business.has_logged_in,
       goals: business.goals || { daily_revenue: 0, weekly_revenue: 0, monthly_revenue: 0, daily_sessions: 0 },
       google_sheet_id: business.google_sheet_id,
-      payment_qr_config: business.payment_qr_config,
-      whatsapp_config: business.whatsapp_config ? { enabled: business.whatsapp_config.enabled } : { enabled: false },
-      menu_items: business.menu_items || [],
+      whatsapp_config: {
+        enabled: Boolean(
+          (business.whatsapp_config?.enabled === true && business.whatsapp_config?.token && business.whatsapp_config?.phoneId) ||
+          ((process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN) && process.env.WHATSAPP_PHONE_NUMBER_ID && business.whatsapp_config?.enabled !== false)
+        ),
+        phoneId: business.whatsapp_config?.phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID || null
+      },
       entitlement: entitlement,
       foodOrders: foodOrders || [],
       membership_plans: membership_plans || [],

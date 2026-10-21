@@ -306,11 +306,11 @@ export default function QKhataTab({ businessId, dbCustomers = [], memberships = 
                     businessName: business?.business_name || 'Our Business'
                 })
             });
+            const data = await res.json().catch(() => null);
             if (!res.ok) {
-                const errorData = await res.json().catch(() => null);
-                throw new Error(errorData?.error || 'Failed to send reminder');
+                throw new Error(data?.error || 'Failed to send reminder');
             }
-            toast.success('Reminder sent!', { id: toastId });
+            toast.success(`Reminder sent for ₹${data?.outstanding || customer.outstanding_balance}!`, { id: toastId });
         } catch (error: any) {
             console.error('Reminder error:', error);
             toast.error(error.message || 'Failed to send reminder', { id: toastId });

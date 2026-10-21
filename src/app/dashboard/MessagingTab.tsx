@@ -87,36 +87,69 @@ export default function MessagingTab({
         }
     }, [businessId, fetchLogs]);
 
-    // Format unified contacts
+    // Format unified contacts with accurate QKhata outstanding balances
     useEffect(() => {
-        const unifiedContacts = new Map<string, any>();
+        const customerByPhone = new Map<string, any>();
+        const customerById = new Map<string, any>();
+        const customerByName = new Map<string, any>();
 
         if (dbCustomers && dbCustomers.length > 0) {
             dbCustomers.forEach(c => {
+                if (c.id) customerById.set(c.id, c);
+                if (c.name) customerByName.set(c.name.trim().toLowerCase(), c);
                 if (c.phone && c.phone.trim().length >= 10) {
-                    const cleanPhone = c.phone.replace(/\D/g, '');
-                    unifiedContacts.set(cleanPhone, {
-                        id: c.id,
-                        name: c.name,
-                        phone: cleanPhone,
-                        type: 'Customer',
-                        outstanding_balance: c.outstanding_balance
-                    });
+                    const clean = c.phone.replace(/\D/g, '');
+                    customerByPhone.set(clean, c);
+                    customerByPhone.set(clean.slice(-10), c);
                 }
             });
         }
+
+        const unifiedContacts = new Map<string, any>();
+        const matchedCustomerIds = new Set<string>();
 
         if (memberships && memberships.length > 0) {
             memberships.forEach(m => {
                 if (m.mobile && m.mobile.trim().length >= 10) {
                     const cleanPhone = m.mobile.replace(/\D/g, '');
+                    const clean10 = cleanPhone.slice(-10);
+                    const matchedCust = customerById.get(m.id) ||
+                                        customerByPhone.get(cleanPhone) ||
+                                        customerByPhone.get(clean10) ||
+                                        (m.name ? customerByName.get(m.name.trim().toLowerCase()) : null);
+
+                    if (matchedCust?.id) {
+                        matchedCustomerIds.add(matchedCust.id);
+                    }
+
+                    const outstanding = matchedCust ? Number(matchedCust.outstanding_balance || 0) : Number((m as any).outstanding_balance || 0);
+
                     unifiedContacts.set(cleanPhone, {
-                        id: m.id,
-                        name: m.name,
+                        id: matchedCust?.id || m.id,
+                        membership_id: m.id,
+                        name: m.name || matchedCust?.name,
                         phone: cleanPhone,
                         type: 'Member',
-                        tier: m.tier
+                        tier: m.tier,
+                        outstanding_balance: outstanding
                     });
+                }
+            });
+        }
+
+        if (dbCustomers && dbCustomers.length > 0) {
+            dbCustomers.forEach(c => {
+                if (c.phone && c.phone.trim().length >= 10 && !matchedCustomerIds.has(c.id)) {
+                    const cleanPhone = c.phone.replace(/\D/g, '');
+                    if (!unifiedContacts.has(cleanPhone)) {
+                        unifiedContacts.set(cleanPhone, {
+                            id: c.id,
+                            name: c.name,
+                            phone: cleanPhone,
+                            type: 'Customer',
+                            outstanding_balance: Number(c.outstanding_balance || 0)
+                        });
+                    }
                 }
             });
         }

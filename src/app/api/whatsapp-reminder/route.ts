@@ -6,6 +6,7 @@ import {
   sendBookingPaymentReminder, 
   formatPaymentReminderMessage 
 } from '@/lib/services/paymentReminderService';
+import { getAuthoritativeQKhataBalance } from '@/lib/services/qkhataBalanceService';
 
 export async function POST(request: Request) {
   try {
@@ -94,58 +95,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Valid customer phone number not found' }, { status: 400 });
     }
 
-    // Look for any active/unsettled booking for this customer
-    const { data: openBookings } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('business_id', businessId)
-      .eq('customer_phone', targetPhone)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    // 2. Resolve Authoritative QKhata Ledger Balance for Customer (Do not substitute booking totals)
+    const qkhataResult = await getAuthoritativeQKhataBalance(businessId, {
+      customerId: customerId || customer?.id,
+      phone: targetPhone,
+      name: resolvedCustomerName
+    });
 
-    if (openBookings && openBookings.length > 0) {
-      // Delegate to authoritative booking reminder
-      const result = await sendBookingPaymentReminder({
-        bookingId: openBookings[0].id,
-        businessId,
-        forceSend: Boolean(force)
-      });
-
-      if (result.success || result.skipped) {
-        return NextResponse.json({
-          success: result.success,
-          skipped: result.skipped,
-          amount: result.outstanding || 0,
-          businessName: result.clubName || bName,
-          messageId: result.messageId || null,
-          message: result.reason
-        });
-      }
-    }
-
-    // Fallback: Check customer ledger balance
-    const outstandingAmount = Number(customer?.outstanding_balance || body.amount || 0);
+    const outstandingAmount = qkhataResult.outstanding;
 
     // Stop reminders if payment is verified (balance <= 0)
     if (outstandingAmount <= 0) {
       return NextResponse.json({
         success: false,
         skipped: true,
-        message: 'Customer has ₹0 outstanding balance. Reminder safely skipped.'
+        message: 'Customer has ₹0 outstanding balance on their QKhata ledger. Reminder safely skipped.'
       });
     }
+
+    const finalCustomerName = qkhataResult.customerName || resolvedCustomerName;
 
     // 3. Format message strictly according to specification
     const message = formatPaymentReminderMessage({
       clubName: bName,
-      customerName: resolvedCustomerName,
+      customerName: finalCustomerName,
       outstanding: outstandingAmount,
       upiId
     });
 
     const config = business.whatsapp_config as any;
-    const token = config?.enabled ? config?.token : undefined;
-    const phoneId = config?.enabled ? config?.phoneId : undefined;
+    const token = (config?.enabled !== false && config?.token) || process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneId = (config?.enabled !== false && config?.phoneId) || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!token || !phoneId || config?.enabled === false) {
+      return NextResponse.json({ error: 'WhatsApp is not connected for this business. Please connect it in Settings.' }, { status: 400 });
+    }
 
     // 4. Send and log to database
     const finalPhone = targetPhone.length === 10 ? `91${targetPhone}` : targetPhone;
@@ -157,7 +141,7 @@ export async function POST(request: Request) {
       phoneId,
       {
         businessId,
-        recipientName: resolvedCustomerName,
+        recipientName: finalCustomerName,
         content: message
       }
     );

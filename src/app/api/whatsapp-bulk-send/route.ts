@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sendWhatsAppText } from '@/lib/whatsapp';
 import { supabase } from '@/lib/supabaseClient';
+import { getAuthoritativeQKhataBalance } from '@/lib/services/qkhataBalanceService';
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +35,10 @@ export async function POST(request: Request) {
 
     const businessName = business.business_name.trim();
     const config = business.whatsapp_config as any;
-    if (!config || !config.enabled || !config.token || !config.phoneId) {
+    const waToken = (config?.enabled !== false && config?.token) || process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    const waPhoneId = (config?.enabled !== false && config?.phoneId) || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!waToken || !waPhoneId || config?.enabled === false) {
       return NextResponse.json({ error: 'WhatsApp is not connected for this business. Please connect it in Settings.' }, { status: 400 });
     }
 
@@ -64,19 +68,15 @@ export async function POST(request: Request) {
 
       let outstanding = Number(customer.outstanding_balance || 0);
 
-      // Real-time verification for payment reminders: never send unverified or ₹0 balances
+      // Real-time authoritative QKhata balance verification:
+      // Always populate {{outstanding}} with actual verified ledger balance from QKhata
       if (isPaymentReminder) {
-        if (customer.id) {
-          const { data: freshCust } = await supabase
-            .from('customers')
-            .select('outstanding_balance')
-            .eq('id', customer.id)
-            .eq('business_id', businessId)
-            .maybeSingle();
-          if (freshCust) {
-            outstanding = Number(freshCust.outstanding_balance || 0);
-          }
-        }
+        const qkhataRes = await getAuthoritativeQKhataBalance(businessId, {
+          customerId: customer.id,
+          phone: customer.phone,
+          name: customer.name
+        });
+        outstanding = qkhataRes.outstanding;
 
         // Skip reminders if balance is zero or settled
         if (outstanding <= 0) {
@@ -111,7 +111,11 @@ export async function POST(request: Request) {
       }
 
       try {
-        const result = await sendWhatsAppText(cleanPhone, message, false, config.token, config.phoneId);
+        const result = await sendWhatsAppText(cleanPhone, message, false, waToken, waPhoneId, {
+          businessId,
+          recipientName: customer.name || 'Member',
+          content: message
+        });
         
         if (result && result.error) {
           throw new Error(result.error.message || 'WhatsApp API rejected the message');
