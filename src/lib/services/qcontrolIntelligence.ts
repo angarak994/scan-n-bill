@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
 import { bookingService } from '@/lib/services/bookingService';
 import { clubDiscoveryService } from '@/lib/services/clubDiscoveryService';
+import { venuePhotoService } from '@/lib/services/venuePhotoService';
+import { googleRatingsService } from '@/lib/services/googleRatingsService';
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
@@ -14,6 +16,7 @@ export interface IntelligenceInput {
   buttonReplyId?: string | null;
   listReplyId?: string | null;
   businessProfile?: any;
+  location?: { latitude: number; longitude: number; name?: string; address?: string };
 }
 
 export interface IntelligenceOutput {
@@ -24,6 +27,7 @@ export interface IntelligenceOutput {
     buttonText: string;
     sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>;
   };
+  images?: Array<{ url: string; caption?: string }>;
   nextStep?: string;
   updatedContext?: Record<string, any>;
   clearState?: boolean;
@@ -38,6 +42,11 @@ export const qcontrolIntelligence = {
     const cleanPhone = senderPhone.replace(/\D/g, '');
     const rawText = (buttonReplyId || listReplyId || incomingText || '').trim();
     const lower = rawText.toLowerCase();
+
+    // Handle incoming WhatsApp GPS location pin
+    if (input.location) {
+      return await this.handleNearbyClubs(input.location.latitude, input.location.longitude, cleanPhone);
+    }
 
     // 1. Fetch current conversation state from repository
     const state = await whatsappRepository.getState(cleanPhone);
@@ -54,12 +63,12 @@ export const qcontrolIntelligence = {
     if (interactiveId) {
       if (interactiveId.startsWith('select_biz_')) {
         return {
-          replyText: `Welcome to *${bName}*! 🎱\n\nHow can we help you today? You can check table availability, book a game, or view our rates:`,
+          replyText: `Welcome to *${bName}*! 🎱\n\nHow can we help you today? You can check table availability, book a game, view photos or view our rates:`,
           replyType: 'buttons',
           buttons: [
             { id: 'action_book', title: '📅 Book a Table' },
-            { id: 'action_pricing', title: '💰 View Rates' },
-            { id: 'action_club_info', title: '📍 Location & Info' }
+            { id: 'action_venue_photos', title: '📸 Photos' },
+            { id: 'action_pricing', title: '💰 View Rates' }
           ],
           nextStep: 'AWAITING_ACTION',
           updatedContext: { business_name: bName }
@@ -87,10 +96,25 @@ export const qcontrolIntelligence = {
           replyType: 'buttons',
           buttons: [
             { id: 'action_book', title: '📅 Book Now' },
-            { id: 'action_club_info', title: '📍 Location & Info' },
+            { id: 'action_venue_photos', title: '📸 Photos' },
             { id: 'action_my_bookings', title: '📋 My Bookings' }
           ]
         };
+      }
+
+      if (interactiveId === 'action_venue_photos') {
+        return await this.handleVenuePhotos(businessId, bName, cleanPhone);
+      }
+
+      if (interactiveId === 'action_google_rating' || interactiveId === 'action_rating') {
+        return await this.handleGoogleRating(businessId, bName, cleanPhone);
+      }
+
+      if (interactiveId === 'action_nearby' || interactiveId === 'action_nearby_clubs') {
+        if (input.location) {
+          return await this.handleNearbyClubs(input.location.latitude, input.location.longitude, cleanPhone);
+        }
+        return this.handleNearbyPrompt();
       }
 
       if (interactiveId === 'action_club_info' || interactiveId === 'action_location' || interactiveId === 'action_contact') {
@@ -196,6 +220,21 @@ export const qcontrolIntelligence = {
 
       case 'AVAILABILITY_OR_BOOKING': {
         return await this.handleNaturalBookingRequest(lower, businessId, bName, cleanPhone);
+      }
+
+      case 'VENUE_PHOTOS': {
+        return await this.handleVenuePhotos(businessId, bName, cleanPhone);
+      }
+
+      case 'GOOGLE_RATING': {
+        return await this.handleGoogleRating(businessId, bName, cleanPhone);
+      }
+
+      case 'NEARBY_CLUBS': {
+        if (input.location) {
+          return await this.handleNearbyClubs(input.location.latitude, input.location.longitude, cleanPhone);
+        }
+        return this.handleNearbyPrompt();
       }
 
       case 'LOCATION_DISCOVERY': {
@@ -344,10 +383,57 @@ export const qcontrolIntelligence = {
       return 'CLUB_INFO_INQUIRY';
     }
 
-    // 11. Location discovery
+    // 11. Venue Photos & Ambience Inquiry
+    if (
+      text.includes('photo') ||
+      text.includes('photos') ||
+      text.includes('pic') ||
+      text.includes('pics') ||
+      text.includes('picture') ||
+      text.includes('pictures') ||
+      text.includes('image') ||
+      text.includes('images') ||
+      text.includes('ambience') ||
+      text.includes('ambiance') ||
+      text.includes('gallery') ||
+      text.includes('look like') ||
+      text.includes('kaisa dikhta') ||
+      text.includes('club ki photo')
+    ) {
+      return 'VENUE_PHOTOS';
+    }
+
+    // 12. Google Rating & Reviews Inquiry
+    if (
+      text.includes('google rating') ||
+      text.includes('rating') ||
+      text.includes('ratings') ||
+      text.includes('review') ||
+      text.includes('reviews') ||
+      text.includes('feedback') ||
+      text.includes('how good') ||
+      text.includes('stars')
+    ) {
+      return 'GOOGLE_RATING';
+    }
+
+    // 13. Nearby Clubs Inquiry
     if (
       text.includes('near me') ||
+      text.includes('nearby') ||
+      text.includes('closest') ||
+      text.includes('nearest') ||
+      text.includes('around me') ||
+      text.includes('close by') ||
       text.includes('paas mein') ||
+      text.includes('aas paas') ||
+      text.includes('around here')
+    ) {
+      return 'NEARBY_CLUBS';
+    }
+
+    // 14. Area Location discovery
+    if (
       text.includes('which club') ||
       text.includes('kothrud') ||
       text.includes('baner') ||
@@ -667,6 +753,14 @@ export const qcontrolIntelligence = {
     msg += `${contactStr}\n`;
     msg += `${addressStr}\n`;
 
+    // Fetch Google Rating if configured/cached
+    if (business?.id) {
+      const ratingData = await googleRatingsService.getRating(business.id);
+      if (ratingData.rating !== null) {
+        msg += `${googleRatingsService.formatRatingDisplay(ratingData)}\n`;
+      }
+    }
+
     if (business?.address) {
       const directionsUrl = getGoogleMapsDirectionsUrl({
         address: business.address,
@@ -684,9 +778,9 @@ export const qcontrolIntelligence = {
       replyText: msg,
       replyType: 'buttons',
       buttons: [
-        { id: 'action_availability', title: '🎱 Check Tables' },
-        { id: 'action_pricing', title: '💰 View Pricing' },
-        { id: 'action_my_bookings', title: '📋 My Bookings' }
+        { id: 'action_book', title: '📅 Book a Table' },
+        { id: 'action_venue_photos', title: '📸 View Photos' },
+        { id: 'action_pricing', title: '💰 View Rates' }
       ]
     };
   },
@@ -941,37 +1035,42 @@ export const qcontrolIntelligence = {
     const cleanPhone = customerPhone.replace(/\D/g, '');
     const cleanQuery = (queryText || '').toLowerCase().trim();
 
-    // 1. Handle Explore Partner Clubs
+    // 1. Handle Nearby Lounges
+    if (cleanQuery === 'action_nearby_clubs' || cleanQuery === 'action_nearby' || cleanQuery.includes('nearby') || cleanQuery.includes('near me') || cleanQuery.includes('closest')) {
+      return this.handleNearbyPrompt();
+    }
+
+    // 2. Handle Explore Partner Clubs
     if (cleanQuery === 'action_explore_clubs' || cleanQuery.includes('explore partner') || cleanQuery === 'explore' || cleanQuery === 'directory') {
       return await this.handleExplorePartnerClubs(cleanPhone);
     }
 
-    // 2. Handle Book a Table
+    // 3. Handle Book a Table
     if (cleanQuery === 'action_book_table' || cleanQuery === 'action_book' || cleanQuery.includes('book a table') || cleanQuery === 'book table') {
       return await this.handleGlobalBookTable(cleanPhone);
     }
 
-    // 3. Handle View / Manage My Bookings
+    // 4. Handle View / Manage My Bookings
     if (cleanQuery === 'action_my_bookings' || cleanQuery.includes('my booking') || cleanQuery.includes('manage booking')) {
       return await this.handleGlobalMyBookings(cleanPhone);
     }
 
-    // 4. Handle Find Games and Prices
+    // 5. Handle Find Games and Prices
     if (cleanQuery === 'action_games_prices' || cleanQuery.includes('games and prices') || cleanQuery.includes('rates') || cleanQuery.includes('pricing')) {
       return await this.handleCentralPricingGuide(cleanPhone);
     }
 
-    // 5. Handle Get Directions
+    // 6. Handle Get Directions
     if (cleanQuery === 'action_get_directions' || cleanQuery.includes('direction') || cleanQuery.includes('location') || cleanQuery.includes('maps')) {
       return await this.handleGlobalDirections(cleanPhone);
     }
 
-    // 6. Handle Contact Support
+    // 7. Handle Contact Support
     if (cleanQuery === 'action_support' || cleanQuery.includes('support') || cleanQuery.includes('contact support') || cleanQuery.includes('helpline')) {
       return await this.handleCentralSupport();
     }
 
-    // 7. Handle Cancel Booking Action
+    // 8. Handle Cancel Booking Action
     if (cleanQuery.startsWith('cancel_')) {
       const bookingId = queryText.replace('cancel_', '').trim();
       const cancelResult = await bookingService.cancelBooking(bookingId, cleanPhone);
@@ -999,7 +1098,7 @@ export const qcontrolIntelligence = {
       }
     }
 
-    // 8. Handle Filters
+    // 9. Handle Filters
     if (cleanQuery.startsWith('filter_area_')) {
       const area = cleanQuery.replace('filter_area_', '');
       return await this.handleClubDiscovery(area, cleanPhone);
@@ -1014,7 +1113,7 @@ export const qcontrolIntelligence = {
       return await this.handleClubDiscovery(detectedArea, cleanPhone);
     }
 
-    // 9. Standard Centralized Welcome with the 6 official interactive options
+    // 10. Standard Centralized Welcome with interactive options
     return {
       replyText: (
         `Welcome to *QControl*! 🎱\n\n` +
@@ -1029,6 +1128,11 @@ export const qcontrolIntelligence = {
           {
             title: 'Booking & Discovery',
             rows: [
+              {
+                id: 'action_nearby_clubs',
+                title: '📍 Find Lounges Near Me',
+                description: 'Discover closest clubs via GPS location'
+              },
               {
                 id: 'action_explore_clubs',
                 title: '🔍 Explore Partner Clubs',
@@ -1093,6 +1197,9 @@ export const qcontrolIntelligence = {
       const rates = Object.entries(c.pricingBreakdown).map(([g, r]) => `${g.toUpperCase()}: ₹${r}/hr`).join(' • ');
       directoryText += `*${idx + 1}. ${c.businessName}*\n`;
       directoryText += `📍 ${c.address}\n`;
+      if (c.googleRatingDisplay) {
+        directoryText += `${c.googleRatingDisplay}\n`;
+      }
       directoryText += `🎮 *Games:* ${games}\n`;
       directoryText += `⏰ *Hours:* ${c.operatingHours}\n`;
       directoryText += `💰 *Rates:* ${rates}\n`;
@@ -1107,7 +1214,7 @@ export const qcontrolIntelligence = {
     const clubRows = recommendations.slice(0, 10).map(c => ({
       id: `select_biz_${c.businessId}`,
       title: c.businessName.length > 24 ? c.businessName.substring(0, 21) + '...' : c.businessName,
-      description: `${c.matchedGameType.toUpperCase()} • ₹${c.ratePerHour}/hr • ${c.address.substring(0, 35)}`
+      description: `${c.googleRating ? '⭐' + c.googleRating.toFixed(1) + ' • ' : ''}₹${c.ratePerHour}/hr • ${c.address.substring(0, 30)}`
     }));
 
     return {
@@ -1338,6 +1445,155 @@ export const qcontrolIntelligence = {
     }
 
     return `*${businessName} — Pricing Guide:* 💰\n\n🎱 *Pool:* ₹${poolRate}/hr\n🔴 *Snooker:* ₹${snookerRate}/hr\n🎮 *PS5:* ₹${ps5Rate}/hr${memberNote}\nAll rates are calculated dynamically with fair per-minute billing.`;
+  },
+
+  /**
+   * Delivers verified venue photos for a business.
+   */
+  async handleVenuePhotos(businessId: string, bName: string, customerPhone: string): Promise<IntelligenceOutput> {
+    const photos = await venuePhotoService.getPhotoUrls(businessId);
+
+    if (!photos || photos.length === 0) {
+      return {
+        replyText: (
+          `📸 *Photos of ${bName}*\n\n` +
+          `Venue photos are currently being updated by the club manager, but *${bName}* is an officially verified QControl partner club with tournament-grade tables, professional cloth, and premium ambience! 🎱✨\n\n` +
+          `Would you like to check available slots or view our hourly rates?`
+        ),
+        replyType: 'buttons',
+        buttons: [
+          { id: 'action_book', title: '📅 Book a Table' },
+          { id: 'action_pricing', title: '💰 View Rates' },
+          { id: 'action_club_info', title: '📍 Location & Info' }
+        ]
+      };
+    }
+
+    const images = photos.slice(0, 3).map((p, idx) => ({
+      url: p.url,
+      caption: p.caption || `${bName} — Venue Photo ${idx + 1}`
+    }));
+
+    return {
+      replyText: `Here are photos of *${bName}*! 🎱📸\n\nEnjoy tournament-standard tables and premium lounge ambience. Tap below to reserve your slot:`,
+      replyType: 'buttons',
+      images,
+      buttons: [
+        { id: 'action_book', title: '📅 Book a Table' },
+        { id: 'action_pricing', title: '💰 View Rates' },
+        { id: 'action_club_info', title: '📍 Location & Info' }
+      ]
+    };
+  },
+
+  /**
+   * Displays Google Places rating and review count authoritatively. Never fabricates.
+   */
+  async handleGoogleRating(businessId: string, bName: string, customerPhone: string): Promise<IntelligenceOutput> {
+    const rating = await googleRatingsService.getRating(businessId);
+    const ratingDisplay = googleRatingsService.formatRatingDisplay(rating);
+
+    let msg = `⭐ *Customer Ratings & Reviews — ${bName}*\n\n`;
+    msg += `${ratingDisplay}\n\n`;
+
+    if (rating.rating && rating.rating >= 4.0) {
+      msg += `Top-rated by players for table maintenance, lighting, and hospitality! 🏆\n\n`;
+    } else if (rating.rating === null) {
+      msg += `Google reviews are currently syncing for this club. Rest assured, this is a verified QControl partner lounge.\n\n`;
+    }
+
+    msg += `Ready to play? Choose an option below:`;
+
+    return {
+      replyText: msg.trim(),
+      replyType: 'buttons',
+      buttons: [
+        { id: 'action_book', title: '📅 Book a Table' },
+        { id: 'action_venue_photos', title: '📸 View Photos' },
+        { id: 'action_pricing', title: '💰 View Rates' }
+      ]
+    };
+  },
+
+  /**
+   * Discovers partner clubs near customer GPS coordinates using haversine distance.
+   * Customer coordinates are used only for calculation and never persisted.
+   */
+  async handleNearbyClubs(lat: number, lng: number, customerPhone: string, gameType = 'pool'): Promise<IntelligenceOutput> {
+    const cleanPhone = customerPhone.replace(/\D/g, '');
+    const nearby = await clubDiscoveryService.discoverNearbyClubs(lat, lng, 35, gameType);
+
+    if (nearby.length === 0) {
+      return {
+        replyText: (
+          `📍 *No partner clubs found within 35km of your location.*\n\n` +
+          `We are actively partnering with new clubs across the city! Would you like to explore all partner clubs or check a popular area?`
+        ),
+        replyType: 'buttons',
+        buttons: [
+          { id: 'action_explore_clubs', title: '🔍 Explore All Clubs' },
+          { id: 'area_kothrud', title: '📍 Kothrud' },
+          { id: 'action_support', title: '💬 Contact Support' }
+        ]
+      };
+    }
+
+    let msg = `📍 *Pool & Snooker Lounges Near You (Closest First):* 🎱\n\n`;
+    nearby.slice(0, 4).forEach((c, idx) => {
+      const distStr = c.distanceDisplay ? `🚗 *${c.distanceDisplay}*` : '';
+      const ratingStr = c.googleRatingDisplay ? ` • ${c.googleRatingDisplay}` : '';
+      msg += `*${idx + 1}. ${c.businessName}* ${distStr}${ratingStr}\n`;
+      msg += `📍 ${c.address}\n`;
+      msg += `💰 ${c.matchedGameType.toUpperCase()}: ₹${c.ratePerHour}/hr • Available tables: ${c.tablesCount}\n`;
+      if (c.directionsUrl) {
+        msg += `🗺️ *Directions:* ${c.directionsUrl}\n`;
+      }
+      msg += `\n`;
+    });
+
+    msg += `Tap below to select a club and reserve your table:`;
+
+    const clubRows = nearby.slice(0, 10).map(c => ({
+      id: `select_biz_${c.businessId}`,
+      title: c.businessName.length > 24 ? c.businessName.substring(0, 21) + '...' : c.businessName,
+      description: `${c.distanceDisplay ? c.distanceDisplay + ' • ' : ''}₹${c.ratePerHour}/hr • ${c.address.substring(0, 25)}`
+    }));
+
+    return {
+      replyText: msg.trim(),
+      replyType: 'list',
+      listData: {
+        buttonText: 'Select Club to Book',
+        sections: [
+          {
+            title: 'Closest Partner Lounges',
+            rows: clubRows
+          }
+        ]
+      }
+    };
+  },
+
+  /**
+   * Prompts customer to share their WhatsApp location pin to discover nearby pool lounges.
+   */
+  handleNearbyPrompt(): IntelligenceOutput {
+    return {
+      replyText: (
+        `📍 *Find Pool & Snooker Lounges Near You*\n\n` +
+        `To instantly calculate distances and find the closest available tables:\n\n` +
+        `1️⃣ Tap the *Attachment (📎 or +)* icon in WhatsApp\n` +
+        `2️⃣ Tap *Location* 📍 and choose *Send Your Current Location*\n\n` +
+        `_Note: Your coordinates are used only to calculate distance and are never stored._\n\n` +
+        `Or tap below to explore clubs by popular areas:`
+      ),
+      replyType: 'buttons',
+      buttons: [
+        { id: 'filter_area_kothrud', title: '📍 Kothrud' },
+        { id: 'filter_area_baner', title: '📍 Baner' },
+        { id: 'action_explore_clubs', title: '🔍 All Clubs' }
+      ]
+    };
   },
 
   /**

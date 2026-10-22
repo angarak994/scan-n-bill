@@ -248,3 +248,57 @@ export async function sendWhatsAppList(
   );
 }
 
+export async function sendWhatsAppImage(
+  to: string,
+  imageUrl: string,
+  caption?: string,
+  overrideToken?: string,
+  overridePhoneId?: string,
+  logContext?: WhatsAppLogContext
+) {
+  return sendWhatsAppMessage(
+    to,
+    {
+      type: 'image',
+      image: {
+        link: imageUrl,
+        ...(caption ? { caption } : {})
+      }
+    },
+    overrideToken,
+    overridePhoneId,
+    { ...logContext, content: logContext?.content || `[Image: ${caption || imageUrl}]` }
+  );
+}
+
+export async function sendWhatsAppTypingIndicator(
+  to: string,
+  messageId?: string,
+  overrideToken?: string,
+  overridePhoneId?: string
+) {
+  const token = overrideToken || WHATSAPP_TOKEN;
+  const phoneId = overridePhoneId || WHATSAPP_PHONE_NUMBER_ID;
+
+  if (!token || !phoneId) return;
+
+  try {
+    // Mark message as read (shows blue ticks and triggers typing state)
+    if (messageId) {
+      await fetch(`${WHATSAPP_API}/${phoneId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: messageId
+        })
+      });
+    }
+  } catch {
+    // Non-blocking — typing indicator is best-effort
+  }
+}

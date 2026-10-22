@@ -99,6 +99,9 @@ export async function POST(request: Request) {
 
     if (body.address !== undefined) updatePayload.address = body.address;
     if (body.business_type !== undefined) updatePayload.business_type = body.business_type;
+    if (body.latitude !== undefined) updatePayload.latitude = body.latitude === null || body.latitude === '' ? null : Number(body.latitude);
+    if (body.longitude !== undefined) updatePayload.longitude = body.longitude === null || body.longitude === '' ? null : Number(body.longitude);
+    if (body.google_place_id !== undefined) updatePayload.google_place_id = body.google_place_id ? String(body.google_place_id).trim() : null;
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
 import { bookingService } from '@/lib/services/bookingService';
+import { googleRatingsService } from '@/lib/services/googleRatingsService';
 import { getCurrentISTDateStr } from '@/lib/billing';
-import { getGoogleMapsDirectionsUrl } from '@/lib/utils/locationUtils';
+import { getGoogleMapsDirectionsUrl, calculateDistanceKm, formatDistance } from '@/lib/utils/locationUtils';
 
 export interface ClubDiscoveryQuery {
   locationQuery?: string;
@@ -11,6 +12,8 @@ export interface ClubDiscoveryQuery {
   durationMins?: number;
   maxBudgetPerHour?: number;
   customerPhone?: string;
+  customerLat?: number;
+  customerLng?: number;
 }
 
 export interface ClubRecommendation {
@@ -29,11 +32,17 @@ export interface ClubRecommendation {
   directionsUrl: string | null;
   recommendationReason: string;
   isAvailableForRequestedTime?: boolean;
+  distanceKm?: number | null;
+  distanceDisplay?: string | null;
+  googleRating?: number | null;
+  googleReviewCount?: number | null;
+  googleRatingDisplay?: string | null;
 }
 
 export const clubDiscoveryService = {
   /**
    * Discovers and ranks eligible verified partner clubs across the QControl centralized network.
+   * Supports geo-distance ranking when customer coordinates are provided.
    */
   async discoverAndRankClubs(query: ClubDiscoveryQuery): Promise<ClubRecommendation[]> {
     const {
@@ -43,6 +52,8 @@ export const clubDiscoveryService = {
       startTime,
       durationMins = 60,
       maxBudgetPerHour,
+      customerLat,
+      customerLng,
     } = query;
 
     const normLocation = locationQuery.toLowerCase().trim();
@@ -51,7 +62,7 @@ export const clubDiscoveryService = {
     // 1. Fetch active partner clubs from database
     const { data: businesses, error } = await supabase
       .from('businesses')
-      .select('id, business_name, address, contact_number, tables, pricing_rules, status')
+      .select('*')
       .eq('status', 'ACTIVE');
 
     if (error || !businesses || businesses.length === 0) {
@@ -117,6 +128,28 @@ export const clubDiscoveryService = {
         }
       }
 
+      // Calculate geo-distance if customer coordinates provided
+      let distanceKm: number | null = null;
+      let distanceDisplay: string | null = null;
+      if (
+        customerLat !== undefined && customerLng !== undefined &&
+        b.latitude !== null && b.longitude !== null &&
+        b.latitude !== undefined && b.longitude !== undefined
+      ) {
+        distanceKm = calculateDistanceKm(customerLat, customerLng, Number(b.latitude), Number(b.longitude));
+        distanceDisplay = formatDistance(distanceKm);
+      }
+
+      // Google rating (use cached DB values for performance)
+      let googleRating: number | null = b.google_rating !== null ? Number(b.google_rating) : null;
+      let googleReviewCount: number | null = b.google_review_count || null;
+      let googleRatingDisplay: string | null = null;
+
+      if (googleRating !== null && googleRating > 0) {
+        const stars = '⭐'.repeat(Math.round(googleRating));
+        googleRatingDisplay = `${stars} ${googleRating.toFixed(1)}/5${googleReviewCount ? ` (${googleReviewCount} reviews)` : ''}`;
+      }
+
       // Determine location match score and reason
       const address = b.address || '';
       const bName = b.business_name || '';
@@ -128,7 +161,9 @@ export const clubDiscoveryService = {
       }
 
       let recommendationReason = 'Verified partner club';
-      if (isLocationMatch) {
+      if (distanceKm !== null && distanceKm < 3) {
+        recommendationReason = `${distanceDisplay} — Closest to you`;
+      } else if (isLocationMatch) {
         recommendationReason = `Top match in ${normLocation.toUpperCase()}`;
       } else if (isAvailableForRequestedTime) {
         recommendationReason = `Available at requested time (${startTime})`;
@@ -140,7 +175,9 @@ export const clubDiscoveryService = {
 
       const directionsUrl = getGoogleMapsDirectionsUrl({
         address: b.address,
-        businessName: b.business_name
+        businessName: b.business_name,
+        latitude: b.latitude,
+        longitude: b.longitude,
       });
 
       recommendations.push({
@@ -158,16 +195,31 @@ export const clubDiscoveryService = {
         operatingHours: '11:00 AM – 11:30 PM',
         directionsUrl,
         recommendationReason,
-        isAvailableForRequestedTime
+        isAvailableForRequestedTime,
+        distanceKm,
+        distanceDisplay,
+        googleRating,
+        googleReviewCount,
+        googleRatingDisplay,
       });
     }
 
     // Rank recommendations:
-    // 1. Matches requested time
-    // 2. Matches location query
-    // 3. Lowest rate
-    // 4. Most available slots
+    // 1. Closest distance (if geo-coordinates available)
+    // 2. Matches requested time
+    // 3. Matches location query
+    // 4. Lowest rate
+    // 5. Most available slots
     recommendations.sort((a, b) => {
+      // Distance-first sort when geo is available
+      if (a.distanceKm !== null && b.distanceKm !== null) {
+        if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
+      } else if (a.distanceKm !== null) {
+        return -1;
+      } else if (b.distanceKm !== null) {
+        return 1;
+      }
+
       if (a.isAvailableForRequestedTime && !b.isAvailableForRequestedTime) return -1;
       if (!a.isAvailableForRequestedTime && b.isAvailableForRequestedTime) return 1;
 
@@ -186,5 +238,25 @@ export const clubDiscoveryService = {
     });
 
     return recommendations;
-  }
+  },
+
+  /**
+   * Discovers nearby clubs using customer GPS coordinates.
+   * Coordinates are used ephemerally and never persisted.
+   */
+  async discoverNearbyClubs(
+    customerLat: number,
+    customerLng: number,
+    maxDistanceKm: number = 25,
+    gameType: string = 'pool'
+  ): Promise<ClubRecommendation[]> {
+    const all = await this.discoverAndRankClubs({
+      gameType,
+      customerLat,
+      customerLng,
+    });
+
+    // Filter by max distance
+    return all.filter(c => c.distanceKm !== null && c.distanceKm <= maxDistanceKm);
+  },
 };

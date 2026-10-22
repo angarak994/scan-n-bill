@@ -1151,6 +1151,9 @@ function DashboardContent() {
         payload.public_contact_number = businessProfile.public_contact_number;
         payload.address = businessProfile.address;
         payload.business_type = businessProfile.business_type;
+        if (businessProfile.latitude !== undefined) payload.latitude = businessProfile.latitude;
+        if (businessProfile.longitude !== undefined) payload.longitude = businessProfile.longitude;
+        if (businessProfile.google_place_id !== undefined) payload.google_place_id = businessProfile.google_place_id;
       }
       const res = await fetch('/api/update-business-config', {
         method: 'POST',

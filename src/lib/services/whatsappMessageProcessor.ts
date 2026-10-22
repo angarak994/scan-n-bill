@@ -1,7 +1,7 @@
 import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { businessManager } from '@/lib/businessManager';
 import { supabase } from '@/lib/supabaseClient';
-import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from '@/lib/whatsapp';
+import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppImage, sendWhatsAppTypingIndicator } from '@/lib/whatsapp';
 import { bookingService } from '@/lib/services/bookingService';
 import { qcontrolIntelligence } from '@/lib/services/qcontrolIntelligence';
 
@@ -43,11 +43,24 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     return;
   }
 
-  // 2. Extract incoming text / interactive selections FIRST
+  // Natural typing indicator acknowledgment
+  if (messageId) {
+    sendWhatsAppTypingIndicator(messageId).catch(() => {});
+  }
+
+  // 2. Extract incoming text / interactive selections / GPS location FIRST
+  const isLocation = message.type === 'location';
+  const locationPayload = isLocation && message.location ? {
+    latitude: Number(message.location.latitude),
+    longitude: Number(message.location.longitude),
+    name: message.location.name,
+    address: message.location.address
+  } : undefined;
+
   const text = message.type === 'text' ? (message.text?.body || '') : '';
   const buttonReplyId = message.type === 'interactive' && message.interactive?.type === 'button_reply' ? message.interactive.button_reply.id : null;
   const listReplyId = message.type === 'interactive' && message.interactive?.type === 'list_reply' ? message.interactive.list_reply.id : null;
-  const incomingText = buttonReplyId || listReplyId || text;
+  const incomingText = buttonReplyId || listReplyId || text || (isLocation ? '[Location Shared]' : '');
   const lower = (incomingText || '').toLowerCase().trim();
 
   // 3. Resolve Business Context
@@ -144,7 +157,12 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
   // Ingress Step E: Global Discovery Mode (Zero Strategy C Silent Cross-Tenant Hijack!)
   if (!detectedBusiness) {
     console.log(`[Central QControl] Inbound from ${phone} without club context. Routing to Global Discovery.`);
-    const discoveryRes = await qcontrolIntelligence.handleGlobalDiscovery(incomingText, phone);
+    let discoveryRes: any;
+    if (locationPayload) {
+      discoveryRes = await qcontrolIntelligence.handleNearbyClubs(locationPayload.latitude, locationPayload.longitude, phone);
+    } else {
+      discoveryRes = await qcontrolIntelligence.handleGlobalDiscovery(incomingText, phone);
+    }
 
     // Save global discovery state
     await whatsappRepository.updateState(phone, null, 'GLOBAL_DISCOVERY', { query: incomingText }, 'GLOBAL_DISCOVERY');
@@ -339,7 +357,8 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     businessName,
     buttonReplyId,
     listReplyId,
-    businessProfile: detectedBusiness
+    businessProfile: detectedBusiness,
+    location: locationPayload
   });
 
   // 8. Update conversation state if requested
@@ -356,6 +375,24 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
   }
 
   // 9. Dispatch WhatsApp response
+  // If intelligence output includes images (e.g. venue photos)
+  if (intelligenceResult.images && intelligenceResult.images.length > 0) {
+    for (const img of intelligenceResult.images) {
+      await sendWhatsAppImage(
+        phone,
+        img.url,
+        img.caption,
+        overrideToken,
+        overridePhoneId,
+        {
+          businessId,
+          recipientName: 'Customer',
+          content: img.caption || 'Venue Photo'
+        }
+      );
+    }
+  }
+
   if (intelligenceResult.replyType === 'buttons' && intelligenceResult.buttons) {
     await sendWhatsAppButtons(
       phone,
