@@ -48,8 +48,14 @@ export function registerCacheInvalidationListener(listener: InvalidationListener
 export function invalidateBusinessCache(businessId?: string): void {
   if (businessId) {
     businessCache.delete(businessId);
+    for (const [sKey, val] of slugCache.entries()) {
+      if (val.id === businessId) {
+        slugCache.delete(sKey);
+      }
+    }
   } else {
     businessCache.clear();
+    slugCache.clear();
   }
   for (const listener of cacheListeners) {
     try {
@@ -214,11 +220,11 @@ export const businessManager = {
       return businessManager.getBusiness(cachedId.id);
     }
 
-    // Direct ID check if raw has non-hyphenated 32 chars or matches business id
+    // Direct match: check slug column or business_name
     const { data: directMatch } = await supabase
       .from('businesses')
       .select('id, business_name')
-      .or(`id.eq.${raw},business_name.ilike.${raw}`)
+      .or(`slug.eq.${raw},business_name.ilike.${raw}`)
       .limit(1)
       .maybeSingle();
 

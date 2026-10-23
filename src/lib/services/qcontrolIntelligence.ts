@@ -7,6 +7,7 @@ import { whatsappRepository } from '@/lib/repositories/whatsappRepository';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
 import { getGoogleMapsDirectionsUrl, formatBookingConfirmationWhatsApp } from '@/lib/utils/locationUtils';
+import { resolveBusinessConfig, getCurrentOperatingDay, formatTimeTo12Hour, DEFAULT_OPERATING_HOURS } from '@/lib/utils/operatingDayUtils';
 
 export interface IntelligenceInput {
   incomingText: string;
@@ -111,9 +112,6 @@ export const qcontrolIntelligence = {
       }
 
       if (interactiveId === 'action_nearby' || interactiveId === 'action_nearby_clubs') {
-        if (input.location) {
-          return await this.handleNearbyClubs(input.location.latitude, input.location.longitude, cleanPhone);
-        }
         return this.handleNearbyPrompt();
       }
 
@@ -231,9 +229,6 @@ export const qcontrolIntelligence = {
       }
 
       case 'NEARBY_CLUBS': {
-        if (input.location) {
-          return await this.handleNearbyClubs(input.location.latitude, input.location.longitude, cleanPhone);
-        }
         return this.handleNearbyPrompt();
       }
 
@@ -485,8 +480,17 @@ export const qcontrolIntelligence = {
     else if (/\b(90|ninety)\s*(mins?|minutes?)\b|\b1\.5\s*hours?\b/i.test(text)) durationMins = 90;
     else if (/\b(30|thirty)\s*(mins?|minutes?)\b|\bhalf\s*(an\s*)?hour\b/i.test(text)) durationMins = 30;
 
-    // 3. Detect date using IST timezone
-    const todayStr = getCurrentISTDateStr();
+    // 3. Resolve business config & operating day
+    const business = await businessManager.getBusiness(businessId);
+    if (!business) {
+      return {
+        replyText: `Sorry, we could not find active records for *${businessName}*.`,
+        replyType: 'text'
+      };
+    }
+    const bConfig = resolveBusinessConfig(business);
+
+    const todayStr = getCurrentOperatingDay(bConfig);
     let dateStr = todayStr;
     let dateDisplay = 'Today';
 
@@ -502,47 +506,57 @@ export const qcontrolIntelligence = {
       dateDisplay = 'Day after tomorrow';
     }
 
-    // 4. Detect time
+    // 4. Detect time (supports 1 AM, 12 AM, 2 AM, midnight, raat 1 baje, 11:30 PM, etc.)
     let reqTime: string | null = null;
-    let reqMins = 19 * 60; // 7 PM default for evening if not specified
+    let reqMins = 19 * 60; // 7 PM default
 
-    const exactTimeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(pm|am|baje)?/i);
-    if (exactTimeMatch) {
-      let h = parseInt(exactTimeMatch[1], 10);
-      const m = exactTimeMatch[2] ? parseInt(exactTimeMatch[2], 10) : 0;
-      const suffix = (exactTimeMatch[3] || '').toLowerCase();
+    if (text.includes('midnight') || text.includes('aadha raat') || text.includes('aadhi raat')) {
+      reqTime = '00:00';
+      reqMins = 0;
+    } else {
+      const exactTimeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(pm|am|baje|o'?clock)?/i);
+      if (exactTimeMatch) {
+        let h = parseInt(exactTimeMatch[1], 10);
+        const m = exactTimeMatch[2] ? parseInt(exactTimeMatch[2], 10) : 0;
+        const suffix = (exactTimeMatch[3] || '').toLowerCase();
+        const isNightMention = text.includes('raat') || text.includes('night') || text.includes('der raat') || text.includes('late');
 
-      if (suffix === 'pm' && h < 12) h += 12;
-      else if (suffix === 'am' && h === 12) h = 0;
-      else if (suffix === 'baje' || !suffix) {
-        if (h >= 1 && h <= 6) h += 12;
-        else if (h >= 7 && h <= 11) h += 12;
+        if (suffix === 'pm') {
+          if (h < 12) h += 12;
+        } else if (suffix === 'am') {
+          if (h === 12) h = 0;
+        } else if (suffix === 'baje' || !suffix || suffix.includes('clock')) {
+          if (isNightMention && (h === 12 || h === 1 || h === 2 || h === 3)) {
+            if (h === 12) h = 0;
+            // 1, 2, 3 remain overnight AM hours
+          } else if (isNightMention && h >= 7 && h <= 11) {
+            h += 12;
+          } else if (h >= 1 && h <= 6) {
+            h += 12;
+          } else if (h >= 7 && h <= 11) {
+            h += 12;
+          } else if (h === 12) {
+            h = 12;
+          }
+        }
+
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+          reqTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          reqMins = h * 60 + m;
+        }
+      } else if (text.includes('evening') || text.includes('shaam')) {
+        reqTime = '19:00';
+        reqMins = 19 * 60;
+      } else if (text.includes('night') || text.includes('raat')) {
+        reqTime = '21:00';
+        reqMins = 21 * 60;
+      } else if (text.includes('afternoon') || text.includes('dopehar')) {
+        reqTime = '15:00';
+        reqMins = 15 * 60;
+      } else if (text.includes('morning') || text.includes('subah')) {
+        reqTime = '11:00';
+        reqMins = 11 * 60;
       }
-
-      if (h >= 10 && h <= 23) {
-        reqTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        reqMins = h * 60 + m;
-      }
-    } else if (text.includes('evening') || text.includes('shaam')) {
-      reqTime = '19:00';
-      reqMins = 19 * 60;
-    } else if (text.includes('night') || text.includes('raat')) {
-      reqTime = '21:00';
-      reqMins = 21 * 60;
-    } else if (text.includes('afternoon') || text.includes('dopehar')) {
-      reqTime = '15:00';
-      reqMins = 15 * 60;
-    } else if (text.includes('morning') || text.includes('subah')) {
-      reqTime = '11:00';
-      reqMins = 11 * 60;
-    }
-
-    const business = await businessManager.getBusiness(businessId);
-    if (!business) {
-      return {
-        replyText: `Sorry, we could not find active records for *${businessName}*.`,
-        replyType: 'text'
-      };
     }
 
     const tables = (business.tables || []).filter((t: any) => {
@@ -568,7 +582,7 @@ export const qcontrolIntelligence = {
     // If customer specified a time:
     if (reqTime) {
       for (const table of tables) {
-        const check = await bookingService.checkTableAvailability(businessId, table.id, dateStr, reqMins, durationMins);
+        const check = await bookingService.checkTableAvailability(businessId, table.id, dateStr, reqTime, durationMins);
         if (check.available) {
           const durationLabel = durationMins >= 60
             ? `${(durationMins / 60).toFixed(durationMins % 60 === 0 ? 0 : 1)} Hour${durationMins > 60 ? 's' : ''}`
@@ -584,8 +598,9 @@ export const qcontrolIntelligence = {
             business_name: businessName
           };
 
+          const formattedDisplay = formatTimeTo12Hour(reqTime);
           return {
-            replyText: `Great news! *Table ${table.name || table.id}* (${gameType.toUpperCase()}) is available at *${businessName}* on ${dateDisplay} at *${reqTime}* for ${durationLabel} (Rate: ₹${ratePerHour}/hr, Total: ₹${estimatedTotal}).\n\nPlease type your *Name* to confirm the reservation.`,
+            replyText: `Great news! *Table ${table.name || table.id}* (${gameType.toUpperCase()}) is available at *${businessName}* on ${dateDisplay} at *${formattedDisplay}* for ${durationLabel} (Rate: ₹${ratePerHour}/hr, Total: ₹${estimatedTotal}).\n\nPlease type your *Name* to confirm the reservation.`,
             replyType: 'text',
             nextStep: 'AWAITING_NAME',
             updatedContext: context
@@ -593,16 +608,17 @@ export const qcontrolIntelligence = {
         }
       }
 
-      // If requested time is not available, find verified alternative slots
-      const availableSlots = await bookingService.getAvailableSlots(businessId, gameType, dateStr, durationMins);
-      if (availableSlots.length > 0) {
-        const alternativeTimes = availableSlots.slice(0, 3).map(s => s.time).join(', ');
+      // If requested time is not available, find intelligent alternatives
+      const smart = await bookingService.getSmartAlternatives(businessId, gameType, dateStr, reqTime, durationMins);
+      if (smart.alternatives.length > 0) {
+        const alternativeTimes = smart.alternatives.slice(0, 3).map(s => s.displayTime).join(', ');
+        const reqDisplay = formatTimeTo12Hour(reqTime);
         return {
-          replyText: `*${tables[0].name || tables[0].id}* is not available at *${reqTime}* for ${durationMins} minutes.\n\nHowever, we have these verified open slots for ${dateDisplay}:\n👉 *${alternativeTimes}*\n\nWhich slot would you prefer?`,
+          replyText: `*${businessName}* is not available at *${reqDisplay}* for ${durationMins} minutes.\n\nHowever, we found these closest open slots for ${dateDisplay}:\n👉 *${alternativeTimes}*\n\nWhich slot would you prefer?`,
           replyType: 'buttons',
-          buttons: availableSlots.slice(0, 3).map(s => ({
+          buttons: smart.alternatives.slice(0, 3).map(s => ({
             id: `time_${s.time}_${s.tableId}`,
-            title: `⏰ ${s.time}`
+            title: `⏰ ${s.displayTime}`
           })),
           nextStep: 'AWAITING_TIME',
           updatedContext: {

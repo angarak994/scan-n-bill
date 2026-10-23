@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { BusinessData } from '@/lib/businessManager';
 
 interface MenuManagerTabProps {
   businessId: string;
   initialMenuItems: any[];
+  onMenuItemsUpdated?: (items: any[]) => void;
 }
 
-export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabProps) {
+export function MenuManagerTab({ businessId, initialMenuItems, onMenuItemsUpdated }: MenuManagerTabProps) {
   const [menuItems, setMenuItems] = useState<any[]>(initialMenuItems || []);
+
+  useEffect(() => {
+    if (initialMenuItems) {
+      setMenuItems(initialMenuItems);
+    }
+  }, [initialMenuItems]);
+
   const [isAdding, setIsAdding] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   
@@ -24,7 +32,8 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
   const [saving, setSaving] = useState(false);
 
-  const categories = Array.from(new Set(menuItems.map(i => i.category || 'Other') || ['Snacks', 'Beverages', 'Meals', 'Other']));
+  const activeItems = (menuItems || []).filter((i: any) => i && i.status !== 'archived' && !i.is_deleted);
+  const categories = Array.from(new Set(activeItems.map((i: any) => i.category || 'Other')));
 
   const handleOpenAdd = () => {
     setFormData({ id: crypto.randomUUID(), name: '', price: '', category: 'Snacks', description: '', image: '', available: true });
@@ -50,21 +59,23 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
     e.preventDefault();
     setSaving(true);
     try {
+      const cleanName = formData.name.replace(/🔥/g, '').trim();
       const newItem = {
-        id: formData.id,
-        name: formData.name,
+        id: formData.id || crypto.randomUUID(),
+        name: cleanName,
         price: Number(formData.price),
         category: formData.category,
         description: formData.description,
         image: formData.image,
-        available: formData.available
+        available: formData.available,
+        is_pinned: editingItem?.is_pinned || false
       };
 
       let newItems = [...menuItems];
       if (editingItem) {
         // Find by ID or by Name (legacy items might not have ID)
         const idx = newItems.findIndex(i => (i.id && i.id === editingItem.id) || (!i.id && i.name === editingItem.name));
-        if (idx !== -1) newItems[idx] = newItem;
+        if (idx !== -1) newItems[idx] = { ...newItems[idx], ...newItem };
         else newItems.push(newItem);
       } else {
         newItems.push(newItem);
@@ -79,6 +90,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
       if (!res.ok) throw new Error('Failed to update config');
 
       setMenuItems(newItems);
+      onMenuItemsUpdated?.(newItems);
       setIsAdding(false);
     } catch (err) {
       console.error(err);
@@ -92,12 +104,20 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
     if (!confirm('Are you sure you want to delete this item?')) return;
     
     try {
-      let newItems = [...menuItems];
-      if (isLegacy) {
-        newItems = newItems.filter(i => i.name !== idOrName);
-      } else {
-        newItems = newItems.filter(i => i.id !== idOrName);
-      }
+      // Soft-delete / archive rather than hard-deleting to preserve historical orders
+      const newItems = menuItems.map(i => {
+        const matches = isLegacy ? i.name === idOrName : i.id === idOrName;
+        if (matches) {
+          return {
+            ...i,
+            status: 'archived',
+            is_deleted: true,
+            available: false,
+            archived_at: new Date().toISOString()
+          };
+        }
+        return i;
+      });
 
       const res = await fetch('/api/update-business-config', {
         method: 'POST',
@@ -107,6 +127,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
 
       if (!res.ok) throw new Error('Failed to delete item');
       setMenuItems(newItems);
+      onMenuItemsUpdated?.(newItems);
     } catch (err) {
       console.error(err);
       alert('Failed to delete item');
@@ -123,6 +144,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
       });
 
       setMenuItems(newItems);
+      onMenuItemsUpdated?.(newItems);
 
       await fetch('/api/update-business-config', {
         method: 'POST',
@@ -144,6 +166,7 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
       });
 
       setMenuItems(newItems);
+      onMenuItemsUpdated?.(newItems);
 
       await fetch('/api/update-business-config', {
         method: 'POST',
@@ -174,7 +197,9 @@ export function MenuManagerTab({ businessId, initialMenuItems }: MenuManagerTabP
       </div>
 
       {categories.map(category => {
-        const catItems = menuItems.filter(i => (i.category || 'Other') === category);
+        const catItems = activeItems
+          .filter(i => (i.category || 'Other') === category)
+          .sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
         if (catItems.length === 0) return null;
 
         return (

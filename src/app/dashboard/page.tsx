@@ -743,65 +743,56 @@ function DashboardContent() {
   useEffect(() => {
     if (isAuthorized) {
       // Setup Supabase Realtime for universal state synchronization
-      let syncSubscription: any = null;
-      let sessionDeltaSubscription: any = null;
+      let dashboardChannel: any = null;
 
       if (supabase && businessId) {
-        // Fast Realtime Delta Listener: Instantly updates active/completed table sessions in React state (0ms latency)
-        sessionDeltaSubscription = supabase.channel(`realtime_sessions_delta_${businessId}`)
-          .on('postgres_changes', {
-            event: '*',
-            schema: 'public',
-            table: 'sessions',
-            filter: `business_id=eq.${businessId}`
-          }, (changePayload: any) => {
-            const { eventType, new: newRecord, old: oldRecord } = changePayload;
-            if (eventType === 'INSERT' && newRecord) {
-              if (newRecord.status === 'ACTIVE') {
-                setData(prev => {
-                  if (!prev) return prev;
-                  const alreadyExists = prev.activeSessions.some((s: any) => s.id === newRecord.id);
-                  if (alreadyExists) return prev;
-                  return {
-                    ...prev,
-                    activeSessions: [newRecord, ...prev.activeSessions]
-                  };
-                });
-              }
-            } else if (eventType === 'UPDATE' && newRecord) {
+        const handleSessionDelta = (changePayload: any) => {
+          const { eventType, new: newRecord, old: oldRecord } = changePayload;
+          if (eventType === 'INSERT' && newRecord) {
+            if (newRecord.status === 'ACTIVE') {
               setData(prev => {
                 if (!prev) return prev;
-                if (newRecord.status === 'ACTIVE') {
-                  return {
-                    ...prev,
-                    activeSessions: prev.activeSessions.map((s: any) => s.id === newRecord.id ? { ...s, ...newRecord } : s)
-                  };
-                } else if (newRecord.status === 'COMPLETED') {
-                  invalidateReportsCache();
-                  const wasActive = prev.activeSessions.some((s: any) => s.id === newRecord.id);
-                  return {
-                    ...prev,
-                    activeSessions: prev.activeSessions.filter((s: any) => s.id !== newRecord.id),
-                    completedSessions: wasActive
-                      ? [newRecord, ...prev.completedSessions]
-                      : prev.completedSessions.map((s: any) => s.id === newRecord.id ? newRecord : s)
-                  };
-                }
-                return prev;
-              });
-            } else if (eventType === 'DELETE' && oldRecord) {
-              setData(prev => {
-                if (!prev) return prev;
+                const alreadyExists = prev.activeSessions.some((s: any) => s.id === newRecord.id);
+                if (alreadyExists) return prev;
                 return {
                   ...prev,
-                  activeSessions: prev.activeSessions.filter((s: any) => s.id !== oldRecord.id)
+                  activeSessions: [newRecord, ...prev.activeSessions]
                 };
               });
             }
-          })
-          .subscribe();
+          } else if (eventType === 'UPDATE' && newRecord) {
+            setData(prev => {
+              if (!prev) return prev;
+              if (newRecord.status === 'ACTIVE') {
+                return {
+                  ...prev,
+                  activeSessions: prev.activeSessions.map((s: any) => s.id === newRecord.id ? { ...s, ...newRecord } : s)
+                };
+              } else if (newRecord.status === 'COMPLETED') {
+                invalidateReportsCache();
+                const wasActive = prev.activeSessions.some((s: any) => s.id === newRecord.id);
+                return {
+                  ...prev,
+                  activeSessions: prev.activeSessions.filter((s: any) => s.id !== newRecord.id),
+                  completedSessions: wasActive
+                    ? [newRecord, ...prev.completedSessions]
+                    : prev.completedSessions.map((s: any) => s.id === newRecord.id ? newRecord : s)
+                };
+              }
+              return prev;
+            });
+          } else if (eventType === 'DELETE' && oldRecord) {
+            setData(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                activeSessions: prev.activeSessions.filter((s: any) => s.id !== oldRecord.id)
+              };
+            });
+          }
+        };
 
-        // Fast-path Universal Sync Bus with 100ms debounce (reduced from 400ms for snappy responsiveness)
+        // Fast-path Universal Sync Bus with 100ms debounce
         const handleSync = (payload: any) => {
           const triggeredTable = payload?.new?.triggered_by;
           if (triggeredTable === 'sessions' || triggeredTable === 'payments') {
@@ -820,8 +811,20 @@ function DashboardContent() {
           }, 100);
         };
 
-        syncSubscription = supabase.channel(`dashboard_sync_${businessId}`)
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dashboard_syncs', filter: `business_id=eq.${businessId}` }, handleSync)
+        // Multiplexed Unified Realtime Channel
+        dashboardChannel = supabase.channel(`dashboard_unified_${businessId}`)
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'sessions',
+            filter: `business_id=eq.${businessId}`
+          }, handleSessionDelta)
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'dashboard_syncs',
+            filter: `business_id=eq.${businessId}`
+          }, handleSync)
           .subscribe();
       }
 
@@ -849,8 +852,7 @@ function DashboardContent() {
         if (typeof document !== 'undefined') {
           document.removeEventListener('visibilitychange', handleVisibilityChange);
         }
-        if (syncSubscription && supabase) supabase.removeChannel(syncSubscription);
-        if (sessionDeltaSubscription && supabase) supabase.removeChannel(sessionDeltaSubscription);
+        if (dashboardChannel && supabase) supabase.removeChannel(dashboardChannel);
       };
     }
   }, [isAuthorized, businessId]);
@@ -2577,11 +2579,16 @@ function DashboardContent() {
           const shortId = s.id ? s.id.split('-')[0].toUpperCase() : '';
           return [
             shortId, s.date, readableTime, s.customer_name, s.game_type, s.duration, 
-            s.base_cost || 0, s.food_cost || 0, s.discount_amount || 0, s.cost || 0, 
-            s.payment_status || 'Paid', s.completed_by || 'System'
-          ].map(field => `"${field === null || field === undefined ? '' : field}"`).join(',')
+          ].map(field => {
+            if (field === null || field === undefined) return '""';
+            let str = String(field);
+            if (/^[=+\-@\t\r]/.test(str)) {
+              str = `'${str}`;
+            }
+            return `"${str.replace(/"/g, '""')}"`;
+          }).join(',')
         })
-      ].join('\n');
+      ].join('\r\n');
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -6809,7 +6816,15 @@ function DashboardContent() {
           {sidebarTab === 'settings' && renderSettings()}
           {sidebarTab === 'subscription' && <SubscriptionTab businessId={businessId!} />}
           {sidebarTab === 'support' && renderSupport()}
-          {sidebarTab === 'menu' && <MenuManagerTab businessId={businessId!} initialMenuItems={data?.menu_items || []} />}
+          {sidebarTab === 'menu' && (
+            <MenuManagerTab 
+              businessId={businessId!} 
+              initialMenuItems={data?.menu_items || []} 
+              onMenuItemsUpdated={(items) => {
+                setData(prev => prev ? { ...prev, menu_items: items } : prev);
+              }}
+            />
+          )}
                     {sidebarTab === 'qkhata' && (
             data?.entitlement?.features?.has_qkhata ? 
             <QKhataTab businessId={businessId!} dbCustomers={data?.dbCustomers || []} memberships={memberships?.length > 0 ? memberships : (data?.memberships || [])} membershipPlans={membershipPlans || []} /> :

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
@@ -641,8 +642,8 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
           const playerName = text;
           
           try {
-             // Create booking in DB
-             const { error: insertError } = await supabase.from('bookings').insert({
+             // Create booking via authoritative booking service
+             const bookingResult = await bookingService.createAtomicBooking({
                  business_id: business.id,
                  customer_name: playerName,
                  customer_phone: '',
@@ -650,13 +651,15 @@ Select the business you want to manage:`, { inline_keyboard: bizButtons });
                  booking_date: dateStr,
                  start_time: timeStr,
                  duration_minutes: 60,
-                 status: 'confirmed',
                  game_type: gameType,
                  num_players: numPlayers,
                  source: 'telegram'
              });
              
-             if (insertError) throw insertError;
+             if (!bookingResult.success) {
+                 await sendTelegramMessage(chatId, `❌ Cannot complete booking: ${bookingResult.reason || 'Slot is unavailable.'}`, mainMenu);
+                 return NextResponse.json({ ok: true });
+             }
              
              await sendTelegramMessage(chatId, `✅ <b>Booking Confirmed</b>
 
@@ -2076,7 +2079,26 @@ You can still access other businesses associated with your Telegram account.`, {
           serverBillingRes = res;
           billText = `₹${Math.round(res.cost)}`;
           billableDuration = res.duration.replace(' min', 'm').replace(' hr ', 'h ');
-        } catch(e){}
+        } catch (e) {
+          console.error('[stop_select_] Error calculating billing for session:', sessionId, e);
+        }
+
+        let customerBalanceText = '';
+        if (session.member_id || session.customer_id) {
+          try {
+            const custId = session.customer_id || session.member_id;
+            const { data: cust } = await supabase
+              .from('customers')
+              .select('outstanding_balance, name')
+              .eq('business_id', business.id)
+              .or(`id.eq.${custId},name.ilike.${session.customer_name}`)
+              .limit(1)
+              .maybeSingle();
+            if (cust && typeof cust.outstanding_balance === 'number') {
+              customerBalanceText = `\n📒 <b>QKhata Outstanding:</b> ₹${Math.round(cust.outstanding_balance)}`;
+            }
+          } catch (custErr) {}
+        }
 
         const pausedDurationMins = Math.floor((session.paused_duration_seconds || 0) / 60);
         const totalDurationMins = Math.max(0, Math.floor((new Date(endFull).getTime() - new Date(startFull).getTime()) / 60000));
@@ -2087,10 +2109,17 @@ You can still access other businesses associated with your Telegram account.`, {
         let msg = `🎱 <b>Session Details</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Player:</b> ${session.customer_name}\n<b>Game:</b> ${session.game_type}\n<b>Started:</b> ${formatTimeReadable(startFull)}\n<b>Current Time:</b> ${formatTimeReadable(endFull)}\n<b>Duration:</b> ${totalText}\n`;
         if (pausedDurationMins > 0) msg += `<b>Paused Time:</b> ${pausedText}\n`;
         msg += `<b>Billable Time:</b> ${billableDuration}\n`;
-        if (serverBillingRes && serverBillingRes.totalDiscountAmount > 0) {
-          msg += `<b>Subtotal:</b> ₹${serverBillingRes.totalBaseCost}\n<b>Discount:</b> -₹${serverBillingRes.totalDiscountAmount} (${serverBillingRes.discountAppliedLabel})\n`;
+        if (serverBillingRes) {
+          msg += `🎮 <b>Game Charges:</b> ₹${Math.round(serverBillingRes.baseTableCost)}\n`;
+          msg += `🍔 <b>F&B Orders:</b> ₹${Math.round(serverBillingRes.baseFoodCost || session.food_cost || 0)}\n`;
+          if (serverBillingRes.totalDiscountAmount > 0) {
+            msg += `🏷️ <b>Discount:</b> -₹${serverBillingRes.totalDiscountAmount} (${serverBillingRes.discountAppliedLabel})\n`;
+          }
         }
-        msg += `<b>Current Bill:</b> ${billText}`;
+        msg += `💰 <b>Current Bill:</b> ${billText}`;
+        if (customerBalanceText) {
+          msg += customerBalanceText;
+        }
         
         let buttons: any[] = [];
         buttons.push([
@@ -2599,38 +2628,29 @@ Select Game Type:`;
            return NextResponse.json({ ok: true });
         }
         
-        // Let's generate slots from 10:00 to 22:00 for the first available table
-        // This is a simplified slot selection for Telegram
-        const tableId = tables[0].id; // Pick first table
-        const availableSlots = [];
-        
-        for (let h = 10; h <= 22; h++) {
-            const startMins = h * 60;
-            const res = await bookingService.checkTableAvailability(business.id, tableId, dateStr, startMins, 60);
-            if (res.available) {
-                availableSlots.push({
-                   time: `${h.toString().padStart(2, '0')}:00`,
-                   mins: startMins
-                });
-            }
-        }
-        
-        if (availableSlots.length === 0) {
+        // Authoritative slot generation supporting all tables and overnight hours
+        const slots = await bookingService.getAvailableSlots(business.id, gameType, dateStr, 60);
+
+        if (slots.length === 0) {
            if (messageId) await editTelegramMessageText(chatId, messageId, `❌ No slots available on ${dateStr}.`);
            return NextResponse.json({ ok: true });
         }
-        
-        const slotButtons = availableSlots.map(s => ({
-            text: s.time,
-            callback_data: `bk_time_${tableId}_${s.mins}_${gameType}_${numPlayers}_${dateStr}`
-        }));
-        
-        // Show first 6 slots max to avoid massive keyboards
-        const buttons = chunkArray(slotButtons.slice(0, 6), 2);
-        
+
+        const slotButtons = slots.map(s => {
+            const parts = s.time.split(':').map(Number);
+            const mins = (parts[0] || 0) * 60 + (parts[1] || 0);
+            return {
+                text: `${s.displayTime || s.time} (${s.tableName})`,
+                callback_data: `bk_time_${s.tableId}_${mins}_${gameType}_${numPlayers}_${dateStr}`
+            };
+        });
+
+        // Show first 8 available slots for clean mobile Telegram presentation
+        const buttons = chunkArray(slotButtons.slice(0, 8), 2);
+
         const msg = `🕒 <b>Select Time</b>
 
-Table: ${tableId}
+Game: ${gameType}
 Date: ${dateStr}`;
         if (messageId) await editTelegramMessageText(chatId, messageId, msg, { inline_keyboard: buttons });
       }
@@ -2691,16 +2711,21 @@ function isDuplicateUpdate(updateId?: number, callbackQueryId?: string): boolean
 import { getBusinessEntitlement } from '@/lib/entitlements';
 export async function POST(request: Request) {
   try {
-    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+    const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'qcontrol_secure_webhook_123';
     const clientSecret = request.headers.get('x-telegram-bot-api-secret-token');
 
-    // Strict secret verification: If TELEGRAM_WEBHOOK_SECRET is set, require valid token
-    if (WEBHOOK_SECRET) {
-      if (!clientSecret || clientSecret !== WEBHOOK_SECRET) {
-        console.warn('Unauthorized Telegram Webhook attempt: invalid or missing secret token.');
-        return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
-      }
-    } else if (clientSecret && clientSecret !== 'qcontrol_secure_webhook_123') {
+    // Strict secret verification: require valid x-telegram-bot-api-secret-token
+    if (!clientSecret) {
+      console.warn('Unauthorized Telegram Webhook attempt: missing secret token header.');
+      return NextResponse.json({ error: 'Unauthorized: Missing secret token' }, { status: 401 });
+    }
+
+    const secretBuf = Buffer.from(WEBHOOK_SECRET);
+    const clientBuf = Buffer.from(clientSecret);
+    const isValid = secretBuf.length === clientBuf.length && crypto.timingSafeEqual(secretBuf, clientBuf);
+
+    if (!isValid) {
+      console.warn('Unauthorized Telegram Webhook attempt: invalid secret token.');
       return NextResponse.json({ error: 'Unauthorized: Invalid secret token' }, { status: 401 });
     }
 

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList, sendWhatsAppImage, sendWhatsAppTypingIndicator } from '@/lib/whatsapp';
 import { bookingService } from '@/lib/services/bookingService';
 import { qcontrolIntelligence } from '@/lib/services/qcontrolIntelligence';
+import { promptInjectionDefense } from '@/lib/security/promptInjectionDefense';
 
 export async function processWhatsAppMessage(body: any, correlationId?: string) {
   const entry = body.entry?.[0];
@@ -62,6 +63,20 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
   const listReplyId = message.type === 'interactive' && message.interactive?.type === 'list_reply' ? message.interactive.list_reply.id : null;
   const incomingText = buttonReplyId || listReplyId || text || (isLocation ? '[Location Shared]' : '');
   const lower = (incomingText || '').toLowerCase().trim();
+
+  // Security Gate: Sub-millisecond prompt injection & jailbreak defense
+  if (text) {
+    const securityCheck = promptInjectionDefense.scan(text);
+    if (securityCheck.isSuspicious) {
+      console.warn(`[Security Alert] Inbound message from ${phone} flagged for ${securityCheck.threatType} (Score: ${securityCheck.riskScore})`);
+      await sendWhatsAppText(
+        phone,
+        securityCheck.deflectionResponse || 'I am QControl’s reservation assistant. How can I assist you with booking a table today?',
+        false
+      );
+      return;
+    }
+  }
 
   // 3. Resolve Business Context
   let detectedBusiness: any = null;

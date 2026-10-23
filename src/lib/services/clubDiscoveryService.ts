@@ -3,6 +3,7 @@ import { bookingService } from '@/lib/services/bookingService';
 import { googleRatingsService } from '@/lib/services/googleRatingsService';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { getGoogleMapsDirectionsUrl, calculateDistanceKm, formatDistance } from '@/lib/utils/locationUtils';
+import { resolveBusinessConfig, inspectOperatingHours } from '@/lib/utils/operatingDayUtils';
 
 export interface ClubDiscoveryQuery {
   locationQuery?: string;
@@ -70,17 +71,16 @@ export const clubDiscoveryService = {
       return [];
     }
 
-    const recommendations: ClubRecommendation[] = [];
-
     // Filter out archived or demo test clubs
     const activeClubs = businesses.filter(b => 
       !b.business_name.toLowerCase().includes('archived') &&
       b.tables && b.tables.length > 0
     );
 
-    for (const b of activeClubs) {
+    // Evaluate active clubs concurrently for fast response times
+    const evalPromises = activeClubs.map(async (b) => {
       const tables = b.tables || [];
-      if (tables.length === 0) continue;
+      if (tables.length === 0) return null;
 
       // Extract unique games supported by this club
       const availableGames = Array.from(new Set(
@@ -95,7 +95,7 @@ export const clubDiscoveryService = {
       });
 
       // If club has tables for requested game, evaluate
-      if (matchingTables.length === 0 && normGame) continue;
+      if (matchingTables.length === 0 && normGame) return null;
 
       // Compute pricing breakdown for all games offered
       const pricingBreakdown: Record<string, number> = {};
@@ -109,7 +109,7 @@ export const clubDiscoveryService = {
 
       // If budget specified and exceeds, skip
       if (maxBudgetPerHour && ratePerHour > maxBudgetPerHour) {
-        continue;
+        return null;
       }
 
       // Check slot availability
@@ -117,13 +117,18 @@ export const clubDiscoveryService = {
 
       let isAvailableForRequestedTime = false;
       if (startTime) {
-        const reqParts = startTime.split(':');
-        const reqStartMins = parseInt(reqParts[0], 10) * 60 + parseInt(reqParts[1], 10);
-        for (const t of matchingTables) {
-          const check = await bookingService.checkTableAvailability(b.id, t.id, dateStr, reqStartMins, durationMins);
-          if (check.available) {
-            isAvailableForRequestedTime = true;
-            break;
+        const normStart = startTime.trim().substring(0, 5);
+        if (availableSlots.some(s => s.time === normStart)) {
+          isAvailableForRequestedTime = true;
+        } else {
+          const reqParts = startTime.split(':');
+          const reqStartMins = parseInt(reqParts[0], 10) * 60 + parseInt(reqParts[1], 10);
+          for (const t of matchingTables) {
+            const check = await bookingService.checkTableAvailability(b.id, t.id, dateStr, reqStartMins, durationMins);
+            if (check.available) {
+              isAvailableForRequestedTime = true;
+              break;
+            }
           }
         }
       }
@@ -180,7 +185,12 @@ export const clubDiscoveryService = {
         longitude: b.longitude,
       });
 
-      recommendations.push({
+      // Genuine operating hours
+      const bConfig = resolveBusinessConfig(b);
+      const bHoursSummary = inspectOperatingHours(bConfig);
+      const operatingHours = `${bHoursSummary.openTimeFormatted} – ${bHoursSummary.closeTimeFormatted}`;
+
+      return {
         businessId: b.id,
         businessName: b.business_name,
         address: b.address || 'Address on request',
@@ -192,7 +202,7 @@ export const clubDiscoveryService = {
         sampleAvailableSlots: availableSlots.slice(0, 4).map(s => s.time),
         ratePerHour,
         pricingBreakdown,
-        operatingHours: '11:00 AM – 11:30 PM',
+        operatingHours,
         directionsUrl,
         recommendationReason,
         isAvailableForRequestedTime,
@@ -201,8 +211,11 @@ export const clubDiscoveryService = {
         googleRating,
         googleReviewCount,
         googleRatingDisplay,
-      });
-    }
+      } as ClubRecommendation;
+    });
+
+    const evaluatedResults = await Promise.all(evalPromises);
+    const recommendations: ClubRecommendation[] = evaluatedResults.filter((r): r is ClubRecommendation => r !== null);
 
     // Rank recommendations:
     // 1. Closest distance (if geo-coordinates available)
@@ -212,11 +225,11 @@ export const clubDiscoveryService = {
     // 5. Most available slots
     recommendations.sort((a, b) => {
       // Distance-first sort when geo is available
-      if (a.distanceKm !== null && b.distanceKm !== null) {
+      if (typeof a.distanceKm === 'number' && typeof b.distanceKm === 'number') {
         if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
-      } else if (a.distanceKm !== null) {
+      } else if (typeof a.distanceKm === 'number') {
         return -1;
-      } else if (b.distanceKm !== null) {
+      } else if (typeof b.distanceKm === 'number') {
         return 1;
       }
 
@@ -257,6 +270,6 @@ export const clubDiscoveryService = {
     });
 
     // Filter by max distance
-    return all.filter(c => c.distanceKm !== null && c.distanceKm <= maxDistanceKm);
+    return all.filter(c => typeof c.distanceKm === 'number' && c.distanceKm <= maxDistanceKm);
   },
 };

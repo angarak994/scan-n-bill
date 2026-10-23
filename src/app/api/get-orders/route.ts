@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { parseOrderNotification } from '@/lib/services/foodOrderService';
 
 export async function GET(request: Request) {
   try {
@@ -24,25 +25,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Filter by session_id embedded in the message
-    // Format: itemsJson|orderTotal|session_id
     const orders: any[] = [];
     notifs?.forEach(notif => {
-      const parts = notif.message.split('|');
-      if (parts.length >= 3 && parts[parts.length - 1] === session_id) {
-        try {
-          const itemsJson = parts.slice(0, parts.length - 2).join('|');
-          const cart = JSON.parse(itemsJson);
-          const total = parseFloat(parts[parts.length - 2]);
-          orders.push({
-            cart,
-            total,
-            status: notif.type.replace('order_', ''),
-            timestamp: notif.created_at
-          });
-        } catch (e) {
-          console.error("Failed to parse order:", e);
-        }
+      const parsed = parseOrderNotification(notif.message);
+      if (parsed && parsed.sessionId === session_id) {
+        orders.push({
+          cart: parsed.rawCart,
+          total: parsed.orderTotal,
+          status: notif.type.replace('order_', ''),
+          timestamp: notif.created_at
+        });
       }
     });
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { calculateCost, getCurrentRate } from '@/lib/billing';
+import { calculateCost, getCurrentRate, applySessionDiscounts } from '@/lib/billing';
 import { supabase } from '@/lib/supabaseClient';
 
 function formatElapsed(totalSeconds: number) {
@@ -32,18 +32,20 @@ function LiveTimer({ session }: { session: any }) {
       setElapsedSeconds(billableSecs);
       
       const effectiveEndMs = session.paused_at ? new Date(session.paused_at).getTime() : now;
-      const { cost } = calculateCost(
+      const { cost: rawTableCost } = calculateCost(
         startMs, 
         effectiveEndMs, 
         session.game_type, 
         session.pricingRules, 
         session.num_players || 1, 
-        session.discount, 
+        undefined, 
         session.paused_duration_seconds || 0, 
         session.locked_rate, 
         session.locked_rate_name
       );
-      setCurrentCost(cost);
+      const rawFoodCost = session.food_cost || 0;
+      const disc = applySessionDiscounts(rawTableCost, rawFoodCost, session.discount);
+      setCurrentCost(disc.finalTotalCost);
       setCurrentActiveRate(getCurrentRate(session.game_type, effectiveEndMs, session.pricingRules, session.num_players || 1).rate);
 
       if (billableSecs >= 3600 && !notifiedOneHour) {
@@ -116,12 +118,10 @@ function LiveTimer({ session }: { session: any }) {
             <div className="flex flex-col items-center mt-4">
               <p className="text-sm text-gray-500 uppercase tracking-wider font-bold">Food Cost</p>
               <p className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">
-                {session.discount && session.discount.applyToFood && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) ? (
+                {session.discount && session.discount.applyToFood && session.discount.percent && session.discount.percent > 0 ? (
                   <>
                     <span className="text-gray-400 line-through text-lg mr-2">₹{session.food_cost}</span>
-                    ₹{session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent)
-                      ? Math.max(0, session.food_cost - (session.discount.amount || 0))
-                      : Math.round(session.food_cost * (1 - ((session.discount.percent || 0)/100)))}
+                    ₹{Math.round(session.food_cost * (1 - ((session.discount.percent || 0)/100)))}
                   </>
                 ) : (
                   `₹${session.food_cost}`
@@ -135,13 +135,11 @@ function LiveTimer({ session }: { session: any }) {
       <div className="mt-4 flex flex-col gap-2 text-center w-full max-w-xs mx-auto">
         <p className="text-gray-500 dark:text-gray-400 font-medium">
           Active Rate: 
-          {session.discount && ((session.discount.percent && session.discount.percent > 0) || (session.discount.amount && session.discount.amount > 0)) ? (
+          {session.discount && session.discount.percent && session.discount.percent > 0 ? (
             <>
               <span className="line-through mx-2 text-gray-400">₹{currentActiveRate}</span>
               <span className="text-green-600 font-bold">
-                ₹{session.discount.type === 'fixed' || (session.discount.amount && !session.discount.percent)
-                  ? Math.max(0, currentActiveRate - (session.discount.amount || 0))
-                  : Math.round(currentActiveRate * (1 - ((session.discount.percent || 0)/100)))} / hour
+                ₹{Math.round(currentActiveRate * (1 - ((session.discount.percent || 0)/100)))} / hour
               </span>
             </>
           ) : (
@@ -180,6 +178,8 @@ export default function SessionClient({ initialState, business_id, table_id, gam
   const [isEnding, setIsEnding] = useState(false);
   const [cart, setCart] = useState<{ [key: string]: number }>({});
   const [isOrdering, setIsOrdering] = useState(false);
+  const [isFoodMenuOpen, setIsFoodMenuOpen] = useState(true);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [billModalData, setBillModalData] = useState<{ duration: string; cost: number; end_time: string } | null>(null);
 
   const fetchTableState = useCallback(async () => {
@@ -214,10 +214,10 @@ export default function SessionClient({ initialState, business_id, table_id, gam
         });
       } else if (data.status === 'active') {
         setSession((prev) => {
-          // If we are already on the "prompt end" or "completed" screen, stay there.
-          if (prev.status === 'prompt_end' || prev.status === 'completed' || billModalData !== null) return prev;
+          // If bill modal is open or session completed, stay there
+          if (prev.status === 'completed' || billModalData !== null) return prev;
 
-          // Otherwise, sync smoothly to the live timer (whether we were idle, loading, or already active).
+          // Otherwise, sync smoothly to the live timer
           return {
             status: 'active',
             id: data.id,
@@ -252,7 +252,7 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     // Initial fetch (deferred to avoid synchronous setState lint warning)
     setTimeout(() => fetchTableState(), 0);
 
-    // Subscribe to realtime updates for this specific table to replace heavy interval polling
+    // Subscribe to realtime updates for this specific table
     const channel = supabase.channel(`session_updates_${table_id}`)
       .on('postgres_changes', { 
         event: '*', 
@@ -272,12 +272,27 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       })
       .subscribe();
 
+    // Heartbeat fallback polling (10s) to keep tab in sync even if websocket drops or RLS blocks anon channel
+    const pollInterval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchTableState();
+      }
+    }, 10000);
+
+    // Immediate sync on tab foreground / screen unlock
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchTableState();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [fetchTableState, table_id, business_id]);
-
-
 
   useEffect(() => {
     if (session.status === 'completed' && !billModalData && (session as any).start_time) {
@@ -292,22 +307,26 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       const optimisticDuration = formatElapsed(billableSecs);
       
       const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
-      const { cost: optimisticCost } = calculateCost(
+      const { cost: rawTableCost } = calculateCost(
         startMs, 
         effectiveEndMs, 
         (session as any).game_type, 
         (session as any).pricingRules, 
         (session as any).num_players || 1, 
-        (session as any).discount, 
+        undefined, 
         (session as any).paused_duration_seconds || 0, 
         (session as any).locked_rate, 
         (session as any).locked_rate_name
       );
+
+      const rawFoodCost = (session as any).food_cost || 0;
+      const disc = applySessionDiscounts(rawTableCost, rawFoodCost, (session as any).discount);
+      const totalOptimisticCost = disc.finalTotalCost;
       
       setTimeout(() => {
         setBillModalData({ 
           duration: optimisticDuration, 
-          cost: optimisticCost, 
+          cost: totalOptimisticCost, 
           end_time: new Date().toISOString() 
         });
       }, 0);
@@ -403,20 +422,25 @@ export default function SessionClient({ initialState, business_id, table_id, gam
     const optimisticDuration = formatElapsed(billableSecs);
     
     const effectiveEndMs = (session as any).paused_at ? new Date((session as any).paused_at).getTime() : now;
-    const { cost: optimisticCost } = calculateCost(
+    const { cost: rawTableCost } = calculateCost(
       startMs, 
       effectiveEndMs, 
       (session as any).game_type, 
       (session as any).pricingRules, 
       (session as any).num_players || 1, 
-      (session as any).discount, 
+      undefined, 
       (session as any).paused_duration_seconds || 0, 
       (session as any).locked_rate, 
       (session as any).locked_rate_name
     );
+
+    const rawFoodCost = (session as any).food_cost || 0;
+    const disc = applySessionDiscounts(rawTableCost, rawFoodCost, (session as any).discount);
+    const totalOptimisticCost = disc.finalTotalCost;
+
     setBillModalData({ 
       duration: optimisticDuration, 
-      cost: optimisticCost, 
+      cost: totalOptimisticCost, 
       end_time: new Date().toISOString() 
     });
 
@@ -605,15 +629,12 @@ export default function SessionClient({ initialState, business_id, table_id, gam
             </button>
             <button
               onClick={() => {
-                const nonce = Math.random().toString(36).substring(2, 10);
-                const newUrl = new URL(window.location.href);
-                newUrl.searchParams.set('_scan', nonce);
-                router.replace(newUrl.pathname + newUrl.search);
+                setSession((prev: any) => ({ ...prev, status: 'active' }));
                 fetchTableState();
               }}
               className="w-full mt-2 px-6 py-4 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-semibold text-lg transition-all"
             >
-              Return to Live View
+              Return to Live Timer
             </button>
           </>
         )}
@@ -621,62 +642,113 @@ export default function SessionClient({ initialState, business_id, table_id, gam
         {session.status === 'active' && (
           <>
             <LiveTimer session={session} />
+
+            {/* Direct End Session Option */}
+            <div className="w-full mt-2">
+              {!showEndConfirm ? (
+                <button
+                  onClick={() => setShowEndConfirm(true)}
+                  className="w-full py-2.5 px-4 rounded-xl border border-red-500/30 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 text-xs transition-all uppercase tracking-wider"
+                >
+                  🛑 End Session & Pay Bill
+                </button>
+              ) : (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 p-4 rounded-xl text-left space-y-2">
+                  <p className="text-sm font-bold text-red-700 dark:text-red-300">End this session now?</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Your final bill will be generated immediately.</p>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleEnd}
+                      disabled={isEnding}
+                      className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs"
+                    >
+                      {isEnding ? 'Ending...' : 'Yes, End Session'}
+                    </button>
+                    <button
+                      onClick={() => setShowEndConfirm(false)}
+                      className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-semibold text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
         
-        {(session as any).menuItems && (session as any).menuItems.length > 0 && (
-          <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-6">
-            <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Food & Drinks Menu</h2>
-            <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-              {(session as any).menuItems.map((item: any) => (
-                <div key={item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 smooth-transition hover:border-gray-300 dark:hover:border-gray-500 hover:shadow-sm">
-                  <div>
-                    <p className="font-bold text-gray-800 dark:text-gray-200">{item.name}</p>
-                    <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
-                  </div>
-                  {session.status === 'active' && (
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={() => setCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }))}
-                        className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 font-bold"
-                      >
-                        -
-                      </button>
-                      <span className="w-4 text-center font-bold">{cart[item.name] || 0}</span>
-                      <button 
-                        onClick={() => setCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
-                        className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold"
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            
-            {session.status === 'active' && Object.values(cart).some(q => q > 0) && (
+        {session.status === 'active' && (session as any).menuItems && (session as any).menuItems.length > 0 && (
+          <div className="w-full mt-4 text-left border-t border-gray-200 dark:border-gray-700 pt-5">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                <span>🍔</span>
+                <span>Food & Drinks Menu</span>
+              </h2>
               <button
-                onClick={handlePlaceOrder}
-                disabled={isOrdering}
-                className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all btn-premium"
+                onClick={() => setIsFoodMenuOpen(!isFoodMenuOpen)}
+                className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline"
               >
-                {isOrdering ? 'Placing Order...' : `Place Order (₹${Object.entries(cart).reduce((acc, [name, qty]) => {
-                  const price = session.menuItems.find((i: any) => i.name === name)?.price || 0;
-                  return acc + (price * qty);
-                }, 0)})`}
+                {isFoodMenuOpen ? 'Hide Menu' : 'Order Food & Drinks'}
               </button>
+            </div>
+
+            {isFoodMenuOpen && (
+              <>
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {((session as any).menuItems || [])
+                    .filter((item: any) => item && item.status !== 'archived' && !item.is_deleted && item.available !== false)
+                    .sort((a: any, b: any) => {
+                      const aPin = a.isPinned || a.is_pinned ? 1 : 0;
+                      const bPin = b.isPinned || b.is_pinned ? 1 : 0;
+                      return bPin - aPin;
+                    })
+                    .map((item: any) => {
+                      const cleanName = String(item.name || '').replace(/🔥/g, '').trim();
+                      const isPinned = item.isPinned || item.is_pinned;
+                      return (
+                        <div key={item.id || item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 smooth-transition hover:border-gray-300 dark:hover:border-gray-500 hover:shadow-sm">
+                          <div>
+                            <p className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                              {isPinned && <span className="text-xs">📌</span>}
+                              <span>{cleanName}</span>
+                            </p>
+                            <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button 
+                              onClick={() => setCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }))}
+                              className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 font-bold"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-center font-bold">{cart[item.name] || 0}</span>
+                            <button 
+                              onClick={() => setCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
+                              className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+                
+                {Object.values(cart).some(q => q > 0) && (
+                  <button
+                    onClick={handlePlaceOrder}
+                    disabled={isOrdering}
+                    className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold shadow-lg transition-all btn-premium"
+                  >
+                    {isOrdering ? 'Placing Order...' : `Place Order (₹${Object.entries(cart).reduce((acc, [name, qty]) => {
+                      const price = (session as any).menuItems.find((i: any) => i.name === name || i.name?.trim() === name?.trim())?.price || 0;
+                      return acc + (price * qty);
+                    }, 0)})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
-        )}
-
-        {session.status === 'active' && (
-          <>
-
-            <div className="w-full mt-4 px-6 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border border-dashed border-black/10 dark:border-white/10 text-gray-600 dark:text-gray-400 text-center text-sm">
-              To end this session, please scan the table's QR code again.
-            </div>
-          </>
         )}
 
         {session.status === 'completed' && !billModalData && (

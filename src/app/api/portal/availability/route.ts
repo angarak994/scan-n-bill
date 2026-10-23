@@ -49,20 +49,22 @@ export async function GET(request: Request) {
     const { data: bookings, error: bookingsError } = await query;
     if (bookingsError) throw bookingsError;
 
-    // We can also fetch the waitlist
-    const { data: waitlists, error: waitlistError } = await supabase
-        .from('waitlists')
-        .select('game_type, party_size')
-        .eq('business_id', businessId)
-        .eq('status', 'waiting');
-        
-    if (waitlistError) throw waitlistError;
+    // Optional waitlist check (non-blocking if table does not exist)
+    let waitlistList: any[] = [];
+    try {
+      const { data: waitlists } = await supabase
+          .from('waitlists')
+          .select('game_type, party_size')
+          .eq('business_id', businessId)
+          .eq('status', 'waiting');
+      if (waitlists) waitlistList = waitlists;
+    } catch {}
 
     return withCorsHeaders(NextResponse.json({ 
         active_sessions: activeSessions || [],
         upcoming_bookings: bookings || [],
-        waitlist_count: waitlists?.length || 0,
-        waitlist_details: waitlists || []
+        waitlist_count: waitlistList.length,
+        waitlist_details: waitlistList
     }, { status: 200 }), request);
 
   } catch (error: any) {

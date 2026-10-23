@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
-import { calculateDistanceKm, formatDistance, sortByDistance } from '../src/lib/utils/locationUtils';
+import { calculateDistanceKm, formatDistance } from '../src/lib/utils/locationUtils';
 import { venuePhotoService } from '../src/lib/services/venuePhotoService';
 import { googleRatingsService } from '../src/lib/services/googleRatingsService';
 import { clubDiscoveryService } from '../src/lib/services/clubDiscoveryService';

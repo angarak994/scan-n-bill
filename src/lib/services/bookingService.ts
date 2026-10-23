@@ -1,14 +1,33 @@
 import { supabase } from '@/lib/supabaseClient';
 import { getCurrentISTDateStr } from '@/lib/billing';
 import { businessManager } from '@/lib/businessManager';
+import { eventNotificationService } from '@/lib/services/eventNotificationService';
+import {
+  OperatingHoursConfig,
+  DEFAULT_OPERATING_HOURS,
+  resolveBusinessConfig,
+  inspectOperatingHours,
+  formatTimeTo12Hour,
+  formatMinutesTo12Hour,
+  slotToInstants,
+  isWithinOperatingHours,
+  generateCandidateSlots,
+  doInstantsOverlap,
+  getCurrentOperatingDay,
+  timeStringToMinutes,
+  minutesToTimeString,
+  zonedTimeToUtc,
+  getTimezoneParts,
+  SlotInstantRange,
+} from '@/lib/utils/operatingDayUtils';
 
 export interface BookingCreationParams {
   business_id: string;
   table_id: string;
   customer_name: string;
   customer_phone: string;
-  booking_date: string;
-  start_time: string; // "14:00" or "14:00:00"
+  booking_date: string; // Operating Day: "YYYY-MM-DD"
+  start_time: string; // "14:00" or "01:00" or "14:00:00"
   duration_minutes: number;
   game_type?: string;
   num_players?: number;
@@ -33,6 +52,21 @@ export interface CustomerHistorySummary {
     game_type: string;
     status: string;
   }>;
+}
+
+export interface AvailabilityCheckOptions {
+  cachedBusiness?: any;
+  cachedActiveSessions?: any[];
+  cachedExistingBookings?: any[];
+}
+
+export interface AvailableSlotItem {
+  time: string; // "01:00"
+  displayTime: string; // "01:00 AM"
+  tableId: string;
+  tableName: string;
+  ratePerHour: number;
+  isOvernight: boolean;
 }
 
 export const bookingService = {
@@ -72,7 +106,7 @@ export const bookingService = {
   },
 
   /**
-   * Checks if a table is available for a given time slot.
+   * Checks if a table is available for a given time slot on a specific operating day.
    * Resolves with { available: true } or { available: false, reason: string }.
    */
   async checkTableAvailability(
@@ -80,23 +114,29 @@ export const bookingService = {
     tableId: string,
     bookingDate: string,
     startTimeOrMins: number | string,
-    durationMins: number = 60
+    durationMins: number = 60,
+    options?: AvailabilityCheckOptions
   ): Promise<{ available: boolean; isAvailable: boolean; reason?: string }> {
-    let startMins: number;
-    if (typeof startTimeOrMins === 'string') {
-      const parts = startTimeOrMins.split(':').map(Number);
-      startMins = (parts[0] || 0) * 60 + (parts[1] || 0);
+    // 1. Normalize time string ("HH:mm")
+    let timeStr: string;
+    if (typeof startTimeOrMins === 'number') {
+      timeStr = minutesToTimeString(startTimeOrMins);
     } else {
-      startMins = Number(startTimeOrMins) || 0;
+      const parts = String(startTimeOrMins).trim().split(':');
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     }
-    const endMins = startMins + durationMins;
 
-    // 0. Verify business and table existence
-    const business = await businessManager.getBusiness(businessId);
+    // 2. Resolve business and operating configuration
+    const business = options?.cachedBusiness || await businessManager.getBusiness(businessId);
     if (!business) {
       return { available: false, isAvailable: false, reason: 'Club not found or inactive.' };
     }
 
+    const config: OperatingHoursConfig = resolveBusinessConfig(business);
+
+    // 3. Resolve table existence and aliases
     const resolved = this.resolveTable(business.tables || [], tableId);
     if (!resolved) {
       return { available: false, isAvailable: false, reason: `Table "${tableId}" does not exist at ${business.business_name}.` };
@@ -104,102 +144,108 @@ export const bookingService = {
 
     const { canonicalId, canonicalName, aliases } = resolved;
 
-    // 1. Operating Hours Check (Clubs operate from 10:00 AM to 11:30 PM)
-    const CLUB_OPEN_MINS = 10 * 60; // 10:00 AM
-    const CLUB_CLOSE_MINS = 23 * 60 + 30; // 11:30 PM
-    if (startMins < CLUB_OPEN_MINS || endMins > CLUB_CLOSE_MINS) {
+    // 4. Operating Hours Check (Fully supports overnight and after-midnight hours e.g. 18:00 to 03:00)
+    const hoursCheck = isWithinOperatingHours(timeStr, durationMins, config);
+    if (!hoursCheck.valid) {
       return {
         available: false,
         isAvailable: false,
-        reason: `${business.business_name} operates from 10:00 AM to 11:30 PM. Please select a time within operating hours.`
+        reason: hoursCheck.reason || `${business.business_name} is closed at this time.`
       };
     }
 
-    // 2. Past time validation for today's bookings
-    const todayStr = getCurrentISTDateStr();
-    const nowIst = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
-    const [nowH, nowM] = nowIst.split(':').map(Number);
-    const nowMins = nowH * 60 + nowM;
+    // 5. Convert to unambiguous UTC instants
+    const slotInstants = slotToInstants(bookingDate, timeStr, durationMins, config);
+    const now = new Date();
+    const currentOpDay = getCurrentOperatingDay(config, now);
 
-    if (bookingDate === todayStr && startMins < nowMins - 15) {
+    // 6. Past time validation
+    if (bookingDate === currentOpDay) {
+      const leadMs = (config.last_booking_lead_minutes || 0) * 60 * 1000;
+      if (slotInstants.startInstant.getTime() <= now.getTime() + leadMs) {
+        return {
+          available: false,
+          isAvailable: false,
+          reason: 'Requested time slot has already passed for today.'
+        };
+      }
+    } else if (bookingDate < currentOpDay) {
       return {
         available: false,
         isAvailable: false,
-        reason: 'Requested time slot has already passed for today.'
+        reason: 'Requested operating date has already passed.'
       };
     }
 
-    // 3. Live Active Sessions Check (Never report an occupied table as available)
-    if (bookingDate === todayStr) {
-      const { data: activeSessions } = await supabase
+    // 7. Live Active Sessions Check (Never report an occupied table as available)
+    let activeSessions: any[] = [];
+    if (options?.cachedActiveSessions) {
+      activeSessions = options.cachedActiveSessions.filter(s => aliases.includes(s.table_id));
+    } else {
+      const { data } = await supabase
         .from('sessions')
         .select('id, table_id, start_time, duration')
         .eq('business_id', businessId)
         .in('table_id', aliases)
         .eq('status', 'ACTIVE');
+      activeSessions = data || [];
+    }
 
-      if (activeSessions && activeSessions.length > 0) {
-        for (const session of activeSessions) {
-          let sessionStartMins = nowMins;
-          if (session.start_time) {
-            try {
-              const sessionDate = new Date(session.start_time);
-              const sessionIst = sessionDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
-              const [sH, sM] = sessionIst.split(':').map(Number);
-              sessionStartMins = sH * 60 + sM;
-            } catch {}
-          }
+    if (activeSessions.length > 0) {
+      for (const session of activeSessions) {
+        let sessionStart = session.start_time ? new Date(session.start_time) : now;
+        if (isNaN(sessionStart.getTime())) sessionStart = now;
 
-          // A live playing session occupies the table currently and blocks upcoming slots
-          // for at least 30 minutes into the future unless explicitly ended
-          const occupiedUntilMins = Math.max(sessionStartMins + 45, nowMins + 30);
+        // A live session occupies the table now and blocks upcoming slots for at least 30 minutes into future
+        const occupiedUntil = new Date(Math.max(sessionStart.getTime() + 45 * 60 * 1000, now.getTime() + 30 * 60 * 1000));
 
-          if (Math.max(startMins, sessionStartMins) < Math.min(endMins, occupiedUntilMins)) {
-            return {
-              available: false,
-              isAvailable: false,
-              reason: `Table ${canonicalName} is currently occupied by a live playing session.`
-            };
-          }
+        if (doInstantsOverlap(slotInstants.startInstant, slotInstants.endInstant, sessionStart, occupiedUntil, 0)) {
+          return {
+            available: false,
+            isAvailable: false,
+            reason: `Table ${canonicalName} is currently occupied by a live playing session.`
+          };
         }
       }
     }
 
-    // 4. Existing Reservations Check (confirmed, active, and pending holds)
-    const { data: existingBookings, error: fetchError } = await supabase
-      .from('bookings')
-      .select('id, table_id, start_time, duration_minutes, end_time, status')
-      .eq('business_id', businessId)
-      .in('table_id', aliases)
-      .eq('booking_date', bookingDate)
-      .in('status', ['confirmed', 'active', 'pending']);
+    // 8. Existing Reservations Check (confirmed, active, and pending holds)
+    let existingBookings: any[] = [];
+    if (options?.cachedExistingBookings) {
+      existingBookings = options.cachedExistingBookings.filter(b => aliases.includes(b.table_id));
+    } else {
+      // Calculate adjacent operating days to prevent overnight slot misses
+      const opDateObj = new Date(`${bookingDate}T12:00:00Z`);
+      const prevDate = new Date(opDateObj.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const nextDate = new Date(opDateObj.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    if (fetchError) {
-      console.error('Error fetching existing bookings for availability check:', fetchError);
-      return { available: false, isAvailable: false, reason: 'Failed to verify table availability due to database error.' };
+      const { data, error: fetchError } = await supabase
+        .from('bookings')
+        .select('id, table_id, booking_date, start_time, duration_minutes, end_time, status')
+        .eq('business_id', businessId)
+        .in('table_id', aliases)
+        .in('booking_date', [prevDate, bookingDate, nextDate])
+        .in('status', ['confirmed', 'active', 'pending']);
+
+      if (fetchError) {
+        console.error('Error fetching existing bookings for availability check:', fetchError);
+        return { available: false, isAvailable: false, reason: 'Failed to verify table availability due to database error.' };
+      }
+      existingBookings = data || [];
     }
 
-    if (existingBookings && existingBookings.length > 0) {
+    if (existingBookings.length > 0) {
       for (const b of existingBookings) {
-        if (!b.start_time) continue;
-        const bParts = b.start_time.split(':');
-        const bStart = parseInt(bParts[0], 10) * 60 + parseInt(bParts[1], 10);
-        let bEnd = bStart + (Number(b.duration_minutes) || 60);
+        if (!b.start_time || !b.booking_date) continue;
+        const bDuration = Number(b.duration_minutes) || 60;
+        const bInstants = slotToInstants(b.booking_date, b.start_time, bDuration, config);
 
-        if (b.end_time) {
-          const endParts = b.end_time.split(':');
-          const calcEnd = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-          if (calcEnd > bStart) bEnd = calcEnd;
-        }
-
-        // Check time slot overlap: max(start1, start2) < min(end1, end2)
-        if (Math.max(startMins, bStart) < Math.min(endMins, bEnd)) {
-          const slotDisplay = b.start_time.substring(0, 5);
-          const bDuration = Number(b.duration_minutes) || 60;
+        if (doInstantsOverlap(slotInstants.startInstant, slotInstants.endInstant, bInstants.startInstant, bInstants.endInstant, config.buffer_minutes)) {
+          const display = b.start_time.substring(0, 5);
           return {
             available: false,
             isAvailable: false,
-            reason: `Table ${canonicalName} is already booked from ${slotDisplay} (${bDuration} mins).`
+            reason: `Table ${canonicalName} is already booked from ${formatTimeTo12Hour(display)} (${bDuration} mins).`
           };
         }
       }
@@ -210,17 +256,21 @@ export const bookingService = {
 
   /**
    * Generates genuine available slots for a given game type and date.
+   * Uses high-speed single batch queries instead of N+1 database roundtrips.
    */
   async getAvailableSlots(
     businessId: string,
     gameType: string,
     dateStr: string,
     durationMins = 60
-  ): Promise<Array<{ time: string; tableId: string; tableName: string; ratePerHour: number }>> {
+  ): Promise<AvailableSlotItem[]> {
     const business = await businessManager.getBusiness(businessId);
-    if (!business || !business.tables) return [];
+    if (!business || !business.tables || business.tables.length === 0) return [];
 
+    const config: OperatingHoursConfig = resolveBusinessConfig(business);
     const normGame = (gameType || 'pool').toLowerCase();
+
+    // Match tables for this game type
     const matchingTables = (business.tables || []).filter((t: any) => {
       const type = ((t as any).game_type || (t as any).type || 'pool').toLowerCase();
       if (normGame === 'snooker') return type === 'snooker' || type === 'msnooker';
@@ -229,35 +279,131 @@ export const bookingService = {
 
     if (matchingTables.length === 0) return [];
 
-    const availableSlots: Array<{ time: string; tableId: string; tableName: string; ratePerHour: number }> = [];
+    // Calculate adjacent operating days for batch query
+    const opDateObj = new Date(`${dateStr}T12:00:00Z`);
+    const prevDate = new Date(opDateObj.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const nextDate = new Date(opDateObj.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Operating hours: 11:00 AM to 11:00 PM (11 to 23)
-    const isToday = dateStr === getCurrentISTDateStr();
-    const nowIst = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
-    const currentHour = parseInt(nowIst.split(':')[0], 10);
+    // Single parallel batch fetch for active sessions & reservations
+    const [sessionsRes, bookingsRes] = await Promise.all([
+      supabase
+        .from('sessions')
+        .select('id, table_id, start_time, duration')
+        .eq('business_id', businessId)
+        .eq('status', 'ACTIVE'),
+      supabase
+        .from('bookings')
+        .select('id, table_id, booking_date, start_time, duration_minutes, end_time, status')
+        .eq('business_id', businessId)
+        .in('booking_date', [prevDate, dateStr, nextDate])
+        .in('status', ['confirmed', 'active', 'pending']),
+    ]);
 
-    // Calculate hourly rate from pricing_rules
+    const activeSessions = sessionsRes.data || [];
+    const existingBookings = bookingsRes.data || [];
+
+    // Candidate slots across full operating window (including overnight 00:00, 01:00, 02:00)
+    const now = new Date();
+    const candidateSlots = generateCandidateSlots(dateStr, durationMins, config, now);
+
+    // Pricing calculation
     const rules: any = business.pricing_rules?.rules?.[normGame] || {};
     const ratePerHour = Number(rules.rate || rules.baseRatePerHour || (rules.type === 'time_based' ? rules.evening_rate : 200)) || 200;
 
-    for (let h = 11; h <= 22; h++) {
-      if (isToday && h <= currentHour) continue; // Skip past hours today
+    const availableSlots: AvailableSlotItem[] = [];
 
+    // Evaluate candidate slots in-memory
+    for (const slot of candidateSlots) {
       for (const table of matchingTables) {
-        const check = await this.checkTableAvailability(businessId, table.id, dateStr, h * 60, durationMins);
+        const check = await this.checkTableAvailability(
+          businessId,
+          table.id,
+          dateStr,
+          slot.time,
+          durationMins,
+          {
+            cachedBusiness: business,
+            cachedActiveSessions: activeSessions,
+            cachedExistingBookings: existingBookings
+          }
+        );
+
         if (check.available) {
           availableSlots.push({
-            time: `${String(h).padStart(2, '0')}:00`,
+            time: slot.time,
+            displayTime: slot.displayTime,
             tableId: table.id,
             tableName: table.name || table.id,
-            ratePerHour
+            ratePerHour,
+            isOvernight: slot.isOvernight,
           });
-          break; // One table per hour slot is sufficient for recommendation
+          break; // One free table per slot recommendation is sufficient
         }
       }
     }
 
     return availableSlots;
+  },
+
+  /**
+   * Generates intelligent alternative slots when a requested time is unavailable or outside hours.
+   */
+  async getSmartAlternatives(
+    businessId: string,
+    gameType: string,
+    dateStr: string,
+    requestedTimeStr: string,
+    durationMins = 60
+  ): Promise<{
+    hasExactSlot: boolean;
+    requestedSlot: { time: string; displayTime: string; available: boolean; reason?: string };
+    alternatives: Array<AvailableSlotItem & { diffMinutes: number }>;
+  }> {
+    const business = await businessManager.getBusiness(businessId);
+    if (!business) {
+      return {
+        hasExactSlot: false,
+        requestedSlot: { time: requestedTimeStr, displayTime: formatTimeTo12Hour(requestedTimeStr), available: false, reason: 'Club not found' },
+        alternatives: []
+      };
+    }
+
+    // Normalize requested time
+    const reqMins = timeStringToMinutes(requestedTimeStr);
+    const normReqTime = minutesToTimeString(reqMins);
+    const reqDisplay = formatMinutesTo12Hour(reqMins);
+
+    // Check exact availability
+    const allAvailable = await this.getAvailableSlots(businessId, gameType, dateStr, durationMins);
+    const exactMatch = allAvailable.find(s => s.time === normReqTime);
+
+    if (exactMatch) {
+      return {
+        hasExactSlot: true,
+        requestedSlot: { time: normReqTime, displayTime: reqDisplay, available: true },
+        alternatives: []
+      };
+    }
+
+    // Slot is not available: rank nearest available alternatives
+    const rankedAlternatives = allAvailable.map(slot => {
+      const slotMins = timeStringToMinutes(slot.time);
+      // Compute circular or linear difference
+      let diff = Math.abs(slotMins - reqMins);
+      if (diff > 720) diff = 1440 - diff;
+      return { ...slot, diffMinutes: diff };
+    }).sort((a, b) => a.diffMinutes - b.diffMinutes);
+
+    return {
+      hasExactSlot: false,
+      requestedSlot: {
+        time: normReqTime,
+        displayTime: reqDisplay,
+        available: false,
+        reason: 'Requested slot is unavailable.'
+      },
+      alternatives: rankedAlternatives.slice(0, 4) // Top 4 closest slots
+    };
   },
 
   /**
@@ -278,16 +424,43 @@ export const bookingService = {
       idempotency_key
     } = params;
 
+    // 1. Resolve Business and Configuration
+    const business = await businessManager.getBusiness(business_id);
+    if (!business) {
+      return { success: false, reason: 'Business not found.' };
+    }
+
+    const config: OperatingHoursConfig = resolveBusinessConfig(business);
+
+    // 2. Resolve Canonical Table
+    const resolved = this.resolveTable(business.tables || [], table_id);
+    if (!resolved) {
+      return { success: false, reason: `Table ${table_id} does not exist for this club.` };
+    }
+
+    const canonicalTableId = resolved.canonicalId;
+    const aliases = resolved.aliases;
+
+    // 3. Normalize Start Time & Compute Instants
     const parts = start_time.split(':');
-    const startMins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    const endMins = startMins + duration_minutes;
-    const endHours = Math.floor(endMins / 60) % 24;
-    const endMinutes = endMins % 60;
-    const end_time = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}:00`;
-    const formattedStartTime = start_time.length === 5 ? `${start_time}:00` : start_time;
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    const formattedStartTime = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:00`;
+    const cleanTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     const cleanPhone = (customer_phone || '').replace(/\D/g, '');
 
-    // Step 0: Idempotency Check (Prevent duplicate webhooks or rapid double-taps)
+    // 4. Validate Operating Hours Window
+    const hoursCheck = isWithinOperatingHours(cleanTimeStr, duration_minutes, config);
+    if (!hoursCheck.valid) {
+      return { success: false, reason: hoursCheck.reason };
+    }
+
+    // Unambiguous instants
+    const slotInstants = slotToInstants(booking_date, cleanTimeStr, duration_minutes, config);
+    const endTzParts = getTimezoneParts(slotInstants.endInstant, config.timezone);
+    const end_time = `${endTzParts.timeString}:00`;
+
+    // 5. Idempotency Check (Prevent duplicate webhooks or rapid double-taps)
     if (idempotency_key) {
       try {
         const { data: existingByKey } = await supabase
@@ -323,27 +496,13 @@ export const bookingService = {
       }
     }
 
-    // Step 1: Resolve Canonical Table
-    const business = await businessManager.getBusiness(business_id);
-    if (!business) {
-      return { success: false, reason: 'Business not found.' };
-    }
-
-    const resolved = this.resolveTable(business.tables || [], table_id);
-    if (!resolved) {
-      return { success: false, reason: `Table ${table_id} does not exist for this club.` };
-    }
-
-    const canonicalTableId = resolved.canonicalId;
-    const aliases = resolved.aliases;
-
-    // Step 2: Pre-check availability on server
-    const initialCheck = await this.checkTableAvailability(business_id, canonicalTableId, booking_date, startMins, duration_minutes);
+    // 6. Pre-check availability on server
+    const initialCheck = await this.checkTableAvailability(business_id, canonicalTableId, booking_date, cleanTimeStr, duration_minutes);
     if (!initialCheck.available) {
       return { success: false, reason: initialCheck.reason };
     }
 
-    // Step 3: Link or create customer record in customers table
+    // 7. Link or create customer record in customers table
     let customerId: string | null = null;
     if (cleanPhone.length >= 10) {
       try {
@@ -375,7 +534,7 @@ export const bookingService = {
       }
     }
 
-    // Step 4: Insert booking
+    // 8. Insert booking record
     const insertPayload: any = {
       business_id,
       table_id: canonicalTableId,
@@ -421,34 +580,32 @@ export const bookingService = {
       return { success: false, reason: 'Failed to record reservation in database.' };
     }
 
-    // Step 5: Concurrency collision detection (Race condition guard)
+    // 9. Concurrency collision detection (Race condition arbitration)
+    const opDateObj = new Date(`${booking_date}T12:00:00Z`);
+    const prevDate = new Date(opDateObj.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const nextDate = new Date(opDateObj.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
     const { data: conflicts } = await supabase
       .from('bookings')
-      .select('id, start_time, duration_minutes, end_time, created_at')
+      .select('id, booking_date, start_time, duration_minutes, end_time, created_at')
       .eq('business_id', business_id)
       .in('table_id', aliases)
-      .eq('booking_date', booking_date)
+      .in('booking_date', [prevDate, booking_date, nextDate])
       .in('status', ['confirmed', 'active', 'pending'])
       .neq('id', newBooking.id);
 
     if (conflicts && conflicts.length > 0) {
       for (const c of conflicts) {
-        const cParts = c.start_time.split(':');
-        const cStart = parseInt(cParts[0], 10) * 60 + parseInt(cParts[1], 10);
-        let cEnd = cStart + (Number(c.duration_minutes) || 60);
+        if (!c.start_time || !c.booking_date) continue;
+        const cDuration = Number(c.duration_minutes) || 60;
+        const cInstants = slotToInstants(c.booking_date, c.start_time, cDuration, config);
 
-        if (c.end_time) {
-          const endParts = c.end_time.split(':');
-          const calcEnd = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
-          if (calcEnd > cStart) cEnd = calcEnd;
-        }
+        if (doInstantsOverlap(slotInstants.startInstant, slotInstants.endInstant, cInstants.startInstant, cInstants.endInstant, config.buffer_minutes)) {
+          // Collision: Earliest created booking wins; if identical timestamp, lower ID wins
+          const cCreatedAt = new Date(c.created_at).getTime();
+          const newCreatedAt = new Date(newBooking.created_at).getTime();
 
-        if (Math.max(startMins, cStart) < Math.min(endMins, cEnd)) {
-          // Collision: Concede to the earlier created booking
-          if (
-            new Date(c.created_at) < new Date(newBooking.created_at) ||
-            (new Date(c.created_at).getTime() === new Date(newBooking.created_at).getTime() && c.id < newBooking.id)
-          ) {
+          if (cCreatedAt < newCreatedAt || (cCreatedAt === newCreatedAt && c.id < newBooking.id)) {
             await supabase.from('bookings').delete().eq('id', newBooking.id);
             return {
               success: false,
@@ -459,13 +616,10 @@ export const bookingService = {
       }
     }
 
-    // Step 6: Trigger Realtime dashboard sync non-blocking
-    try {
-      await supabase.from('dashboard_syncs').insert({
-        business_id,
-        triggered_by: `booking_${source}_${newBooking.id}`
-      });
-    } catch {}
+    // 10. Trigger Realtime dashboard sync & Telegram owner notifications non-blocking
+    eventNotificationService.notifyBookingCreated(newBooking, business).catch(err => {
+      console.warn('[BookingService] Non-blocking event notification warning:', err?.message);
+    });
 
     return { success: true, booking: newBooking };
   },
@@ -633,12 +787,10 @@ export const bookingService = {
       return { success: false, reason: 'Failed to cancel reservation.' };
     }
 
-    try {
-      await supabase.from('dashboard_syncs').insert({
-        business_id: booking.business_id,
-        triggered_by: `cancel_booking_${bookingId}`
-      });
-    } catch {}
+    // Trigger Realtime dashboard sync & Telegram owner alerts
+    businessManager.getBusiness(booking.business_id).then(biz => {
+      if (biz) eventNotificationService.notifyBookingCancelled(booking, biz).catch(() => {});
+    }).catch(() => {});
 
     return { success: true, booking };
   },
@@ -701,19 +853,22 @@ export const bookingService = {
     }
 
     const duration = newDurationMinutes || booking.duration_minutes || 60;
-    const parts = newStartTime.split(':');
-    const startMins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-    const endMins = startMins + duration;
-    const endHours = Math.floor(endMins / 60) % 24;
-    const endMinutes = endMins % 60;
-    const end_time = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}:00`;
-    const formattedStartTime = newStartTime.length === 5 ? `${newStartTime}:00` : newStartTime;
+    const business = await businessManager.getBusiness(booking.business_id);
+    if (!business) {
+      return { success: false, reason: 'Business not found.' };
+    }
+    const config = resolveBusinessConfig(business);
 
     // Verify availability for the requested new slot
-    const check = await this.checkTableAvailability(booking.business_id, booking.table_id, newDate, startMins, duration);
+    const check = await this.checkTableAvailability(booking.business_id, booking.table_id, newDate, newStartTime, duration);
     if (!check.available) {
       return { success: false, reason: check.reason || 'The requested new slot is not available.' };
     }
+
+    const instants = slotToInstants(newDate, newStartTime, duration, config);
+    const endTzParts = getTimezoneParts(instants.endInstant, config.timezone);
+    const end_time = `${endTzParts.timeString}:00`;
+    const formattedStartTime = newStartTime.length === 5 ? `${newStartTime}:00` : newStartTime;
 
     // Update booking atomically
     const { data: updatedBooking, error: updateErr } = await supabase
@@ -733,14 +888,11 @@ export const bookingService = {
       return { success: false, reason: 'Failed to update reservation in database.' };
     }
 
-    // Trigger Realtime dashboard sync
-    try {
-      await supabase.from('dashboard_syncs').insert({
-        business_id: booking.business_id,
-        triggered_by: `reschedule_booking_${bookingId}`
-      });
-    } catch {}
+    // Trigger Realtime dashboard sync & Telegram owner alerts
+    eventNotificationService.notifyBookingRescheduled(updatedBooking, business, booking.start_time, formattedStartTime).catch(() => {});
 
     return { success: true, booking: updatedBooking };
   }
 };
+
+export const availabilityService = bookingService;

@@ -20,6 +20,7 @@ import {
 import { useLanguage } from '@/context/LanguageContext';
 import { t } from '@/lib/i18n';
 import { getGoogleMapsDirectionsUrl } from '@/lib/utils/locationUtils';
+import { getCurrentISTDateStr } from '@/lib/billing';
 
 interface Booking {
   id: string;
@@ -308,7 +309,7 @@ export default function BookingsTab({
     customer_name: '',
     customer_phone: '',
     table_id: propTables.length > 0 ? propTables[0].id : '',
-    booking_date: new Date().toISOString().split('T')[0],
+    booking_date: getCurrentISTDateStr(),
     start_time: '',
     duration_minutes: 60,
   });

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { supabase } from './supabaseClient';
 import { logActivityToSheet } from './googleSheets';
+import { promptInjectionDefense } from '@/lib/security/promptInjectionDefense';
 
 let openaiInstance: OpenAI | null = null;
 const useGroq = !!process.env.GROQ_API_KEY;
@@ -54,6 +55,13 @@ const tools = [
 ];
 
 export async function processWhatsAppMessage(message: string, senderPhone: string, businessId: string): Promise<string> {
+  // Security Gate: Sub-millisecond prompt injection & jailbreak defense
+  const securityCheck = promptInjectionDefense.scan(message);
+  if (securityCheck.isSuspicious) {
+    console.warn(`[Security Alert] Inbound message from ${senderPhone} flagged for ${securityCheck.threatType} (Score: ${securityCheck.riskScore})`);
+    return securityCheck.deflectionResponse || 'I can only assist with table reservations. How can I help you book a table today?';
+  }
+
   if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
     console.error('API KEY is missing');
     return "I'm sorry, my AI booking system is currently offline.";

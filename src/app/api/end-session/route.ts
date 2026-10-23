@@ -1,13 +1,14 @@
 import { NextResponse, after } from 'next/server';
 import { endSession } from '@/lib/sessionManager';
 import { getSession } from '@/lib/auth';
-import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
+import { checkRateLimit, checkRateLimitShared, createRateLimitResponse, getIpAddress } from '@/lib/utils/rateLimit';
 
 export async function POST(request: Request) {
   try {
     const ip = getIpAddress(request);
-    if (!checkRateLimit(`end_sess_${ip}`, 60, 10 * 60 * 1000)) {
-       return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
+    const rateCheck = await checkRateLimitShared(`end_sess_${ip}`, 60, 10 * 60 * 1000, true);
+    if (!rateCheck.allowed) {
+      return createRateLimitResponse(rateCheck.retryAfter, rateCheck.correlationId);
     }
 
     const sessionCookie = await getSession();
@@ -27,25 +28,14 @@ export async function POST(request: Request) {
       business_id = sessionCookie.businessId; // Force business_id to match token
       source = 'System';
     } else {
-      // Unauthenticated QR Flow
-      if (!business_id) {
-        return NextResponse.json({ error: 'business_id is required for QR actions' }, { status: 400 });
+      // Customer QR Flow: verify session token credential
+      const { verifyQrSessionToken } = require('@/lib/security/qrTokenService');
+      const qrAuth = await verifyQrSessionToken(request, undefined, table_id);
+      if (!qrAuth.authorized) {
+        return NextResponse.json({ error: qrAuth.error || 'Unauthorized: Valid session credential required.' }, { status: 401 });
       }
-      const { businessManager } = require('@/lib/businessManager');
-      const business = await businessManager.getBusiness(business_id);
-      if (!business) return NextResponse.json({ error: 'Invalid business' }, { status: 404 });
-
-      const configuredTables = business.tables || [];
-      const matchedTable = configuredTables.find((t: any) =>
-        String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase() ||
-        String(t.name).trim().toLowerCase() === String(table_id).trim().toLowerCase()
-      );
-      if (configuredTables.length > 0 && !matchedTable) {
-        return NextResponse.json({ error: `Table '${table_id}' is not configured for this business.` }, { status: 400 });
-      }
-      if (matchedTable) {
-        table_id = matchedTable.id;
-      }
+      business_id = qrAuth.businessId;
+      table_id = qrAuth.tableId;
     }
 
     if (!table_id) {
@@ -67,7 +57,13 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json(result, { status: 200 });
+    const response = NextResponse.json(result, { status: 200 });
+    try {
+      const { clearQrSessionCookie } = require('@/lib/security/qrTokenService');
+      clearQrSessionCookie(response);
+    } catch (clearErr) {}
+
+    return response;
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };
     return NextResponse.json({ error: error.message }, { status: error.statusCode ?? 500 });

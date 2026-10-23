@@ -159,25 +159,39 @@ export async function sendWhatsAppButtons(
   overridePhoneId?: string,
   logContext?: WhatsAppLogContext
 ) {
-  return sendWhatsAppMessage(
+  if (!buttons || buttons.length === 0) {
+    return sendWhatsAppText(to, bodyText, false, overrideToken, overridePhoneId, logContext);
+  }
+
+  // Meta interactive button limit: max 3 buttons
+  const validButtons = buttons.slice(0, 3).map(b => ({
+    type: 'reply' as const,
+    reply: { id: b.id, title: b.title.substring(0, 20) }
+  }));
+
+  const res = await sendWhatsAppMessage(
     to,
     {
       type: 'interactive',
       interactive: {
         type: 'button',
         body: { text: bodyText },
-        action: {
-          buttons: buttons.slice(0, 3).map(b => ({
-            type: 'reply',
-            reply: { id: b.id, title: b.title.substring(0, 20) }
-          }))
-        }
+        action: { buttons: validButtons }
       }
     },
     overrideToken,
     overridePhoneId,
     { ...logContext, content: logContext?.content || bodyText }
   );
+
+  // If interactive button delivery failed (e.g. unsupported client or formatting rejection), fallback to text list
+  if (!res || res.error) {
+    const textOptions = buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n');
+    const fallbackBody = `${bodyText}\n\n${textOptions}\n\n_(Reply with the option name or number)_`;
+    return sendWhatsAppText(to, fallbackBody, false, overrideToken, overridePhoneId, logContext);
+  }
+
+  return res;
 }
 
 export async function sendWhatsAppInteractiveList(
@@ -221,7 +235,12 @@ export async function sendWhatsAppList(
   overridePhoneId?: string,
   logContext?: WhatsAppLogContext
 ) {
-  return sendWhatsAppMessage(
+  const allRows = sections.flatMap(s => s.rows || []);
+  if (allRows.length === 0) {
+    return sendWhatsAppText(to, bodyText, false, overrideToken, overridePhoneId, logContext);
+  }
+
+  const res = await sendWhatsAppMessage(
     to,
     {
       type: 'interactive',
@@ -246,6 +265,15 @@ export async function sendWhatsAppList(
     overridePhoneId,
     { ...logContext, content: logContext?.content || bodyText }
   );
+
+  // Fallback to text list if list is rejected by client or provider
+  if (!res || res.error) {
+    const listLines = allRows.map((r, i) => `${i + 1}. *${r.title}*${r.description ? ` (${r.description})` : ''}`).join('\n');
+    const fallbackBody = `${bodyText}\n\n${listLines}\n\n_(Reply with the option name or number)_`;
+    return sendWhatsAppText(to, fallbackBody, false, overrideToken, overridePhoneId, logContext);
+  }
+
+  return res;
 }
 
 export async function sendWhatsAppImage(

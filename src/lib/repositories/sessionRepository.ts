@@ -130,6 +130,13 @@ export const sessionRepository = {
       .single();
 
     if (error || !insertedData) {
+      if (error?.code === '23505' || error?.message?.includes('unique_active_table_session')) {
+        // Idempotent recovery: active session already exists for this table
+        const existing = await sessionRepository.findActiveByTable(session.table_id, businessId);
+        if (existing) {
+          return;
+        }
+      }
       throw new Error("Failed to create session in Database: " + error?.message);
     }
 

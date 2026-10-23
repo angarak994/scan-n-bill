@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { businessManager } from '@/lib/businessManager';
 import { sessionRepository } from '@/lib/repositories/sessionRepository';
 import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
+import { parseOrderNotification } from '@/lib/services/foodOrderService';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -73,10 +74,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'This food order has already been deleted or cancelled' }, { status: 400 });
     }
 
-    // Parse notification message structure: itemsJson|orderTotal|sessionId
-    const parts = order.message ? order.message.split('|') : [];
-    const sessionId = parts.length >= 3 ? parts[parts.length - 1] : null;
-    const orderTotal = parts.length >= 2 ? (parseFloat(parts[parts.length - 2]) || 0) : 0;
+    // Parse notification message structure reliably
+    const parsedOrder = parseOrderNotification(order.message);
+    const sessionId = parsedOrder?.sessionId || null;
+    const orderTotal = parsedOrder?.orderTotal || 0;
 
     let newFoodCost: number | null = null;
     let associatedSession = null;

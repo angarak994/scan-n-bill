@@ -1,171 +1,63 @@
 import { NextResponse } from 'next/server';
-import { businessManager } from '@/lib/businessManager';
-import { sessionRepository } from '@/lib/repositories/sessionRepository';
-import { supabase } from '@/lib/supabaseClient';
 import { getSession } from '@/lib/auth';
-
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-
-async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
-  if (!TELEGRAM_BOT_TOKEN) return;
-  try {
-    const res = await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML',
-        reply_markup: replyMarkup
-      })
-    });
-    const data = await res.json();
-    if (!data.ok) console.error("Telegram API Error:", data);
-    return data;
-  } catch (e) {
-    console.error('Failed to send telegram message', e);
-  }
-}
+import { createAuthoritativeOrder } from '@/lib/services/foodOrderService';
+import { verifyQrSessionToken } from '@/lib/security/qrTokenService';
 
 export async function POST(request: Request) {
   try {
     const sessionCookie = await getSession();
-    const data = await request.json();
-    let session_id = data.session_id || data.sessionId;
-    let business_id = data.business_id || data.businessId;
-    let cart = data.cart;
+    const isOwner = Boolean(sessionCookie && sessionCookie.businessId);
 
-    if (!session_id || !business_id || !cart) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const body = await request.json();
+    let sessionId = body.session_id || body.sessionId;
+    let businessId = body.business_id || body.businessId;
+    const cart = body.cart;
+    const customPrices = body.customPrices || {};
+    const idempotencyKey = body.idempotency_key || body.idempotencyKey || request.headers.get('x-idempotency-key') || undefined;
+
+    if (!sessionId || !cart) {
+      return NextResponse.json({ error: 'Missing required fields: session_id and cart are required.' }, { status: 400 });
     }
 
-    if (sessionCookie && sessionCookie.businessId) {
-      if (sessionCookie.businessId !== business_id) {
+    // Owner authorization vs QR session authorization
+    if (sessionCookie?.businessId) {
+      if (businessId && sessionCookie.businessId !== businessId) {
         return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
       }
-      business_id = sessionCookie.businessId;
-    }
-
-    const business = await businessManager.getBusiness(business_id);
-    if (!business) {
-      return NextResponse.json({ error: 'Business not found' }, { status: 404 });
-    }
-    
-    const session = await sessionRepository.findById(session_id, business_id);
-    if (!session || session.status !== 'ACTIVE') {
-      return NextResponse.json({ error: 'Active session not found' }, { status: 404 });
-    }
-
-    // Calculate order total
-    const menuItems = business.menu_items || [];
-    const customPrices = data.customPrices || {};
-    let orderTotal = 0;
-    const itemsOrdered: string[] = [];
-
-    for (const [itemName, val] of Object.entries(cart)) {
-      let qty = 0;
-      let price = 0;
-      if (typeof val === 'number') {
-        qty = val;
-        const menuItem = menuItems.find(i => i.name.toLowerCase() === itemName.toLowerCase());
-        price = menuItem ? Number(menuItem.price) : (Number(customPrices[itemName]) || 0);
-      } else if (val && typeof val === 'object') {
-        qty = Number((val as any).qty) || 0;
-        price = Number((val as any).price) || 0;
+      businessId = sessionCookie.businessId;
+    } else {
+      // Customer QR session authorization
+      // Verify session token from cookie or header to prevent IDOR attacks
+      const qrAuth = await verifyQrSessionToken(request, sessionId);
+      if (!qrAuth.authorized) {
+        return NextResponse.json({ error: qrAuth.error || 'Unauthorized: Invalid or expired session credential.' }, { status: 401 });
       }
-      if (qty <= 0 || price <= 0) continue;
-      orderTotal += price * qty;
-      itemsOrdered.push(`${qty}x ${itemName}`);
+      // Force authoritative businessId and sessionId from verified credential
+      businessId = qrAuth.businessId;
+      sessionId = qrAuth.sessionId;
     }
 
-    if (orderTotal === 0) {
-      return NextResponse.json({ error: 'Empty order or invalid item prices' }, { status: 400 });
-    }
-
-    // Update session food_cost atomically in Supabase
-    const { data: newFoodCost, error: updateError } = await supabase.rpc('increment_food_cost', {
-      p_session_id: session_id,
-      p_amount: orderTotal
+    const orderResult = await createAuthoritativeOrder({
+      businessId,
+      sessionId,
+      cart,
+      customPrices,
+      source: isOwner ? 'Dashboard' : 'QR',
+      idempotencyKey,
+      isOwner
     });
-    
-    if (updateError) {
-      console.error('Failed to update food_cost:', updateError);
-      return NextResponse.json({ error: 'Failed to update order cost' }, { status: 500 });
-    }
 
-    // Create Notification to track order status
-    const itemsJson = JSON.stringify(cart);
-    const orderRef = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    let orderId = '';
-    try {
-      const { data: notif } = await supabase.from('notifications').insert({
-        business_id,
-        title: `Order: ${session.table_id} (${orderRef})`,
-        message: `${itemsJson}|${orderTotal}|${session_id}`,
-        type: 'order_pending'
-      }).select('id').single();
-      
-      if (notif) orderId = notif.id;
-    } catch(e) {
-      console.error('Failed to create order notification:', e);
-    }
-
-    // Sync order to Google Sheets via unified session and monthly orders sync (Non-blocking queue)
-    try {
-      const { enqueueSheetsSync } = require('@/lib/sheetsSyncQueue');
-      enqueueSheetsSync('SESSION', session_id, business_id);
-    } catch (sheetError) {
-      console.error("Google Sheets Sync Queue Error on Order Placement:", sheetError);
-    }
-
-    // Telegram Dispatch
-    if (orderId && process.env.TELEGRAM_BOT_TOKEN) {
-      try {
-        const gs = business.pricing_rules?.globalSettings as any;
-        if (gs && Array.isArray(gs.authorized_telegram_owners)) {
-           const msg = `🔔 <b>New Order Placed</b>\n\n<b>Table:</b> ${session.table_id}\n<b>Order ID:</b> #${orderRef}\n\n<b>Items:</b>\n${itemsOrdered.map(i => `• ${i}`).join('\n')}\n\n<b>Total:</b> ₹${orderTotal}`;
-           const buttons = [
-             [
-               { text: '✅ Accept Order', callback_data: `order_accept_${orderId}` },
-               { text: '🍽️ Mark Served', callback_data: `order_serve_${orderId}` }
-             ],
-             [
-               { text: '❌ Cancel Order', callback_data: `order_cancel_${orderId}` }
-             ]
-           ];
-           
-           for (const owner of gs.authorized_telegram_owners) {
-             if (owner.status !== 'revoked') {
-                await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({
-                     chat_id: owner.chatId,
-                     text: msg,
-                     parse_mode: 'HTML',
-                     reply_markup: { inline_keyboard: buttons }
-                   })
-                });
-             }
-           }
-        }
-      } catch (telegramError) {
-        console.error("Telegram Order Notification Error:", telegramError);
-      }
-    }
-
-    // Invalidate most selling cache so food ranking updates promptly
-    try {
-      const { invalidateMostSellingCache } = require('@/lib/services/mostSellingService');
-      invalidateMostSellingCache(business_id);
-    } catch {}
-
-    return NextResponse.json({ success: true, new_food_cost: newFoodCost }, { status: 200 });
+    return NextResponse.json({
+      success: true,
+      order_id: orderResult.orderId,
+      order_ref: orderResult.orderRef,
+      order_total: orderResult.orderTotal,
+      new_food_cost: orderResult.newFoodCost,
+      items: orderResult.lineItems
+    }, { status: 200 });
   } catch (err: unknown) {
     const error = err as Error;
-    console.error("Place order error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[place-order] Error placing order:', error);
+    return NextResponse.json({ error: error.message || 'Failed to place order' }, { status: 400 });
   }
 }

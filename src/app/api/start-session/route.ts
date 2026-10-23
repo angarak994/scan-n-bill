@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { startSession } from '@/lib/sessionManager';
 import { GameType } from '@/lib/pricing';
 import { getSession } from '@/lib/auth';
-import { checkRateLimit, getIpAddress } from '@/lib/utils/rateLimit';
+import { checkRateLimit, checkRateLimitShared, createRateLimitResponse, getIpAddress } from '@/lib/utils/rateLimit';
 
 export async function POST(request: Request) {
   try {
@@ -15,8 +15,9 @@ export async function POST(request: Request) {
     // Unauthenticated users (QR Scans) get 60 sessions per 10 mins (supports shared Wi-Fi)
     // Authenticated owners get 100 per 10 mins
     const limit = isOwner ? 100 : 60;
-    if (!checkRateLimit(`start_sess_${ip}`, limit, 10 * 60 * 1000)) {
-       return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
+    const rateCheck = await checkRateLimitShared(`start_sess_${ip}`, limit, 10 * 60 * 1000, true);
+    if (!rateCheck.allowed) {
+      return createRateLimitResponse(rateCheck.retryAfter, rateCheck.correlationId);
     }
 
     const body = await request.json();
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
     // If an owner is logged in, strictly enforce their business ID to prevent cross-business IDOR attacks.
     // If no session exists, it falls back to the client-provided business_id (for unauthenticated QR code scans).
     if (isOwner) {
+       if (business_id && sessionCookie.businessId !== business_id) {
+         return NextResponse.json({ error: 'Forbidden: Unauthorized business access' }, { status: 403 });
+       }
        business_id = sessionCookie.businessId;
     }
 
@@ -122,7 +126,35 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json(result, { status: 201 });
+    if ((result as any)?.isExisting && !isOwner) {
+      const { verifyQrSessionToken } = require('@/lib/security/qrTokenService');
+      const qrAuth = await verifyQrSessionToken(request, result.id, table_id);
+      if (!qrAuth.authorized) {
+        return NextResponse.json(
+          { error: 'This table is currently occupied by an active session.' },
+          { status: 409 }
+        );
+      }
+    }
+
+    const status = (result as any)?.isExisting ? 200 : 201;
+    const response = NextResponse.json(result, { status });
+
+    if (result && result.id && business_id) {
+      try {
+        const { createQrSessionToken, setQrSessionCookie } = require('@/lib/security/qrTokenService');
+        const token = await createQrSessionToken({
+          businessId: business_id,
+          tableId: (result as any).table_id || table_id,
+          sessionId: result.id
+        });
+        setQrSessionCookie(response, token);
+      } catch (cookieErr) {
+        console.warn('[StartSession] Failed to set session cookie:', cookieErr);
+      }
+    }
+
+    return response;
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };
     return NextResponse.json({ error: error.message }, { status: error.statusCode ?? 500 });

@@ -74,17 +74,10 @@ export default async function SessionPage({
         locked_rate: data.locked_rate,
         locked_rate_name: data.locked_rate_name,
       };
-      if (!scanNonce) {
-        initialState = {
-          ...activeState,
-          status: 'prompt_end',
-        };
-      } else {
-        initialState = {
-          ...activeState,
-          status: 'active',
-        };
-      }
+      initialState = {
+        ...activeState,
+        status: 'active',
+      };
     }
   } catch (err: any) {
     initialState = { status: 'error', message: err.message || 'Failed to load table status' };

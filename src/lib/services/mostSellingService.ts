@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { parseOrderNotification } from './foodOrderService';
 
 export interface MostSellingItem {
   id: string;
@@ -7,6 +8,8 @@ export interface MostSellingItem {
   category?: string;
   available: boolean;
   isPinned: boolean;
+  is_pinned?: boolean;
+  pinned?: boolean;
   score: number;
   totalQuantitySold: number;
   badge?: 'PINNED' | 'TOP' | 'FAST';
@@ -86,12 +89,10 @@ export async function getMostSellingItems(
     if (!error && orderNotifs) {
       for (const notif of orderNotifs) {
         if (!notif.message) continue;
-        const parts = notif.message.split('|');
-        if (parts.length < 2) continue;
 
         try {
-          const itemsJson = parts.slice(0, parts.length - 2).join('|') || parts[0];
-          const cart = JSON.parse(itemsJson);
+          const parsed = parseOrderNotification(notif.message);
+          if (!parsed || parsed.items.length === 0) continue;
 
           const orderCreatedAt = new Date(notif.created_at).getTime();
           let weight = 0.5;
@@ -109,30 +110,22 @@ export async function getMostSellingItems(
             }
           }
 
-          if (typeof cart === 'object' && cart !== null) {
-            for (const [rawName, val] of Object.entries(cart)) {
-              const name = String(rawName).trim();
-              let qty = 0;
-              if (typeof val === 'number') {
-                qty = val;
-              } else if (val && typeof val === 'object') {
-                qty = Number((val as any).qty) || 0;
-              }
+          for (const item of parsed.items) {
+            const name = String(item.name).trim();
+            const qty = item.qty;
+            if (qty <= 0) continue;
 
-              if (qty <= 0) continue;
+            const existing = itemStatsMap.get(name.toLowerCase()) || {
+              name,
+              soldQty: 0,
+              weightedScore: 0,
+            };
 
-              const existing = itemStatsMap.get(name.toLowerCase()) || {
-                name,
-                soldQty: 0,
-                weightedScore: 0,
-              };
-
-              existing.soldQty += qty;
-              existing.weightedScore += qty * weight;
-              itemStatsMap.set(name.toLowerCase(), existing);
-            }
+            existing.soldQty += qty;
+            existing.weightedScore += qty * weight;
+            itemStatsMap.set(name.toLowerCase(), existing);
           }
-        } catch (e) {
+        } catch {
           // Ignore malformed notification message lines
         }
       }
@@ -149,7 +142,7 @@ export async function getMostSellingItems(
     for (const item of menuItems) {
       const lowerName = String(item.name).trim().toLowerCase();
       const stats = itemStatsMap.get(lowerName);
-      const isPinned = Boolean(item.is_pinned || item.pinned);
+      const isPinned = Boolean(item.is_pinned || item.pinned || item.isPinned);
       const soldQty = stats ? stats.soldQty : 0;
       const score = stats ? stats.weightedScore : 0;
 
@@ -160,6 +153,8 @@ export async function getMostSellingItems(
         category: item.category || 'Other',
         available: item.available !== false,
         isPinned,
+        is_pinned: isPinned,
+        pinned: isPinned,
         score,
         totalQuantitySold: soldQty,
         badge: isPinned ? 'PINNED' : soldQty > 0 ? 'TOP' : 'FAST',

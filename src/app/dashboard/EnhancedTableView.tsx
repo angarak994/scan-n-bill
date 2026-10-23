@@ -368,31 +368,37 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addingFoodTableId, viewingOrdersSessionId]);
 
-  // Default fast club options if menu is empty
-  const DEFAULT_CLUB_ITEMS = useMemo(() => [
-    { id: 'def_water', name: 'Water Bottle', price: 20, category: 'Beverages' },
-    { id: 'def_cold_drink', name: 'Cold Drink / Soda', price: 40, category: 'Beverages' },
-    { id: 'def_energy_drink', name: 'Energy Drink / Red Bull', price: 120, category: 'Beverages' },
-    { id: 'def_chips', name: 'Chips / Snacks', price: 50, category: 'Snacks' }
-  ], []);
-
   const fastTopItems = useMemo(() => {
-    if (props.mostSellingItems && props.mostSellingItems.length > 0) {
-      return props.mostSellingItems;
-    }
-    return menuItems && menuItems.length > 0 ? menuItems.slice(0, 6) : DEFAULT_CLUB_ITEMS;
-  }, [props.mostSellingItems, menuItems, DEFAULT_CLUB_ITEMS]);
+    const isItemPinned = (i: any) => Boolean(i && (i.is_pinned || i.isPinned || i.pinned));
+    const active = (menuItems || []).filter((i: any) => i && i.status !== 'archived' && !i.is_deleted && i.available !== false);
+    const pinnedActive = active.filter(isItemPinned);
 
-  // Combined menu items with fallback and custom items
+    // If mostSellingItems is supplied, merge pinned active items first, then mostSellingItems without duplicates
+    if (props.mostSellingItems && props.mostSellingItems.length > 0) {
+      const combined: any[] = [...pinnedActive];
+      for (const mItem of props.mostSellingItems) {
+        if (!combined.some(c => (c.id && mItem.id && c.id === mItem.id) || c.name.toLowerCase() === mItem.name.toLowerCase())) {
+          combined.push(mItem);
+        }
+      }
+      return combined.slice(0, 8);
+    }
+
+    return active.sort((a: any, b: any) => (isItemPinned(b) ? 1 : 0) - (isItemPinned(a) ? 1 : 0)).slice(0, 8);
+  }, [props.mostSellingItems, menuItems]);
+
+  // Combined menu items with custom items, pinned-first
   const allAvailableMenuItems = useMemo(() => {
-    const baseItems = menuItems && menuItems.length > 0 ? [...menuItems] : [...DEFAULT_CLUB_ITEMS];
+    const isItemPinned = (i: any) => Boolean(i && (i.is_pinned || i.isPinned || i.pinned));
+    const baseItems = (menuItems || []).filter((i: any) => i && i.status !== 'archived' && !i.is_deleted);
+    const sorted = [...baseItems].sort((a: any, b: any) => (isItemPinned(b) ? 1 : 0) - (isItemPinned(a) ? 1 : 0));
     for (const [name, price] of Object.entries(customPrices)) {
-      if (!baseItems.some(i => i.name.toLowerCase() === name.toLowerCase())) {
-        baseItems.push({ id: `custom_${name}`, name, price, category: 'Custom' });
+      if (!sorted.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+        sorted.push({ id: `custom_${name}`, name, price, category: 'Custom' });
       }
     }
-    return baseItems;
-  }, [menuItems, DEFAULT_CLUB_ITEMS, customPrices]);
+    return sorted;
+  }, [menuItems, customPrices]);
 
   const foodCategories = useMemo(() => {
     const cats = Array.from(new Set(allAvailableMenuItems.map(i => i.category || 'Other').filter(Boolean)));
@@ -841,7 +847,7 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                     onClick={() => updateCart(staple.name, 1, staple.price)}
                     className="px-2 py-0.5 rounded-md bg-bg-surface border border-border-theme hover:border-accent/50 text-[11px] font-medium text-text-secondary hover:text-text-primary shrink-0 transition-colors flex items-center gap-1 font-mono"
                   >
-                    <span>{staple.isPinned ? '📌' : '🔥'}</span>
+                    <span>{(staple.is_pinned || staple.isPinned || staple.pinned) ? '📌' : ''}</span>
                     <span>{staple.name.split(' ')[0]}</span>
                     <span className="text-accent font-bold">₹{staple.price}</span>
                   </button>
@@ -873,7 +879,10 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                         className={`flex justify-between items-center p-3.5 sm:p-4 bg-bg-surface border rounded-2xl transition-all ${qty > 0 ? 'border-accent/80 bg-accent/[0.03] shadow-sm' : 'border-border-theme hover:border-border-theme/80'}`}
                       >
                         <div className="flex flex-col gap-0.5 min-w-0 pr-3">
-                          <span className="font-bold text-sm sm:text-base text-text-primary truncate">{item.name}</span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {(item.is_pinned || item.isPinned || item.pinned) && <span className="text-xs shrink-0">📌</span>}
+                            <span className="font-bold text-sm sm:text-base text-text-primary truncate">{item.name}</span>
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs sm:text-sm text-accent font-mono font-black">{formatINR(item.price)}</span>
                             {item.category && item.category !== 'Other' && (

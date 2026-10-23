@@ -102,6 +102,9 @@ export async function POST(request: Request) {
     if (body.latitude !== undefined) updatePayload.latitude = body.latitude === null || body.latitude === '' ? null : Number(body.latitude);
     if (body.longitude !== undefined) updatePayload.longitude = body.longitude === null || body.longitude === '' ? null : Number(body.longitude);
     if (body.google_place_id !== undefined) updatePayload.google_place_id = body.google_place_id ? String(body.google_place_id).trim() : null;
+    if (body.operating_hours !== undefined) updatePayload.operating_hours = body.operating_hours;
+    if (body.booking_config !== undefined) updatePayload.booking_config = body.booking_config;
+    if (body.timezone !== undefined) updatePayload.timezone = body.timezone ? String(body.timezone).trim() : 'Asia/Kolkata';
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

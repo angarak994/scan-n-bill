@@ -94,7 +94,21 @@ const activeTableLocks = new Set<string>();
 export async function startSession(table_id: string, game_type: GameType, customer_name: string, businessId?: string, num_players: number = 1, member_id?: string, custom_start_time?: string, notes?: string) {
   const lockKey = `${businessId || 'global'}_${table_id}`;
   if (activeTableLocks.has(lockKey)) {
-    throw new ApiError(409, 'Action in progress, please wait.');
+    // Wait briefly for concurrent request to finish creating the session
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (!activeTableLocks.has(lockKey)) break;
+    }
+    const existing = await sessionRepository.findActiveByTable(table_id, businessId);
+    if (existing) {
+      return {
+        ...existing,
+        isExisting: true
+      };
+    }
+    if (activeTableLocks.has(lockKey)) {
+      throw new ApiError(409, 'Action in progress, please wait.');
+    }
   }
   
   try {
@@ -122,7 +136,10 @@ export async function startSession(table_id: string, game_type: GameType, custom
     }
 
     if (existingSession) {
-      throw new ApiError(400, 'A session is already active for this table');
+      return {
+        ...existingSession,
+        isExisting: true
+      };
     }
 
     // Force game type from configuration mapping and canonicalize table_id
@@ -185,7 +202,18 @@ export async function startSession(table_id: string, game_type: GameType, custom
     notes,
   };
 
-  await sessionRepository.create(session, businessId);
+  try {
+    await sessionRepository.create(session, businessId);
+  } catch (createErr) {
+    const concurrentSession = await sessionRepository.findActiveByTable(table_id, businessId);
+    if (concurrentSession) {
+      return {
+        ...concurrentSession,
+        isExisting: true
+      };
+    }
+    throw createErr;
+  }
   Promise.resolve().then(async () => {
     try {
       const { enqueueSheetsSync } = require('./sheetsSyncQueue');
@@ -220,6 +248,31 @@ export async function resolveSessionDiscount(session: any, businessId: string, b
       
       if (session.member_id) {
          member = memberships.find((m: any) => m.id === session.member_id);
+         if (!member) {
+           try {
+             const { data: cust } = await supabase
+               .from('customers')
+               .select('*')
+               .eq('id', session.member_id)
+               .eq('business_id', businessId)
+               .maybeSingle();
+             if (cust) {
+                member = memberships.find((m: any) => 
+                   (m.customer_id && m.customer_id === cust.id) ||
+                   (m.mobile && cust.phone && m.mobile.trim() === cust.phone.trim()) ||
+                   (m.name && cust.name && m.name.trim().toLowerCase() === cust.name.trim().toLowerCase())
+                );
+                if (!member && (cust.membership_tier || cust.tier)) {
+                   member = {
+                      id: cust.id,
+                      name: cust.name,
+                      tier: cust.membership_tier || cust.tier,
+                      status: 'active'
+                   };
+                }
+             }
+           } catch (custErr) {}
+         }
       } else {
          const searchName = session.customer_name?.trim().toLowerCase();
          if (searchName) {

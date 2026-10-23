@@ -4,6 +4,7 @@ import { sessionRepository, Session } from '@/lib/repositories/sessionRepository
 import { calculateServerBillingForSession } from '@/lib/sessionManager';
 import { enqueueSheetsSync } from '@/lib/sheetsSyncQueue';
 import { getMostSellingItems, MostSellingItem } from '@/lib/services/mostSellingService';
+import { createAuthoritativeOrder, parseOrderNotification } from '@/lib/services/foodOrderService';
 import {
   getOrCreateUserState,
   setSelectedTable,
@@ -34,16 +35,24 @@ export async function getBusinessWithMenu(business: BusinessData, forceRefresh =
 }
 
 /**
- * Filters out deleted, archived, or malformed menu items according to business status rules
+ * Filters out deleted, archived, or malformed menu items according to business status rules.
+ * Sorts pinned items first.
  */
 export function getActiveMenuItems(business: BusinessData): any[] {
   if (!business || !Array.isArray(business.menu_items)) return [];
-  return business.menu_items.filter(item => {
+  const items = business.menu_items.filter(item => {
     if (!item || !item.name) return false;
     const raw = item as any;
     if (raw.status === 'deleted' || raw.status === 'archived') return false;
     if (raw.deleted === true || raw.is_deleted === true || raw.archived === true) return false;
     return true;
+  });
+
+  return items.sort((a: any, b: any) => {
+    const aPin = (a.is_pinned || a.isPinned || a.pinned) ? 1 : 0;
+    const bPin = (b.is_pinned || b.isPinned || b.pinned) ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    return (a.pinOrder || a.pin_order || 0) - (b.pinOrder || b.pin_order || 0);
   });
 }
 
@@ -275,10 +284,13 @@ export async function renderTableScreen(
   const allActiveItems = getActiveMenuItems(freshBusiness);
   const mostSelling = await getMostSellingItems(bizId, allActiveItems, 4);
 
-  // Calculate live tab
+  // Calculate authoritative live tab
   let tableFee = 0;
   let foodFee = 0;
   let totalBill = 0;
+  let discountAmount = 0;
+  let discountLabel = '';
+  let customerBalance: number | null = null;
   let durationStr = 'No active session';
   let customerName = 'Walk-in / Standalone';
 
@@ -289,13 +301,32 @@ export async function renderTableScreen(
       const endFull = (isPaused && activeSession.paused_at) ? activeSession.paused_at : new Date().toISOString();
       const billingRes = await calculateServerBillingForSession(activeSession, bizId, endFull);
       totalBill = Math.round(billingRes.cost);
-      foodFee = Math.round(activeSession.food_cost || 0);
-      tableFee = Math.max(0, totalBill - foodFee);
+      tableFee = Math.round(billingRes.baseTableCost);
+      foodFee = Math.round(billingRes.baseFoodCost || activeSession.food_cost || 0);
+      discountAmount = Math.round(billingRes.totalDiscountAmount || 0);
+      discountLabel = billingRes.discountAppliedLabel || '';
       durationStr = billingRes.duration ? billingRes.duration.replace(' min', 'm').replace(' hr ', 'h ') : '0m';
       if (isPaused) durationStr += ' (⏸ Paused)';
     } catch (e) {
+      console.error('[renderTableOrdering] Billing calculation error:', e);
       foodFee = Math.round(activeSession.food_cost || 0);
       totalBill = foodFee;
+    }
+
+    if (activeSession.member_id || activeSession.customer_id) {
+      try {
+        const custId = activeSession.customer_id || activeSession.member_id;
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('outstanding_balance')
+          .eq('business_id', bizId)
+          .or(`id.eq.${custId},name.ilike.${activeSession.customer_name}`)
+          .limit(1)
+          .maybeSingle();
+        if (cust && typeof cust.outstanding_balance === 'number') {
+          customerBalance = Math.round(cust.outstanding_balance);
+        }
+      } catch (custErr) {}
     }
   }
 
@@ -329,26 +360,26 @@ export async function renderTableScreen(
   msg += `⏱️ <b>Time Elapsed:</b> ${durationStr}\n`;
   msg += `🎮 <b>Game Charges:</b> ₹${tableFee}\n`;
   msg += `🍔 <b>F&B Orders:</b> ₹${foodFee}\n`;
+  if (discountAmount > 0) {
+    msg += `🏷️ <b>Discount:</b> -₹${discountAmount} (${escapeHtml(discountLabel)})\n`;
+  }
   msg += `💰 <b>Running Tab:</b> <b>₹${totalBill}</b>\n`;
+  if (customerBalance !== null) {
+    msg += `📒 <b>QKhata Balance:</b> ₹${customerBalance}\n`;
+  }
   msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   // Repeat Last Order Check
   let lastOrderRepeatData: { summary: string; notifId: string } | null = null;
   if (existingOrders && existingOrders.length > 0) {
     const latest = existingOrders[0];
-    const parts = latest.message ? latest.message.split('|') : [];
-    if (parts.length >= 2) {
-      try {
-        const cartObj = JSON.parse(parts.slice(0, parts.length - 2).join('|') || parts[0]);
-        const lines = Object.entries(cartObj)
-          .map(([name, qty]) => `${qty}x ${name}`)
-          .join(', ');
-        const cost = parts[parts.length - 2];
-        lastOrderRepeatData = {
-          summary: `${lines} (₹${cost})`,
-          notifId: latest.id,
-        };
-      } catch (e) {}
+    const parsed = parseOrderNotification(latest.message);
+    if (parsed && parsed.items.length > 0) {
+      const lines = parsed.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+      lastOrderRepeatData = {
+        summary: `${lines} (₹${parsed.orderTotal})`,
+        notifId: latest.id,
+      };
     }
   }
 
@@ -369,7 +400,7 @@ export async function renderTableScreen(
   const topItemButtons: any[] = [];
   for (let i = 0; i < mostSelling.length; i++) {
     const item = mostSelling[i];
-    const prefix = item.isPinned ? '📌 ' : '🔥 ';
+    const prefix = (item.is_pinned || item.isPinned || item.pinned) ? '📌 ' : '';
     const label = `${prefix}${item.name.split(' ')[0]} ₹${item.price}`;
     topItemButtons.push({
       text: item.available ? label : `🚫 ${item.name.split(' ')[0]} (Sold Out)`,
@@ -409,12 +440,6 @@ export async function renderTableScreen(
         callback_data: `fb:cat:${encodeURIComponent(c)}`,
       });
     }
-  } else {
-    // Default fallback if no categories defined yet
-    catButtons.push(
-      { text: '☕ Beverages', callback_data: 'fb:cat:Beverages' },
-      { text: '🍟 Snacks', callback_data: 'fb:cat:Snacks' }
-    );
   }
   catButtons.push({ text: '📋 Full Menu', callback_data: 'fb:cat:All' });
 
@@ -668,92 +693,34 @@ export async function placeTelegramOrder(
     };
   }
 
-  // Authoritative price check & availability re-validation
-  let orderTotal = 0;
-  const itemsOrderedList: string[] = [];
-
-  for (const [itemName, qty] of Object.entries(finalCart)) {
-    const menuItem = menuItems.find(m => m.name.trim().toLowerCase() === itemName.trim().toLowerCase());
-    if (!menuItem) {
-      return {
-        success: false,
-        message: `❌ <b>"${escapeHtml(itemName)}"</b> is no longer in the menu.`,
-        replyMarkup: {
-          inline_keyboard: [[{ text: '🔄 Refresh Menu', callback_data: `fb:t:${encodeURIComponent(tableId)}` }]],
-        },
-      };
-    }
-
-    if (menuItem.available === false) {
-      return {
-        success: false,
-        message: `⚠️ <b>"${escapeHtml(itemName)}"</b> is currently sold out! Please select another item.`,
-        replyMarkup: {
-          inline_keyboard: [[{ text: '🔄 Refresh Menu', callback_data: `fb:t:${encodeURIComponent(tableId)}` }]],
-        },
-      };
-    }
-
-    const price = Number(menuItem.price) || 0;
-    orderTotal += price * qty;
-    itemsOrderedList.push(`${qty}x ${menuItem.name.trim()} (₹${price * qty})`);
-  }
-
   // Active session validation
   const activeSession = await getActiveSessionForTable(bizId, tableId);
-  const sessionId = activeSession?.id || null;
+  const sessionId = activeSession?.id || undefined;
 
-  // 1. Atomic cost increment if session is active
-  if (sessionId) {
-    const { error: incError } = await supabase.rpc('increment_food_cost', {
-      p_session_id: sessionId,
-      p_amount: orderTotal,
-    });
-    if (incError) {
-      console.error('[placeTelegramOrder] Failed to increment food cost:', incError);
-      return {
-        success: false,
-        message: '❌ <b>Failed to update session billing.</b> Please retry.',
-        replyMarkup: {
-          inline_keyboard: [[{ text: '🔄 Retry Order', callback_data: 'fb:ok' }]],
-        },
-      };
-    }
-  }
-
-  // 2. Insert into notifications table (unified system record)
-  const orderRef = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const itemsJson = JSON.stringify(finalCart);
-  const sessionPlaceholder = sessionId || `standalone_${tableId}`;
-
-  let orderId = '';
+  let orderResult: any;
   try {
-    const { data: notif, error: notifError } = await supabase
-      .from('notifications')
-      .insert({
-        business_id: bizId,
-        title: `Order: ${tableId} (${orderRef})`,
-        message: `${itemsJson}|${orderTotal}|${sessionPlaceholder}`,
-        type: 'order_pending',
-      })
-      .select('id')
-      .single();
-
-    if (!notifError && notif) {
-      orderId = notif.id;
-    }
-  } catch (e) {
-    console.error('[placeTelegramOrder] Notification insertion error:', e);
+    orderResult = await createAuthoritativeOrder({
+      businessId: bizId,
+      sessionId,
+      tableId,
+      cart: finalCart,
+      source: 'Telegram',
+      idempotencyKey: `tg_${chatId}_${tableId}_${Date.now()}`
+    });
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `❌ <b>Order Failed:</b> ${escapeHtml(err.message || 'Please retry.')}`,
+      replyMarkup: {
+        inline_keyboard: [[{ text: '🔄 Refresh Menu', callback_data: `fb:t:${encodeURIComponent(tableId)}` }]],
+      },
+    };
   }
 
-  // 3. Enqueue Google Sheets sync (non-blocking)
-  if (sessionId && bizId) {
-    try {
-      enqueueSheetsSync('SESSION', sessionId, bizId);
-    } catch (e) {}
-  }
+  const { orderId, orderRef, orderTotal, lineItems, newFoodCost } = orderResult;
+  const itemsOrderedList = lineItems.map((i: any) => `${i.quantity}x ${i.name} (₹${i.subtotal})`);
 
-  // 4. Configure 1-Tap Undo Action (60s expiration)
+  // Configure 1-Tap Undo Action (60s expiration)
   const undoToken = setUndoAction(chatId, {
     type: 'order_placed',
     orderId,
@@ -764,33 +731,8 @@ export async function placeTelegramOrder(
     description: `Order #${orderRef} (${itemsOrderedList.join(', ')})`,
   });
 
-  // 5. Clear state cart
+  // Clear state cart
   clearCart(chatId);
-
-  // 6. Broadcast notification to kitchen / other authorized owners
-  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  if (TELEGRAM_BOT_TOKEN && orderId) {
-    const gs = business.pricing_rules?.globalSettings as any;
-    const owners = gs?.authorized_telegram_owners || [];
-    const notifMsg = `🔔 <b>New Order Placed via Telegram</b>\n\n<b>Table:</b> ${escapeHtml(tableId)}\n<b>Order ID:</b> #${orderRef}\n\n<b>Items:</b>\n${itemsOrderedList.map(i => `• ${escapeHtml(i)}`).join('\n')}\n\n<b>Total:</b> ₹${orderTotal}`;
-
-    const notifButtons = [
-      [
-        { text: '✅ Accept', callback_data: `order_accept_${orderId}` },
-        { text: '🍽️ Mark Served', callback_data: `order_serve_${orderId}` },
-      ],
-      [{ text: '❌ Cancel', callback_data: `order_cancel_${orderId}` }],
-    ];
-
-    for (const owner of owners) {
-      if (owner.status !== 'revoked' && String(owner.chatId) !== String(chatId)) {
-        TelegramClient.sendMessage(owner.chatId, notifMsg, { inline_keyboard: notifButtons }).catch(() => {});
-      }
-    }
-  }
-
-  // Calculate updated table total
-  const updatedFood = activeSession ? (activeSession.food_cost || 0) + orderTotal : orderTotal;
 
   let successMsg = `✅ <b>Order #${orderRef} Placed!</b>\n`;
   successMsg += `Table: <b>${escapeHtml(tableId)}</b>\n`;
@@ -801,7 +743,7 @@ export async function placeTelegramOrder(
   successMsg += `━━━━━━━━━━━━━━━━━━━━\n`;
   successMsg += `💵 <b>Charged:</b> ₹${orderTotal}\n`;
   if (activeSession) {
-    successMsg += `📊 <b>Updated Table F&B Tab:</b> ₹${updatedFood}\n`;
+    successMsg += `📊 <b>Updated Table F&B Tab:</b> ₹${newFoodCost}\n`;
   }
   successMsg += `\n<i>Added to bill and kitchen notified.</i>`;
 
