@@ -11,6 +11,14 @@ export interface BusinessData {
   google_sheet_id: string;
   business_type?: string;
   status?: string;
+  feature_entitlements?: any;
+  custom_pricing?: any;
+  approval_notes?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  rejection_reason?: string | null;
+  onboarded_at?: string | null;
+  onboarded_by?: string | null;
   pricing_rules?: BusinessPricing;
   tables?: TableConfig[];
   dashboard_pin?: string;
@@ -68,23 +76,41 @@ export function invalidateBusinessCache(businessId?: string): void {
 
 export const businessManager = {
   registerBusiness: async (data: BusinessData): Promise<string> => {
-    const { data: insertedData, error } = await supabase
+    const insertPayload: Record<string, any> = {
+      business_name: data.business_name,
+      owner_name: data.owner_name,
+      contact_number: data.contact_number,
+      address: data.address || null,
+      google_sheet_id: data.google_sheet_id,
+      business_type: data.business_type || null,
+      status: data.status || 'PENDING_APPROVAL',
+      feature_entitlements: data.feature_entitlements || null,
+      qpulse_config: {
+        feature_entitlements: data.feature_entitlements || null,
+      },
+      pricing_rules: data.pricing_rules || null,
+      tables: data.tables || null,
+      dashboard_pin: data.dashboard_pin || null,
+      menu_items: data.menu_items || null,
+      active_discounts: data.active_discounts || null,
+    };
+
+    let { data: insertedData, error } = await supabase
       .from('businesses')
-      .insert([{
-        business_name: data.business_name,
-        owner_name: data.owner_name,
-        contact_number: data.contact_number,
-        address: data.address || null,
-        google_sheet_id: data.google_sheet_id,
-        business_type: data.business_type || null,
-        pricing_rules: data.pricing_rules || null,
-        tables: data.tables || null,
-        dashboard_pin: data.dashboard_pin || null,
-        menu_items: data.menu_items || null,
-        active_discounts: data.active_discounts || null,
-      }])
+      .insert([insertPayload])
       .select('id')
       .single();
+
+    if (error && error.message?.includes('feature_entitlements')) {
+      delete insertPayload.feature_entitlements;
+      const retry = await supabase
+        .from('businesses')
+        .insert([insertPayload])
+        .select('id')
+        .single();
+      insertedData = retry.data;
+      error = retry.error;
+    }
 
     if (error || !insertedData) {
       throw new Error(error?.message || 'Failed to register business');
@@ -92,6 +118,7 @@ export const businessManager = {
 
     return insertedData.id;
   },
+
 
   getBusiness: async (id: string, forceRefresh = false): Promise<BusinessData | null> => {
     const now = Date.now();

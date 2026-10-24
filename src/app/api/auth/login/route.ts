@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     // Since this uses the service_role client, it bypasses RLS.
     const { data } = await supabase
       .from('businesses')
-      .select('id, dashboard_pin')
+      .select('id, dashboard_pin, status, business_name')
       .eq('contact_number', normalizedPhone)
       .limit(1)
       .single();
@@ -51,12 +51,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Incorrect Admin PIN.' }, { status: 401 });
     }
 
+    // Enforce business approval lifecycle status
+    const bStatus = (data.status || 'PENDING_APPROVAL').toUpperCase().trim();
+    if (bStatus === 'PENDING_APPROVAL') {
+      return NextResponse.json({
+        error: 'Your club application is currently under review by the platform developer. You will gain access once approved.',
+        lifecycleStatus: 'PENDING_APPROVAL'
+      }, { status: 403 });
+    }
+
+    if (bStatus === 'REJECTED') {
+      return NextResponse.json({
+        error: 'Your club registration application was not approved. Please contact platform support.',
+        lifecycleStatus: 'REJECTED'
+      }, { status: 403 });
+    }
+
+    if (bStatus === 'SUSPENDED' || bStatus === 'DEACTIVATED') {
+      return NextResponse.json({
+        error: 'This club account is currently suspended. Please contact the platform developer.',
+        lifecycleStatus: bStatus
+      }, { status: 403 });
+    }
+
     // Generate JWT and set HttpOnly Cookie
     await setSession(data.id, 'owner');
 
-    return NextResponse.json({ success: true, businessId: data.id });
+    return NextResponse.json({ success: true, businessId: data.id, businessName: data.business_name });
   } catch (error: any) {
     console.error('Login error:', error);
     return NextResponse.json({ error: 'An unexpected error occurred during login.' }, { status: 500 });
   }
 }
+

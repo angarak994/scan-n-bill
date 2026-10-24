@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 
 export default function MessagingTab({
@@ -9,89 +8,52 @@ export default function MessagingTab({
     businessName,
     isWhatsAppConnected,
     dbCustomers = [],
-    memberships = []
+    memberships = [],
+    onRefresh
 }: {
     businessId: string;
     businessName?: string;
     isWhatsAppConnected: boolean;
     dbCustomers?: any[];
     memberships?: any[];
+    onRefresh?: () => void;
 }) {
     const [customers, setCustomers] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCustomers, setSelectedCustomers] = useState<Set<string>>(new Set());
     const [messageTemplate, setMessageTemplate] = useState('');
     const [isSending, setIsSending] = useState(false);
-    const [activeTab, setActiveTab] = useState<'compose' | 'logs'>('compose');
+
+    // Real-Time Confirmation Message State
+    const [sentConfirmation, setSentConfirmation] = useState<{
+        successCount: number;
+        skippedCount: number;
+        failureCount: number;
+        recipients: any[];
+        messagePreview: string;
+        timestamp: string;
+    } | null>(null);
 
     // Registered Member Profile Deletion State
     const [memberToDelete, setMemberToDelete] = useState<{ id: string; membership_id: string; name: string; phone: string; tier?: string } | null>(null);
     const [isDeletingMember, setIsDeletingMember] = useState(false);
 
-    // Delivery Logs & Dashboard State
-    const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
-    const [isLoadingLogs, setIsLoadingLogs] = useState(false);
-    const [analytics, setAnalytics] = useState<any>({
-        total: 0,
-        inbound: 0,
-        outbound: 0,
-        sent: 0,
-        delivered: 0,
-        read: 0,
-        failed: 0,
-        failureRate: 0
-    });
-    const [logFilter, setLogFilter] = useState<'all' | 'outbound' | 'inbound' | 'delivered' | 'read' | 'failed'>('all');
-    const [logSearch, setLogSearch] = useState('');
-    const [retryingId, setRetryingId] = useState<string | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<string>('');
+    // Non-Member Customer Records Deletion State
+    const [showCleanupModal, setShowCleanupModal] = useState(false);
+    const [isCleaningCustomers, setIsCleaningCustomers] = useState(false);
 
-    // Fetch delivery logs from server-side authenticated API
-    const fetchLogs = useCallback(async () => {
-        if (!businessId) return;
-        try {
-            setIsLoadingLogs(true);
-            let url = `/api/messaging/logs?businessId=${businessId}`;
-            if (logFilter === 'inbound' || logFilter === 'outbound') {
-                url += `&direction=${logFilter}`;
-            } else if (logFilter !== 'all') {
-                url += `&status=${logFilter}`;
-            }
-            if (logSearch.trim()) {
-                url += `&search=${encodeURIComponent(logSearch.trim())}`;
-            }
+    // Detect non-member customer records in database causing confusion
+    const nonMemberCustomers = useMemo(() => {
+        if (!dbCustomers || dbCustomers.length === 0) return [];
+        const memberPhones = new Set((memberships || []).map(m => (m.mobile || '').replace(/\D/g, '').slice(-10)).filter(Boolean));
+        const memberIds = new Set((memberships || []).map(m => m.id));
+        return dbCustomers.filter(c => {
+            const p10 = (c.phone || '').replace(/\D/g, '').slice(-10);
+            return (!p10 || !memberPhones.has(p10)) && !memberIds.has(c.id);
+        });
+    }, [dbCustomers, memberships]);
 
-            const res = await fetch(url);
-            if (res.ok) {
-                const json = await res.json();
-                setDeliveryLogs(json.logs || []);
-                if (json.analytics) setAnalytics(json.analytics);
-                setLastUpdated(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
-            }
-        } catch (err) {
-            console.error('Failed to fetch delivery logs:', err);
-        } finally {
-            setIsLoadingLogs(false);
-        }
-    }, [businessId, logFilter, logSearch]);
-
-    // Initial load and Realtime sync
-    useEffect(() => {
-        fetchLogs();
-        if (supabase) {
-            const channel = supabase.channel(`whatsapp_messages_${businessId}`)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `business_id=eq.${businessId}` }, () => {
-                    fetchLogs();
-                })
-                .subscribe();
-
-            return () => {
-                supabase.removeChannel(channel);
-            };
-        }
-    }, [businessId, fetchLogs]);
-
-    // Format unified contacts with accurate QKhata outstanding balances
+    // STRICT REQUIREMENT: Only Registered Members appear in WhatsApp Messaging
     useEffect(() => {
         const customerByPhone = new Map<string, any>();
         const customerById = new Map<string, any>();
@@ -109,9 +71,9 @@ export default function MessagingTab({
             });
         }
 
-        const unifiedContacts = new Map<string, any>();
-        const matchedCustomerIds = new Set<string>();
+        const unifiedMembers = new Map<string, any>();
 
+        // ONLY Registered Members from memberships table are loaded into the recipient list
         if (memberships && memberships.length > 0) {
             memberships.forEach(m => {
                 if (m.mobile && m.mobile.trim().length >= 10) {
@@ -122,43 +84,22 @@ export default function MessagingTab({
                                         customerByPhone.get(clean10) ||
                                         (m.name ? customerByName.get(m.name.trim().toLowerCase()) : null);
 
-                    if (matchedCust?.id) {
-                        matchedCustomerIds.add(matchedCust.id);
-                    }
-
                     const outstanding = matchedCust ? Number(matchedCust.outstanding_balance || 0) : Number((m as any).outstanding_balance || 0);
 
-                    unifiedContacts.set(cleanPhone, {
-                        id: matchedCust?.id || m.id,
+                    unifiedMembers.set(cleanPhone, {
+                        id: m.id,
                         membership_id: m.id,
-                        name: m.name || matchedCust?.name,
+                        name: m.name || matchedCust?.name || 'Member',
                         phone: cleanPhone,
                         type: 'Member',
-                        tier: m.tier,
+                        tier: m.tier || 'Member',
                         outstanding_balance: outstanding
                     });
                 }
             });
         }
 
-        if (dbCustomers && dbCustomers.length > 0) {
-            dbCustomers.forEach(c => {
-                if (c.phone && c.phone.trim().length >= 10 && !matchedCustomerIds.has(c.id)) {
-                    const cleanPhone = c.phone.replace(/\D/g, '');
-                    if (!unifiedContacts.has(cleanPhone)) {
-                        unifiedContacts.set(cleanPhone, {
-                            id: c.id,
-                            name: c.name,
-                            phone: cleanPhone,
-                            type: 'Customer',
-                            outstanding_balance: Number(c.outstanding_balance || 0)
-                        });
-                    }
-                }
-            });
-        }
-
-        setCustomers(Array.from(unifiedContacts.values()));
+        setCustomers(Array.from(unifiedMembers.values()));
     }, [dbCustomers, memberships]);
 
     const filteredCustomers = customers.filter(c =>
@@ -186,7 +127,7 @@ export default function MessagingTab({
 
     const handleSendBulk = async () => {
         if (selectedCustomers.size === 0) {
-            toast.error('Please select at least one customer.');
+            toast.error('Please select at least one member.');
             return;
         }
         if (!messageTemplate.trim()) {
@@ -198,7 +139,7 @@ export default function MessagingTab({
         const customersToSend = customers.filter(c => selectedIds.includes(c.id));
 
         setIsSending(true);
-        const toastId = toast.loading(`Sending message to ${customersToSend.length} members...`);
+        const toastId = toast.loading(`Sending real-time WhatsApp message to ${customersToSend.length} members...`);
 
         try {
             const res = await fetch('/api/whatsapp-bulk-send', {
@@ -214,8 +155,18 @@ export default function MessagingTab({
             const result = await res.json();
             if (!res.ok) throw new Error(result.error || 'Failed to send messages');
 
+            // Trigger real-time confirmation message display
+            setSentConfirmation({
+                successCount: result.successCount || 0,
+                skippedCount: result.skippedCount || 0,
+                failureCount: result.failureCount || 0,
+                recipients: customersToSend,
+                messagePreview: messageTemplate,
+                timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+            });
+
             if (result.successCount > 0) {
-                toast.success(`Successfully sent ${result.successCount} message(s).`, { id: toastId });
+                toast.success(`Successfully sent to ${result.successCount} member(s)!`, { id: toastId });
             } else if (result.skippedCount > 0 && result.failureCount === 0) {
                 toast(`All ${result.skippedCount} member(s) have ₹0 balance. Reminders safely skipped.`, { id: toastId, icon: '🛡️' });
             }
@@ -228,8 +179,6 @@ export default function MessagingTab({
             }
 
             setSelectedCustomers(new Set());
-            setMessageTemplate('');
-            fetchLogs();
         } catch (error: any) {
             console.error('Bulk Send Error', error);
             toast.error(error.message || 'Failed to send messages.', { id: toastId });
@@ -238,28 +187,25 @@ export default function MessagingTab({
         }
     };
 
-    const handleRetry = async (messageId: string) => {
-        setRetryingId(messageId);
-        const tId = toast.loading('Retrying WhatsApp delivery...');
+    const handleDeleteNonMemberCustomers = async () => {
         try {
-            const res = await fetch('/api/messaging/retry', {
-                method: 'POST',
+            setIsCleaningCustomers(true);
+            const res = await fetch('/api/customers?deleteNonMembers=true', {
+                method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messageId })
+                body: JSON.stringify({ deleteNonMembers: true })
             });
-
-            const json = await res.json();
-            if (res.ok && json.success) {
-                toast.success('Message re-sent successfully!', { id: tId });
-                fetchLogs();
-            } else {
-                toast.error(`Retry failed: ${json.error || 'Provider rejected message'}`, { id: tId });
-                fetchLogs();
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to delete non-member customers');
             }
+            toast.success(data.message || `Deleted non-member customer records.`);
+            setShowCleanupModal(false);
+            onRefresh?.();
         } catch (err: any) {
-            toast.error(err.message || 'Retry request failed', { id: tId });
+            toast.error(err.message || 'Failed to delete customer records');
         } finally {
-            setRetryingId(null);
+            setIsCleaningCustomers(false);
         }
     };
 
@@ -275,24 +221,44 @@ export default function MessagingTab({
                         WhatsApp Messaging & Delivery Intelligence
                     </h2>
                     <p className="text-xs sm:text-sm text-text-secondary mt-1">
-                        AI booking bot, personalized member updates, and real-time delivery audit trail.
+                        Personalized member updates with real-time delivery confirmation.
                     </p>
                 </div>
-                {lastUpdated && (
-                    <span className="text-[11px] font-mono text-text-secondary bg-bg-primary px-3 py-1.5 rounded-lg border border-border-theme flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        Synced: {lastUpdated}
-                    </span>
-                )}
+                <div className="flex items-center gap-3">
+                    {nonMemberCustomers.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setShowCleanupModal(true)}
+                            className="text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/20 transition-all flex items-center gap-1.5 min-h-[36px]"
+                            title="Delete non-member customer records causing confusion"
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete {nonMemberCustomers.length} Customer{nonMemberCustomers.length > 1 ? 's' : ''}
+                        </button>
+                    )}
+                    {isWhatsAppConnected ? (
+                        <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            WhatsApp Connected
+                        </span>
+                    ) : (
+                        <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                            Not Connected
+                        </span>
+                    )}
+                </div>
             </div>
 
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
-                {/* Left Side: Contacts List */}
+                {/* Left Side: Members List */}
                 <div className="w-full lg:w-1/2 flex flex-col border-b lg:border-b-0 lg:border-r border-border-theme bg-bg-primary min-h-[350px] lg:min-h-0">
                     <div className="p-3 sm:p-4 border-b border-border-theme flex items-center gap-3 bg-bg-surface shrink-0">
                         <input
                             type="text"
-                            placeholder="Search by name or phone..."
+                            placeholder="Search members by name or phone..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="flex-1 bg-bg-primary border border-border-theme rounded-xl px-4 py-2.5 text-base sm:text-sm outline-none input-premium min-h-[44px]"
@@ -315,7 +281,7 @@ export default function MessagingTab({
                             </div>
                         )}
                         {filteredCustomers.length === 0 ? (
-                            <div className="text-center p-8 text-text-disabled text-sm">No members found with phone numbers.</div>
+                            <div className="text-center p-8 text-text-disabled text-sm">No registered members found with phone numbers.</div>
                         ) : (
                             filteredCustomers.map(customer => (
                                 <div
@@ -327,8 +293,8 @@ export default function MessagingTab({
                                         <h4 className={`font-bold text-sm ${selectedCustomers.has(customer.id) ? 'text-accent' : 'text-text-primary'}`}>{customer.name}</h4>
                                         <div className="flex items-center gap-2 mt-0.5">
                                             <p className="text-xs text-text-secondary font-mono">{customer.phone}</p>
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${customer.type.includes('Member') ? 'bg-accent/20 text-accent' : 'bg-bg-primary text-text-secondary border border-border-theme'}`}>
-                                                {customer.type}
+                                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent/20 text-accent border border-accent/30">
+                                                {customer.tier || 'Member'}
                                             </span>
                                         </div>
                                     </div>
@@ -338,28 +304,26 @@ export default function MessagingTab({
                                                 ₹{Number(customer.outstanding_balance).toFixed(0)} Due
                                             </span>
                                         )}
-                                        {customer.type === 'Member' && customer.membership_id && (
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setMemberToDelete({
-                                                        id: customer.id,
-                                                        membership_id: customer.membership_id,
-                                                        name: customer.name,
-                                                        phone: customer.phone,
-                                                        tier: customer.tier
-                                                    });
-                                                }}
-                                                className="p-1.5 rounded-lg text-text-disabled hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                                title="Remove Registered Member Profile"
-                                                aria-label={`Remove member profile for ${customer.name}`}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMemberToDelete({
+                                                    id: customer.id,
+                                                    membership_id: customer.membership_id,
+                                                    name: customer.name,
+                                                    phone: customer.phone,
+                                                    tier: customer.tier
+                                                });
+                                            }}
+                                            className="p-1.5 rounded-lg text-text-disabled hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                            title="Remove Registered Member Profile"
+                                            aria-label={`Remove member profile for ${customer.name}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
                                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${selectedCustomers.has(customer.id) ? 'bg-accent border-accent text-bg-primary' : 'border-border-theme'}`}>
                                             {selectedCustomers.has(customer.id) && (
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
@@ -374,264 +338,240 @@ export default function MessagingTab({
                     </div>
                 </div>
 
-                {/* Right Side: Message Composer & Delivery Logs */}
-                <div className="w-full lg:w-1/2 flex flex-col bg-bg-surface p-4 sm:p-6 min-h-0">
-                    <div className="flex border-b border-border-theme mb-4 sm:mb-6">
+                {/* Right Side: Message Composer & Real-Time Confirmation */}
+                <div className="w-full lg:w-1/2 flex flex-col bg-bg-surface p-4 sm:p-6 min-h-0 overflow-y-auto custom-scrollbar">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-border-theme pb-3 mb-4 sm:mb-6">
+                        <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-accent"></span>
+                            Compose WhatsApp Message
+                        </h3>
+                        <span className="text-xs text-text-secondary font-mono">
+                            {selectedCustomers.size} member{selectedCustomers.size === 1 ? '' : 's'} selected
+                        </span>
+                    </div>
+
+                    {/* Meta Cloud Compliance */}
+                    <div className="mb-3 shrink-0">
+                        <p className="text-xs text-text-secondary mb-2">
+                            <strong>Meta Cloud Compliance:</strong> Dynamic business name is inserted automatically using single asterisks (<code className="text-accent">*Club Name*</code>).
+                        </p>
+                    </div>
+
+                    {/* Quick Templates */}
+                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0 custom-scrollbar">
                         <button
-                            onClick={() => setActiveTab('compose')}
-                            className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-colors min-h-[44px] touch-target flex items-center ${activeTab === 'compose' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            onClick={() => setMessageTemplate("*Welcome back to {{club}}!*\n\nHi {{name}}, we've missed having you at the club! Show this message on your next visit for a special offer on your table time.\n\nReply to check availability or book a game!")}
+                            className="px-3 py-2 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors min-h-[40px] touch-target flex items-center"
                         >
-                            Compose Message
+                            Welcome Back Promo
                         </button>
                         <button
-                            onClick={() => setActiveTab('logs')}
-                            className={`pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 transition-colors min-h-[44px] touch-target flex items-center gap-2 ${activeTab === 'logs' ? 'border-accent text-accent' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            onClick={() => setMessageTemplate("*Payment reminder — {{club}}*\n\nHi {{name}}, your booking has an outstanding balance of ₹{{outstanding}}.\n\nPlease review and complete the payment using UPI. If you've already paid, please disregard this reminder while we verify your status.")}
+                            className="px-3 py-2 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors min-h-[40px] touch-target flex items-center"
                         >
-                            Delivery Logs
-                            {analytics.total > 0 && (
-                                <span className="bg-bg-primary border border-border-theme text-[10px] px-2 py-0.5 rounded-full font-mono">
-                                    {analytics.total}
-                                </span>
-                            )}
+                            Payment Reminder
                         </button>
                     </div>
 
-                    {activeTab === 'compose' ? (
-                        <>
-                            <div className="mb-3 shrink-0">
-                                <p className="text-xs text-text-secondary mb-2">
-                                    <strong>Meta Cloud Compliance:</strong> Dynamic business name is inserted automatically using single asterisks (<code className="text-accent">*Club Name*</code>).
+                    <textarea
+                        value={messageTemplate}
+                        onChange={(e) => setMessageTemplate(e.target.value)}
+                        placeholder="Type your WhatsApp message... Use {{name}} for member name, {{outstanding}} for pending balance, and {{club}} for your club name."
+                        className="flex-1 min-h-[140px] bg-bg-primary border border-border-theme rounded-xl p-4 text-base sm:text-sm outline-none resize-none input-premium mb-4 font-medium"
+                    />
+
+                    {/* Live Preview */}
+                    {(() => {
+                        const selectedCust = selectedCustomers.size > 0 ? customers.find(c => c.id === Array.from(selectedCustomers)[0]) : null;
+                        const isZeroBalance = Number(selectedCust?.outstanding_balance || 0) <= 0;
+                        const isPaymentTemplate = messageTemplate.toLowerCase().includes('payment reminder') || messageTemplate.includes('{{outstanding}}');
+                        
+                        return (
+                            <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-4 sm:mb-6 shrink-0">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">Message Preview (WhatsApp Formatted)</h4>
+                                    {selectedCust && isPaymentTemplate && isZeroBalance && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                            Settled (₹0 balance) — Safely Skipped
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap">
+                                    {messageTemplate
+                                        ? messageTemplate
+                                            .replace(/\{\{name\}\}/g, selectedCust?.name || 'Member')
+                                            .replace(/\{\{outstanding\}\}/g, selectedCust ? Number(selectedCust.outstanding_balance || 0).toFixed(0) : '0')
+                                            .replace(/\{\{club\}\}/g, businessName || 'Your Club')
+                                            .replace(/\{\{business\}\}/g, businessName || 'Your Club')
+                                        : 'Type a message above or select a quick template to see the preview.'}
                                 </p>
                             </div>
+                        );
+                    })()}
 
-                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0 custom-scrollbar">
-                                <button
-                                    onClick={() => setMessageTemplate("*Welcome back to {{club}}!*\n\nHi {{name}}, we've missed having you at the club! Show this message on your next visit for a special offer on your table time.\n\nReply to check availability or book a game!")}
-                                    className="px-3 py-2 bg-bg-primary border border-border-theme rounded-lg text-xs font-semibold whitespace-nowrap hover:border-accent transition-colors min-h-[40px] touch-target flex items-center"
-                                >
-                                    Welcome Back Promo
-                                </button>
-                                <button
-                                    onClick={() => setMessageTemplate("*Payment reminder — {{club}}*\n\nHi {{name}}, your booking has an outstanding balance of ₹{{outstanding}}.\n\nPlease review and complete the payment using UPI. If you've already paid, please disregard this reminder while we verify your status.")}
-                                    className="px-3 py-2 bg-bg-primary border border-warning/30 rounded-lg text-xs font-semibold whitespace-nowrap hover:border-warning text-warning transition-colors min-h-[40px] touch-target flex items-center"
-                                >
-                                    Payment Reminder
-                                </button>
-                            </div>
-
-                            <textarea
-                                value={messageTemplate}
-                                onChange={(e) => setMessageTemplate(e.target.value)}
-                                placeholder="Type your WhatsApp message... Use {{name}} for customer name, {{outstanding}} for pending balance, and {{club}} for your club name."
-                                className="flex-1 min-h-[140px] bg-bg-primary border border-border-theme rounded-xl p-4 text-base sm:text-sm outline-none resize-none input-premium mb-4 font-medium"
-                            />
-
-                            {(() => {
-                                const selectedCust = selectedCustomers.size > 0 ? customers.find(c => c.id === Array.from(selectedCustomers)[0]) : null;
-                                const isZeroBalance = Number(selectedCust?.outstanding_balance || 0) <= 0;
-                                const isPaymentTemplate = messageTemplate.toLowerCase().includes('payment reminder') || messageTemplate.includes('{{outstanding}}');
-                                
-                                return (
-                                    <div className="bg-bg-primary p-4 rounded-xl border border-border-theme mb-4 sm:mb-6 shrink-0">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">Message Preview (WhatsApp Formatted)</h4>
-                                            {selectedCust && isPaymentTemplate && isZeroBalance && (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                                    Settled (₹0 balance) — Safely Skipped
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap">
-                                            {messageTemplate
-                                                .replace(/\{\{name\}\}/g, selectedCust?.name || 'Customer')
-                                                .replace(/\{\{outstanding\}\}/g, selectedCust ? Number(selectedCust.outstanding_balance || 0).toFixed(0) : '0')
-                                                .replace(/\{\{club\}\}/g, businessName || 'Your Club')
-                                                .replace(/\{\{business\}\}/g, businessName || 'Your Club')}
-                                        </p>
-                                    </div>
-                                );
-                            })()}
-
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
-                                <span className="text-xs font-bold text-text-secondary">
-                                    {selectedCustomers.size} recipient(s) selected
-                                </span>
-                                <button
-                                    onClick={handleSendBulk}
-                                    disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim() || !isWhatsAppConnected}
-                                    className="px-6 sm:px-8 py-3.5 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-xl hover:bg-accent/90 shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px] touch-target"
-                                >
-                                    {isSending ? (
-                                        <>
-                                            <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Sending...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                            </svg>
-                                            Send Messages
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        /* Delivery Logs Dashboard */
-                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                            {/* KPI Analytics Strip */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 shrink-0">
-                                <div className="bg-bg-primary p-2.5 rounded-xl border border-border-theme">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider text-text-secondary block">Total</span>
-                                    <span className="text-lg font-black text-text-primary font-mono">{analytics.total}</span>
-                                </div>
-                                <div className="bg-bg-primary p-2.5 rounded-xl border border-border-theme">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 block">Delivered / Read</span>
-                                    <span className="text-lg font-black text-emerald-400 font-mono">{analytics.delivered + analytics.read}</span>
-                                </div>
-                                <div className="bg-bg-primary p-2.5 rounded-xl border border-border-theme">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400 block">Inbound</span>
-                                    <span className="text-lg font-black text-purple-400 font-mono">{analytics.inbound}</span>
-                                </div>
-                                <div className="bg-bg-primary p-2.5 rounded-xl border border-border-theme">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider text-red-400 block">Failed</span>
-                                    <div className="flex items-baseline gap-1">
-                                        <span className="text-lg font-black text-red-400 font-mono">{analytics.failed}</span>
-                                        {analytics.failureRate > 0 && (
-                                            <span className="text-[10px] text-red-400/80 font-mono">({analytics.failureRate}%)</span>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Search and Filter Controls */}
-                            <div className="flex flex-col sm:flex-row gap-2 mb-3 shrink-0">
-                                <input
-                                    type="text"
-                                    placeholder="Search recipient, phone, wamid..."
-                                    value={logSearch}
-                                    onChange={(e) => setLogSearch(e.target.value)}
-                                    className="flex-1 bg-bg-primary border border-border-theme rounded-lg px-3 py-1.5 text-xs outline-none input-premium"
-                                />
-                                <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
-                                    {(['all', 'outbound', 'inbound', 'failed'] as const).map(f => (
-                                        <button
-                                            key={f}
-                                            onClick={() => setLogFilter(f)}
-                                            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg uppercase tracking-wider transition-all whitespace-nowrap ${logFilter === f ? 'bg-accent text-black' : 'bg-bg-primary text-text-secondary hover:text-text-primary border border-border-theme'}`}
-                                        >
-                                            {f}
-                                        </button>
-                                    ))}
-                                    <button
-                                        onClick={fetchLogs}
-                                        disabled={isLoadingLogs}
-                                        className="p-1 px-2 bg-bg-primary border border-border-theme rounded-lg text-text-secondary hover:text-text-primary transition-colors shrink-0"
-                                        title="Refresh logs"
-                                    >
-                                        <svg className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Logs Timeline List */}
-                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-2.5">
-                                {deliveryLogs.length === 0 ? (
-                                    <div className="text-center p-8 bg-bg-primary rounded-xl border border-border-theme">
-                                        <svg className="w-10 h-10 text-text-disabled mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                                        </svg>
-                                        <h4 className="font-bold text-sm text-text-secondary">No message events found</h4>
-                                        <p className="text-xs text-text-disabled mt-1 max-w-sm mx-auto">
-                                            Incoming customer WhatsApp messages, AI replies, booking confirmations, and bulk reminders will appear here in real time.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    deliveryLogs.map(log => {
-                                        const isInbound = log.status === 'received';
-                                        return (
-                                            <div
-                                                key={log.id}
-                                                className={`p-3.5 rounded-xl border transition-all ${log.status === 'failed' ? 'bg-red-500/5 border-red-500/30' : 'bg-bg-primary border-border-theme'}`}
-                                            >
-                                                <div className="flex justify-between items-start gap-2 mb-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded ${isInbound ? 'bg-purple-500/20 text-purple-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                                            {isInbound ? '📥 Inbound' : '📤 Outbound'}
-                                                        </span>
-                                                        <h4 className="font-bold text-xs sm:text-sm text-text-primary">
-                                                            {log.recipient_name || 'Customer'}{' '}
-                                                            <span className="text-text-secondary font-normal font-mono text-[11px]">
-                                                                (+{log.recipient_phone})
-                                                            </span>
-                                                        </h4>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded ${
-                                                            log.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                            log.status === 'read' ? 'bg-blue-500/20 text-blue-400' :
-                                                            log.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                                                            log.status === 'sent' ? 'bg-accent/20 text-accent' :
-                                                            log.status === 'received' ? 'bg-purple-500/20 text-purple-400' :
-                                                            'bg-bg-card text-text-secondary border border-border-theme'
-                                                        }`}>
-                                                            {log.status}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                <p className="text-xs sm:text-sm text-text-secondary italic whitespace-pre-wrap line-clamp-3 bg-bg-surface/50 p-2.5 rounded-lg border border-border-theme/40 mb-2 font-sans">
-                                                    {log.content}
-                                                </p>
-
-                                                {/* Failure Explanation & Retry Action */}
-                                                {log.status === 'failed' && (
-                                                    <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2">
-                                                        <div>
-                                                            <p className="text-[11px] font-bold text-red-400">
-                                                                ⚠️ Message not delivered
-                                                            </p>
-                                                            <p className="text-[10px] text-text-secondary mt-0.5 font-mono">
-                                                                {log.error_message || 'Provider rejected message or recipient was unreachable.'}
-                                                            </p>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => handleRetry(log.id)}
-                                                            disabled={retryingId === log.id}
-                                                            className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-[10px] uppercase rounded tracking-wider border border-red-500/40 transition-colors shrink-0 disabled:opacity-50"
-                                                        >
-                                                            {retryingId === log.id ? 'Retrying...' : '🔄 Retry Send'}
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex flex-wrap justify-between items-center text-[10px] text-text-disabled font-mono pt-1 border-t border-border-theme/30">
-                                                    <span>{new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })}</span>
-                                                    {log.message_id && (
-                                                        <span className="truncate max-w-[200px]" title={log.message_id}>
-                                                            ID: {log.message_id}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+                        <span className="text-xs font-bold text-text-secondary">
+                            {selectedCustomers.size} recipient(s) selected
+                        </span>
+                        <button
+                            onClick={handleSendBulk}
+                            disabled={isSending || selectedCustomers.size === 0 || !messageTemplate.trim() || !isWhatsAppConnected}
+                            className="px-6 sm:px-8 py-3.5 bg-accent text-black font-extrabold text-xs sm:text-sm uppercase rounded-xl hover:bg-accent/90 shadow-[0_4px_15px_rgba(var(--accent),0.4)] btn-premium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px] touch-target"
+                        >
+                            {isSending ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Sending Real-Time Messages...
+                                </>
+                            ) : (
+                                <>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                    </svg>
+                                    Send Messages
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
 
+            {/* Real-time Confirmation Modal */}
+            {sentConfirmation && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Real-Time Confirmation">
+                    <div className="bg-bg-surface border border-border-theme rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+
+                        <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-xl font-black text-text-primary">
+                                Messages Delivered in Real-Time
+                            </h3>
+                            <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                                {sentConfirmation.timestamp}
+                            </span>
+                        </div>
+                        <p className="text-xs text-text-secondary mb-4">
+                            Your WhatsApp message has been processed and delivered to registered members.
+                        </p>
+
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                            <div className="bg-bg-primary p-3 rounded-xl border border-border-theme text-center">
+                                <span className="text-[10px] uppercase font-bold text-emerald-400 block tracking-wider">Delivered</span>
+                                <span className="text-xl font-black text-emerald-400 font-mono">{sentConfirmation.successCount}</span>
+                            </div>
+                            <div className="bg-bg-primary p-3 rounded-xl border border-border-theme text-center">
+                                <span className="text-[10px] uppercase font-bold text-text-secondary block tracking-wider">Skipped</span>
+                                <span className="text-xl font-black text-text-secondary font-mono">{sentConfirmation.skippedCount}</span>
+                            </div>
+                            <div className="bg-bg-primary p-3 rounded-xl border border-border-theme text-center">
+                                <span className="text-[10px] uppercase font-bold text-red-400 block tracking-wider">Failed</span>
+                                <span className="text-xl font-black text-red-400 font-mono">{sentConfirmation.failureCount}</span>
+                            </div>
+                        </div>
+
+                        {/* Recipient list */}
+                        <div className="bg-bg-primary rounded-xl p-3 border border-border-theme mb-5 max-h-36 overflow-y-auto custom-scrollbar">
+                            <span className="text-[10px] uppercase font-bold text-text-disabled tracking-widest block mb-2">Recipients ({sentConfirmation.recipients.length})</span>
+                            <div className="space-y-1.5">
+                                {sentConfirmation.recipients.map((r: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between items-center text-xs">
+                                        <span className="font-bold text-text-primary flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            {r.name}
+                                        </span>
+                                        <span className="text-text-secondary font-mono">{r.phone}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSentConfirmation(null);
+                                    setMessageTemplate('');
+                                }}
+                                className="px-5 py-2.5 rounded-xl bg-accent text-black text-xs font-bold uppercase transition-all shadow-lg hover:bg-accent/90"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Non-Member Customer Records Cleanup Confirmation Modal */}
+            {showCleanupModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Delete Non-Member Customers">
+                    <div className="bg-bg-surface border border-border-theme rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </div>
+                        
+                        <h3 className="text-lg font-black text-text-primary mb-1">
+                            Delete Non-Member Customers?
+                        </h3>
+                        <p className="text-sm text-text-secondary mb-3">
+                            Are you sure you want to delete <strong className="text-text-primary">{nonMemberCustomers.length} non-member customer records</strong> that are causing confusion?
+                        </p>
+                        
+                        <div className="bg-bg-primary/80 border border-border-theme rounded-xl p-3.5 mb-5 text-xs text-text-secondary space-y-2">
+                            <div className="flex items-start gap-2 text-emerald-400">
+                                <span className="shrink-0 font-bold">🛡️</span>
+                                <span>All registered member profiles, plans, and active memberships remain safe and untouched.</span>
+                            </div>
+                            <div className="flex items-start gap-2 text-red-400">
+                                <span className="shrink-0 font-bold">⚠️</span>
+                                <span>Removes legacy bot inquiry names and non-member customer rows from the database.</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                disabled={isCleaningCustomers}
+                                onClick={() => setShowCleanupModal(false)}
+                                className="px-4 py-2.5 rounded-xl border border-border-theme text-text-secondary hover:text-text-primary text-xs font-bold uppercase transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isCleaningCustomers}
+                                onClick={handleDeleteNonMemberCustomers}
+                                className="px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase shadow-lg shadow-red-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isCleaningCustomers ? (
+                                    <>
+                                        <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        Deleting...
+                                    </>
+                                ) : (
+                                    `Delete ${nonMemberCustomers.length} Customers`
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Member Profile Deletion Confirmation Modal */}
             {memberToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label="Remove Member Profile">
                     <div className="bg-bg-surface border border-border-theme rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
                         <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -683,19 +623,10 @@ export default function MessagingTab({
                                         }
                                         toast.success(data.message || 'Member profile removed successfully.');
                                         
-                                        // Update local list: demote to Customer if in customers list or remove if member only
-                                        setCustomers(prev => prev.map(c => {
-                                            if (c.membership_id === memberToDelete.membership_id) {
-                                                return {
-                                                    ...c,
-                                                    type: 'Customer',
-                                                    membership_id: undefined,
-                                                    tier: undefined
-                                                };
-                                            }
-                                            return c;
-                                        }));
+                                        // Update local list: remove deleted member
+                                        setCustomers(prev => prev.filter(c => c.membership_id !== memberToDelete.membership_id));
                                         setMemberToDelete(null);
+                                        onRefresh?.();
                                     } catch (err: any) {
                                         toast.error(err.message || 'Failed to remove member');
                                     } finally {

@@ -44,10 +44,12 @@ export default function OnboardPage() {
   const [error, setError] = useState('');
   const [qrs, setQrs] = useState<{ name: string; dataUrl: string }[]>([]);
   const [createdBusinessId, setCreatedBusinessId] = useState<string>('');
+  const [pendingApprovalData, setPendingApprovalData] = useState<{ businessName: string; businessId: string; phone: string } | null>(null);
 
-  const [onboardMode, setOnboardMode] = useState<'selection' | 'demo' | 'pricing' | 'payment' | 'production'>('selection');
+  const [onboardMode, setOnboardMode] = useState<'selection' | 'demo' | 'production'>('selection');
   const [selectedPlan, setSelectedPlan] = useState<'essential' | 'growth'>('growth');
   const [isTrial, setIsTrial] = useState(false);
+
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -215,7 +217,16 @@ export default function OnboardPage() {
         throw new Error(data.error || 'Failed to onboard business');
       }
 
-      setQrs(data.qrs);
+      if (data.pendingApproval) {
+        setPendingApprovalData({
+          businessName: data.business_name || formData.business_name,
+          businessId: data.businessId,
+          phone: formData.contact_number,
+        });
+        return;
+      }
+
+      setQrs(data.qrs || []);
       setCreatedBusinessId(data.businessId);
       if (data.pin) {
         sessionStorage.setItem('dashboard_pin', data.pin);
@@ -230,6 +241,48 @@ export default function OnboardPage() {
   const handleDownloadAll = () => {
     window.print();
   };
+
+  if (pendingApprovalData) {
+    return (
+      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
+        <div className="max-w-xl w-full bg-bg-surface border border-border-theme rounded-2xl p-8 sm:p-12 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+          <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl font-bold">
+            📋
+          </div>
+          <h1 className="text-3xl font-extrabold mb-3">Application Submitted</h1>
+          <div className="inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-full text-xs font-bold uppercase tracking-wider mb-6">
+            Awaiting Developer Approval
+          </div>
+          <p className="text-text-secondary text-base leading-relaxed mb-8">
+            Your club application for <strong className="text-text-primary">{pendingApprovalData.businessName}</strong> has been registered. The platform developer will review your details, configure your custom commercial agreement, and launch your production onboarding.
+          </p>
+          <div className="bg-bg-card border border-border-theme rounded-xl p-5 mb-8 text-left space-y-3 text-sm">
+            <div className="flex justify-between border-b border-border-light pb-2">
+              <span className="text-text-secondary">Club Name</span>
+              <span className="font-semibold text-text-primary">{pendingApprovalData.businessName}</span>
+            </div>
+            <div className="flex justify-between border-b border-border-light pb-2">
+              <span className="text-text-secondary">Owner Contact</span>
+              <span className="font-semibold text-text-primary font-mono">{pendingApprovalData.phone}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-secondary">Lifecycle State</span>
+              <span className="font-bold text-amber-400 font-mono">PENDING_APPROVAL</span>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="/" className="px-6 py-3.5 bg-bg-card hover:bg-border-light border border-border-theme rounded-xl font-bold text-text-primary transition-all text-center">
+              Return Home
+            </a>
+            <a href="/login" className="px-6 py-3.5 bg-accent hover:bg-accent/90 text-white rounded-xl font-bold transition-all shadow-lg text-center">
+              Check Status at Login
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
 
   if (qrs.length > 0) {
     return (
@@ -284,7 +337,7 @@ export default function OnboardPage() {
 
             {/* Production Setup Card */}
             <div 
-              onClick={() => setOnboardMode('pricing')}
+              onClick={() => setOnboardMode('production')}
               className="group cursor-pointer glass-panel p-8 rounded-2xl flex flex-col items-center text-center hover:-translate-y-2 transition-all duration-300 hover:border-blue-500 shadow-2xl bg-bg-surface"
             >
               <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
@@ -292,12 +345,12 @@ export default function OnboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold mb-3">Full Production Setup</h2>
+              <h2 className="text-2xl font-bold mb-3">Register Your Club</h2>
               <p className="text-text-secondary mb-6 text-sm leading-relaxed">
-                Configure your real business. Set up custom time-based pricing rules, link your Google Sheets for QKhata, and generate live QR codes for your tables.
+                Configure your real venue details, table inventory, and Google Sheet for platform review. Your club will be reviewed and provisioned by the developer.
               </p>
               <div className="mt-auto px-6 py-2 rounded-full border border-border-theme group-hover:bg-blue-500 group-hover:text-white group-hover:border-transparent font-bold text-sm transition-colors">
-                Start Production Setup
+                Start Registration
               </div>
             </div>
 
@@ -318,110 +371,7 @@ export default function OnboardPage() {
       </main>
     );
   }
-  if (onboardMode === 'pricing') {
-    return (
-      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
-        <div className="max-w-5xl w-full">
-          <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => setOnboardMode('selection')} className="text-text-secondary hover:text-text-primary bg-bg-surface p-2 rounded-full border border-border-theme">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            </button>
-            <h1 className="text-3xl font-bold">Choose Your License</h1>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Essential Plan */}
-            <div 
-              onClick={() => setSelectedPlan('essential')}
-              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer ${selectedPlan === 'essential' ? 'border-accent shadow-[0_0_30px_rgba(16,185,129,0.15)] bg-bg-card' : 'border-border-theme bg-bg-surface hover:border-border-theme'}`}
-            >
-              <h3 className="text-xl font-bold text-text-secondary mb-2">Essential</h3>
-              <div className="mb-6"><span className="text-4xl font-black">₹999</span><span className="text-text-secondary">/mo</span></div>
-              <ul className="space-y-4 mb-8 flex-1 text-sm">
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Up to 5 Tables</li>
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Standard QR Billing</li>
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Basic Telegram Alerts</li>
-              </ul>
-              <button onClick={() => { setSelectedPlan('essential'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'essential' ? 'bg-accent text-white' : 'bg-bg-card text-text-primary border border-border-theme'}`}>
-                Select Essential
-              </button>
-            </div>
 
-            {/* Growth Plan */}
-            <div 
-              onClick={() => setSelectedPlan('growth')}
-              className={`glass-panel p-8 rounded-2xl flex flex-col border-2 transition-all cursor-pointer relative overflow-hidden ${selectedPlan === 'growth' ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.15)] bg-bg-card' : 'border-border-theme bg-bg-surface hover:border-border-theme'}`}
-            >
-              <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase tracking-widest">Recommended</div>
-              <h3 className="text-xl font-bold text-blue-500 mb-2">Growth</h3>
-              <div className="mb-6"><span className="text-4xl font-black">₹2,499</span><span className="text-text-secondary">/mo</span></div>
-              <ul className="space-y-4 mb-8 flex-1 text-sm">
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Unlimited Tables</li>
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>QKhata (Google Sheets Sync)</li>
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Time-based Smart Pricing</li>
-                <li className="flex items-center gap-3"><svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Food & Beverage Engine</li>
-              </ul>
-              <button onClick={() => { setSelectedPlan('growth'); setOnboardMode('payment'); }} className={`w-full py-3 rounded-xl font-bold transition-all ${selectedPlan === 'growth' ? 'bg-blue-600 text-white' : 'bg-bg-card text-text-primary border border-border-theme'}`}>
-                Select Growth
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (onboardMode === 'payment') {
-    return (
-      <main className="dark flex min-h-screen flex-col items-center justify-center p-6 bg-bg-primary text-text-primary bg-grid-pattern">
-        <div className="max-w-md w-full glass-panel rounded-2xl shadow-2xl overflow-hidden border border-border-theme bg-bg-surface p-8 animate-in fade-in zoom-in-95 duration-300">
-          <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => setOnboardMode('pricing')} className="text-text-secondary hover:text-text-primary">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            </button>
-            <h1 className="text-2xl font-bold">Secure Checkout</h1>
-          </div>
-          
-          <div className="bg-bg-card border border-border-theme rounded-xl p-4 mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-text-secondary">Selected Plan</span>
-              <span className="font-bold capitalize">{selectedPlan}</span>
-            </div>
-            <div className="flex justify-between items-center text-lg font-black">
-              <span>Total Due</span>
-              <span>₹{selectedPlan === 'essential' ? '999' : '2,499'}</span>
-            </div>
-          </div>
-
-          <div className="space-y-4 mb-8">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Card Number</label>
-              <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary flex items-center justify-between font-mono">
-                <span>•••• •••• •••• 4242</span>
-                <svg className="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><path d="M2.993 6.696C2.993 5.759 3.75 5 4.687 5h14.626c.937 0 1.694.759 1.694 1.696v10.608c0 .937-.757 1.696-1.694 1.696H4.687c-.937 0-1.694-.759-1.694-1.696V6.696zM4.687 6.696h14.626v2.122H4.687V6.696zm0 4.243v6.365h14.626v-6.365H4.687z"/></svg>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">Expiry</label>
-                <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary font-mono">12 / 28</div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-wider">CVC</label>
-                <div className="w-full px-4 py-3 rounded-xl border border-border-theme bg-bg-card text-text-secondary font-mono">•••</div>
-              </div>
-            </div>
-          </div>
-
-          <button onClick={() => setOnboardMode('production')} className="w-full px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all flex items-center justify-center gap-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            Pay & Continue Setup
-          </button>
-          <p className="text-xs text-text-secondary text-center mt-4">Simulated secure checkout for Demo Environment.</p>
-        </div>
-      </main>
-    );
-  }
 
   // Production Setup Flow
   return (

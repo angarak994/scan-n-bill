@@ -60,22 +60,34 @@ export const clubDiscoveryService = {
     const normLocation = locationQuery.toLowerCase().trim();
     const normGame = (gameType || 'pool').toLowerCase().trim();
 
-    // 1. Fetch active partner clubs from database
+    // 1. Fetch active and approved partner clubs from database
     const { data: businesses, error } = await supabase
       .from('businesses')
       .select('*')
-      .eq('status', 'ACTIVE');
+      .or('status.eq.APPROVED,status.eq.ACTIVE');
 
     if (error || !businesses || businesses.length === 0) {
       console.error('Error fetching businesses for club discovery:', error);
       return [];
     }
 
-    // Filter out archived or demo test clubs
-    const activeClubs = businesses.filter(b => 
-      !b.business_name.toLowerCase().includes('archived') &&
-      b.tables && b.tables.length > 0
-    );
+    // Filter out archived, pending, suspended, or clubs without authorized WhatsApp AI entitlement
+    const activeClubs = businesses.filter(b => {
+      if ((b.business_name || '').toLowerCase().includes('archived')) return false;
+      if (!b.tables || b.tables.length === 0) return false;
+
+      const bStatus = (b.status || '').toUpperCase().trim();
+      if (bStatus !== 'APPROVED' && bStatus !== 'ACTIVE') return false;
+
+      // Enforce developer-controlled WhatsApp AI entitlement
+      const ents = b.feature_entitlements || b.qpulse_config?.feature_entitlements || {};
+      const hasConfig = Object.keys(ents).length > 0;
+      if (hasConfig && !ents.whatsapp_ai) return false;
+      if (!hasConfig && bStatus !== 'ACTIVE') return false;
+
+      return true;
+    });
+
 
     // Evaluate active clubs concurrently for fast response times
     const evalPromises = activeClubs.map(async (b) => {

@@ -89,7 +89,8 @@ function toReadableIST(date: Date): string {
 }
 
 const formatINR = (amount: number) => {
-  return amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).replace('₹', '₹');
+  const safe = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  return safe.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).replace('₹', '₹');
 };
 
 // Icons
@@ -6935,7 +6936,7 @@ function DashboardContent() {
           {sidebarTab === 'payments' && <PaymentsTab />}
                     {sidebarTab === 'messaging' && (
             data?.entitlement?.features?.has_whatsapp ?
-            <MessagingTab businessId={businessId!} businessName={data?.businessName || (data as any)?.business_name} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} /> :
+            <MessagingTab businessId={businessId!} businessName={data?.businessName || (data as any)?.business_name} isWhatsAppConnected={!!data?.whatsapp_config?.enabled} dbCustomers={data?.dbCustomers || []} memberships={memberships || []} onRefresh={() => { fetchDashboardData(currentDay, currentDay, true); fetchMemberships(); }} /> :
             <FeatureLock featureName="WhatsApp Automation" requiredPlan="Growth" description="Send automated session receipts, OTPs, and promotional broadcasts directly to customers' WhatsApp." />
           )}
         </div>

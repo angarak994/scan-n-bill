@@ -1,5 +1,47 @@
 import { supabase } from './supabaseClient';
 
+export interface BusinessFeatureEntitlements {
+  whatsapp_ai: boolean;
+  google_sheets: boolean;
+  qr_sessions: boolean;
+  telegram_bot: boolean;
+  manual_booking: boolean;
+  online_booking: boolean;
+  memberships: boolean;
+  reports_analytics: boolean;
+  advanced_billing: boolean;
+  payment_automation: boolean;
+  fnb_inventory: boolean;
+}
+
+export const DEFAULT_LOCKED_FEATURES: BusinessFeatureEntitlements = {
+  whatsapp_ai: false,
+  google_sheets: false,
+  qr_sessions: false,
+  telegram_bot: false,
+  manual_booking: true,
+  online_booking: false,
+  memberships: false,
+  reports_analytics: false,
+  advanced_billing: false,
+  payment_automation: false,
+  fnb_inventory: false,
+};
+
+export const DEFAULT_UNLOCKED_FEATURES: BusinessFeatureEntitlements = {
+  whatsapp_ai: true,
+  google_sheets: true,
+  qr_sessions: true,
+  telegram_bot: true,
+  manual_booking: true,
+  online_booking: true,
+  memberships: true,
+  reports_analytics: true,
+  advanced_billing: true,
+  payment_automation: true,
+  fnb_inventory: true,
+};
+
 export type PlanFeatures = {
   max_tables: number;
   has_qkhata: boolean;
@@ -17,7 +59,6 @@ export type PlanFeatures = {
   max_locations: number;
 };
 
-// Default fallback for expired/canceled subscriptions or errors
 const FALLBACK_FEATURES: PlanFeatures = {
   max_tables: 2,
   has_qkhata: false,
@@ -38,37 +79,145 @@ const FALLBACK_FEATURES: PlanFeatures = {
 export type EntitlementResult = {
   hasAccess: boolean;
   features: PlanFeatures;
-  status: string; // 'trialing', 'active', 'past_due', 'canceled', 'expired', 'none'
+  entitlements: BusinessFeatureEntitlements;
+  status: string; // 'trialing', 'active', 'past_due', 'canceled', 'expired', 'none', 'pending_approval', 'suspended'
   planName: string;
+  businessStatus: string; // 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'REJECTED', 'SUSPENDED', 'DEACTIVATED'
 };
 
-export async function getBusinessEntitlement(businessId: string): Promise<EntitlementResult> {
-  // TEMPORARY OVERRIDE: Unlock all features globally for production testing
-  return {
-      hasAccess: true,
-      features: {
-        max_tables: 999,
-        has_qkhata: true,
-        has_advanced_qkhata: true,
-        has_advanced_reports: true,
-        has_memberships: true,
-        has_promotions: true,
-        has_whatsapp: true,
-        has_telegram: true,
-        has_fnb: true,
-        has_booking: true,
-        has_loyalty: true,
-        has_ai: true,
-        has_api: true,
-        max_locations: 999
-      },
-      status: 'active',
-      planName: 'Enterprise'
-  };
+// In-memory entitlement cache with short TTL (30s)
+interface CacheEntry {
+  data: EntitlementResult;
+  expiresAt: number;
+}
+const entitlementCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 30000;
+
+export function invalidateEntitlementCache(businessId?: string) {
+  if (businessId) {
+    entitlementCache.delete(businessId);
+  } else {
+    entitlementCache.clear();
+  }
+}
+
+/**
+ * Checks whether a business lifecycle state allows active operations.
+ * Only APPROVED and legacy ACTIVE clubs are authorized.
+ */
+export function isOperationalStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const s = status.toUpperCase().trim();
+  return s === 'APPROVED' || s === 'ACTIVE';
+}
+
+/**
+ * Centralized server-side entitlement resolver.
+ * Enforces developer-configured feature toggles and lifecycle states.
+ */
+export async function getBusinessEntitlement(businessId: string, forceRefresh = false): Promise<EntitlementResult> {
+  if (!businessId) {
+    return {
+      hasAccess: false,
+      features: FALLBACK_FEATURES,
+      entitlements: DEFAULT_LOCKED_FEATURES,
+      status: 'none',
+      planName: 'None',
+      businessStatus: 'UNKNOWN',
+    };
+  }
+
+  const now = Date.now();
+  if (!forceRefresh) {
+    const cached = entitlementCache.get(businessId);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+  }
 
   try {
-    // Check if the business has a subscription
-    const { data: sub, error } = await supabase
+    // 1. Fetch business status & feature entitlements
+    let biz: any = null;
+    let bizError: any = null;
+
+    try {
+      const primaryRes = await supabase
+        .from('businesses')
+        .select('id, status, feature_entitlements, qpulse_config')
+        .eq('id', businessId)
+        .maybeSingle();
+
+      if (primaryRes.error && primaryRes.error.message?.includes('feature_entitlements')) {
+        const fallbackRes = await supabase
+          .from('businesses')
+          .select('id, status, qpulse_config')
+          .eq('id', businessId)
+          .maybeSingle();
+        biz = fallbackRes.data;
+        bizError = fallbackRes.error;
+      } else {
+        biz = primaryRes.data;
+        bizError = primaryRes.error;
+      }
+    } catch {
+      const fallbackRes = await supabase
+        .from('businesses')
+        .select('id, status, qpulse_config')
+        .eq('id', businessId)
+        .maybeSingle();
+      biz = fallbackRes.data;
+      bizError = fallbackRes.error;
+    }
+
+    if (bizError || !biz) {
+      return {
+        hasAccess: false,
+        features: FALLBACK_FEATURES,
+        entitlements: DEFAULT_LOCKED_FEATURES,
+        status: 'none',
+        planName: 'None',
+        businessStatus: 'NOT_FOUND',
+      };
+    }
+
+    const bStatus = (biz.status || 'PENDING_APPROVAL').toUpperCase().trim();
+
+    // Pending, rejected, suspended, or deactivated businesses are completely restricted
+    if (!isOperationalStatus(bStatus)) {
+      const result: EntitlementResult = {
+        hasAccess: false,
+        features: FALLBACK_FEATURES,
+        entitlements: DEFAULT_LOCKED_FEATURES,
+        status: bStatus.toLowerCase(),
+        planName: 'Locked',
+        businessStatus: bStatus,
+      };
+      entitlementCache.set(businessId, { data: result, expiresAt: now + CACHE_TTL_MS });
+      return result;
+    }
+
+    // Resolve feature entitlements (merge with defaults; support column and qpulse_config fallback)
+    const rawEntitlements = biz.feature_entitlements || biz.qpulse_config?.feature_entitlements || null;
+    const storedEntitlements = (rawEntitlements || {}) as Partial<BusinessFeatureEntitlements>;
+    const hasConfiguredFeatures = rawEntitlements && Object.keys(rawEntitlements).length > 0;
+    const baseDefaults = bStatus === 'ACTIVE' && !hasConfiguredFeatures ? DEFAULT_UNLOCKED_FEATURES : DEFAULT_LOCKED_FEATURES;
+
+    const resolvedEntitlements: BusinessFeatureEntitlements = {
+      whatsapp_ai: storedEntitlements.whatsapp_ai ?? baseDefaults.whatsapp_ai,
+      google_sheets: storedEntitlements.google_sheets ?? baseDefaults.google_sheets,
+      qr_sessions: storedEntitlements.qr_sessions ?? baseDefaults.qr_sessions,
+      telegram_bot: storedEntitlements.telegram_bot ?? baseDefaults.telegram_bot,
+      manual_booking: storedEntitlements.manual_booking ?? baseDefaults.manual_booking,
+      online_booking: storedEntitlements.online_booking ?? baseDefaults.online_booking,
+      memberships: storedEntitlements.memberships ?? baseDefaults.memberships,
+      reports_analytics: storedEntitlements.reports_analytics ?? baseDefaults.reports_analytics,
+      advanced_billing: storedEntitlements.advanced_billing ?? baseDefaults.advanced_billing,
+      payment_automation: storedEntitlements.payment_automation ?? baseDefaults.payment_automation,
+      fnb_inventory: storedEntitlements.fnb_inventory ?? baseDefaults.fnb_inventory,
+    };
+
+    // 2. Fetch subscription status
+    const { data: sub } = await supabase
       .from('business_subscriptions')
       .select(`
         status,
@@ -79,81 +228,61 @@ export async function getBusinessEntitlement(businessId: string): Promise<Entitl
         )
       `)
       .eq('business_id', businessId)
-      .single();
+      .maybeSingle();
 
-    if (error || !sub) {
-      return {
-        hasAccess: false,
-        features: FALLBACK_FEATURES,
-        status: 'none',
-        planName: 'None'
-      };
-    }
+    const plan = (sub?.subscription_plans as any) || { name: 'Growth', features: {} };
+    const subStatus = sub?.status || 'active';
+    const isExpired = sub?.current_period_end ? new Date(sub.current_period_end).getTime() < now : false;
 
-    const plan = sub!.subscription_plans as any;
-    const features = plan.features as PlanFeatures;
-    const status = sub!.status;
-    const isExpired = new Date(sub!.current_period_end).getTime() < Date.now();
+    const isSubActive = subStatus === 'active' || subStatus === 'trialing' || subStatus === 'past_due' || !isExpired;
 
-    // If active or trialing, they have full access to their plan features
-    if (status === 'active' || status === 'trialing') {
-        if (isExpired && status !== 'active') { // edge case if not updated by webhook yet
-             return {
-                hasAccess: false,
-                features: FALLBACK_FEATURES,
-                status: 'expired',
-                planName: plan.name
-             };
-        }
-        return {
-            hasAccess: true,
-            features,
-            status,
-            planName: plan.name
-        };
-    }
-
-    // Grace period for past_due
-    if (status === 'past_due') {
-        // Typically a grace period logic goes here. For now, allow but mark past_due
-        return {
-            hasAccess: true,
-            features,
-            status: 'past_due',
-            planName: plan.name
-        };
-    }
-
-    // TEMPORARY OVERRIDE: Unlock all features globally for production testing
-    return {
-        hasAccess: true,
-        features: {
-          max_tables: 999,
-          has_qkhata: true,
-          has_advanced_qkhata: true,
-          has_advanced_reports: true,
-          has_memberships: true,
-          has_promotions: true,
-          has_whatsapp: true,
-          has_telegram: true,
-          has_fnb: true,
-          has_booking: true,
-          has_loyalty: true,
-          has_ai: true,
-          has_api: true,
-          max_locations: 999
-        },
-        status: status || 'active',
-        planName: plan?.name || 'Enterprise'
+    // Map feature entitlements to legacy PlanFeatures structure
+    const mappedPlanFeatures: PlanFeatures = {
+      max_tables: plan.features?.max_tables || 999,
+      has_qkhata: resolvedEntitlements.advanced_billing,
+      has_advanced_qkhata: resolvedEntitlements.advanced_billing,
+      has_advanced_reports: resolvedEntitlements.reports_analytics,
+      has_memberships: resolvedEntitlements.memberships,
+      has_promotions: resolvedEntitlements.advanced_billing,
+      has_whatsapp: resolvedEntitlements.whatsapp_ai,
+      has_telegram: resolvedEntitlements.telegram_bot,
+      has_fnb: resolvedEntitlements.fnb_inventory,
+      has_booking: resolvedEntitlements.online_booking || resolvedEntitlements.manual_booking,
+      has_loyalty: resolvedEntitlements.memberships,
+      has_ai: resolvedEntitlements.whatsapp_ai,
+      has_api: true,
+      max_locations: plan.features?.max_locations || 1,
     };
 
+    const finalResult: EntitlementResult = {
+      hasAccess: isSubActive && isOperationalStatus(bStatus),
+      features: mappedPlanFeatures,
+      entitlements: resolvedEntitlements,
+      status: subStatus,
+      planName: plan.name || 'Growth',
+      businessStatus: bStatus,
+    };
+
+    entitlementCache.set(businessId, { data: finalResult, expiresAt: now + CACHE_TTL_MS });
+    return finalResult;
   } catch (err) {
-    console.error('Error fetching entitlements for business:', businessId, err);
+    console.error('[Entitlements] Error resolving business entitlements:', businessId, err);
     return {
       hasAccess: false,
       features: FALLBACK_FEATURES,
+      entitlements: DEFAULT_LOCKED_FEATURES,
       status: 'error',
-      planName: 'Unknown'
+      planName: 'Unknown',
+      businessStatus: 'ERROR',
     };
   }
+}
+
+/**
+ * Checks whether a specific feature is enabled for a business.
+ */
+export async function hasFeature(businessId: string, feature: keyof BusinessFeatureEntitlements): Promise<boolean> {
+  const result = await getBusinessEntitlement(businessId);
+  if (!result.hasAccess) return false;
+  return Boolean(result.entitlements[feature]);
 }

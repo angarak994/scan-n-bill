@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     // Query notifications with database-level session filtering to avoid full table scans
     const { data: notifs, error } = await supabase
       .from('notifications')
-      .select('message, created_at, type')
+      .select('id, message, created_at, type')
       .eq('business_id', business_id)
       .like('message', `%|${session_id}`)
       .in('type', ['order_pending', 'order_accepted', 'order_served', 'order_rejected'])
@@ -30,7 +30,9 @@ export async function GET(request: Request) {
       const parsed = parseOrderNotification(notif.message);
       if (parsed && parsed.sessionId === session_id) {
         orders.push({
+          id: notif.id,
           cart: parsed.rawCart,
+          items: parsed.items,
           total: parsed.orderTotal,
           status: notif.type.replace('order_', ''),
           timestamp: notif.created_at

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { PrivacyText } from './components';
@@ -424,6 +424,92 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
       return sum + price * qty;
     }, 0);
   }, [cart, allAvailableMenuItems, customPrices]);
+
+  // Robust order items parser for session orders drawer
+  const getOrderItems = useCallback((order: any): Array<{ name: string; qty: number; subtotal: number }> => {
+    if (!order) return [];
+
+    // 1. If order.items is available
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      return order.items.map((item: any) => {
+        const name = item.name || 'Item';
+        const qty = Number(item.qty ?? item.quantity) || 1;
+        let price = typeof item.price === 'number' && !isNaN(item.price) && item.price > 0 ? item.price : 0;
+        if (!price) {
+          price = allAvailableMenuItems.find(m => m.name.toLowerCase() === name.toLowerCase())?.price || 0;
+        }
+        let subtotal = typeof item.subtotal === 'number' && !isNaN(item.subtotal) && item.subtotal > 0 ? item.subtotal : (price * qty);
+        if (!subtotal && order.items.length === 1 && Number(order.total) > 0) {
+          subtotal = Number(order.total);
+        }
+        return { name, qty, subtotal };
+      });
+    }
+
+    // 2. Fallback to order.cart (could be Array of items or Object of { name: qty })
+    let raw = order.cart;
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch { raw = null; }
+    }
+
+    if (Array.isArray(raw)) {
+      return raw.map((item: any) => {
+        if (typeof item === 'string') {
+          const matched = allAvailableMenuItems.find(m => m.name.toLowerCase() === item.toLowerCase());
+          const price = matched?.price || 0;
+          return { name: item, qty: 1, subtotal: price };
+        }
+        const name = item.name || item.title || item.item_name || 'Item';
+        const qty = Number(item.quantity ?? item.qty) || 1;
+        let price = typeof item.price === 'number' && !isNaN(item.price) && item.price > 0 ? item.price : 0;
+        if (!price) {
+          price = allAvailableMenuItems.find(m => m.name.toLowerCase() === name.toLowerCase())?.price || 0;
+        }
+        let subtotal = typeof item.subtotal === 'number' && !isNaN(item.subtotal) && item.subtotal > 0 ? item.subtotal : (price * qty);
+        if (!subtotal && raw.length === 1 && Number(order.total) > 0) {
+          subtotal = Number(order.total);
+        }
+        return { name, qty, subtotal };
+      });
+    }
+
+    if (raw && typeof raw === 'object') {
+      const entries = Object.entries(raw);
+      return entries.map(([key, val]: [string, any]) => {
+        let name = key;
+        let qty = 1;
+        let price = 0;
+        let subtotal = 0;
+
+        if (typeof val === 'number') {
+          qty = val;
+        } else if (val && typeof val === 'object') {
+          name = val.name || key;
+          qty = Number(val.qty ?? val.quantity) || 1;
+          if (typeof val.price === 'number' && !isNaN(val.price)) {
+            price = val.price;
+          }
+          if (typeof val.subtotal === 'number' && !isNaN(val.subtotal)) {
+            subtotal = val.subtotal;
+          }
+        }
+
+        if (!price) {
+          price = allAvailableMenuItems.find(m => m.name.toLowerCase() === name.toLowerCase())?.price || 0;
+        }
+        if (!subtotal) {
+          subtotal = price * qty;
+        }
+        if (!subtotal && entries.length === 1 && Number(order.total) > 0) {
+          subtotal = Number(order.total);
+        }
+
+        return { name, qty, subtotal };
+      });
+    }
+
+    return [];
+  }, [allAvailableMenuItems]);
 
   // Active table and session resolution
   const activeTableObj = useMemo(() => {
@@ -1008,33 +1094,42 @@ export function EnhancedTableView(props: EnhancedTableViewProps) {
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
-                  {ordersSummary.map((order, i) => (
-                    <div key={i} className="bg-bg-surface border border-border-theme rounded-xl p-4">
-                      <div className="flex justify-between items-center mb-3 pb-2 border-b border-border-theme/50">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Order #{i + 1}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">
-                          {order.timestamp ? new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: 'numeric' }).format(new Date(order.timestamp)) : ''}
-                        </span>
+                  {ordersSummary.map((order, i) => {
+                    const items = getOrderItems(order);
+                    return (
+                      <div key={order.id || i} className="bg-bg-surface border border-border-theme rounded-xl p-4">
+                        <div className="flex justify-between items-center mb-3 pb-2 border-b border-border-theme/50">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Order #{i + 1}</span>
+                            {order.status === 'pending' && <span className="text-[9px] font-bold uppercase tracking-wider text-warning bg-warning/10 px-1.5 py-0.5 rounded border border-warning/20">Pending</span>}
+                            {order.status === 'accepted' && <span className="text-[9px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-1.5 py-0.5 rounded border border-accent/20">Accepted</span>}
+                            {order.status === 'served' && <span className="text-[9px] font-bold uppercase tracking-wider text-success bg-success/10 px-1.5 py-0.5 rounded border border-success/20">Served</span>}
+                          </div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-text-disabled">
+                            {order.timestamp ? new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: 'numeric' }).format(new Date(order.timestamp)) : ''}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {items.length > 0 ? (
+                            items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between items-center text-sm">
+                                <span className="text-text-primary font-medium truncate pr-2">
+                                  <span className="text-accent font-bold mr-2">{item.qty}x</span>{item.name}
+                                </span>
+                                <span className="font-mono text-text-secondary shrink-0">{formatINR(item.subtotal)}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-xs text-text-secondary italic">No item details available</div>
+                          )}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-border-theme/50 flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Subtotal</span>
+                          <span className="font-mono font-bold text-accent">{formatINR(Number(order.total) || 0)}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        {order.cart && Object.entries(order.cart).map(([name, qty]) => {
-                           const price = allAvailableMenuItems.find(m => m.name.toLowerCase() === name.toLowerCase())?.price || 0;
-                           return (
-                             <div key={name} className="flex justify-between items-center text-sm">
-                               <span className="text-text-primary font-medium">
-                                 <span className="text-accent font-bold mr-2">{String(qty)}x</span>{name}
-                               </span>
-                               <span className="font-mono text-text-secondary">{formatINR(price * Number(qty))}</span>
-                             </div>
-                           );
-                        })}
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-border-theme/50 flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Subtotal</span>
-                        <span className="font-mono font-bold text-accent">{formatINR(order.total)}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -266,14 +266,20 @@ async function processQueue(): Promise<void> {
   }
 }
 
-/**
- * Dispatches sync execution to the core Google Sheets module.
- */
 async function executeSyncJob(job: SyncJob): Promise<void> {
+  // Gate execution with developer-controlled Google Sheets synchronization entitlement
+  const { hasFeature } = require('./entitlements');
+  const isEnabled = await hasFeature(job.businessId, 'google_sheets');
+  if (!isEnabled) {
+    console.log(`[SheetsSyncQueue] Google Sheets sync is disabled for business ${job.businessId}. Skipping sync.`);
+    return;
+  }
+
   const { syncUnifiedSessionToSheet, syncBookingToSheet, reconcileMonthlySheets } = require('./googleSheets');
 
   if (job.entityType === 'SESSION') {
     await syncUnifiedSessionToSheet(job.entityId, job.businessId);
+
   } else if (job.entityType === 'BOOKING') {
     if (job.payload) {
       await syncBookingToSheet(job.payload, job.businessId);

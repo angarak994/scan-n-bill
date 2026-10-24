@@ -325,7 +325,7 @@ export async function createAuthoritativeOrder(params: {
 
 export interface ParsedNotificationOrder {
   rawCart: any;
-  items: Array<{ name: string; qty: number; price?: number }>;
+  items: Array<{ name: string; qty: number; price?: number; subtotal?: number }>;
   orderTotal: number;
   sessionId: string | null;
   tableId?: string;
@@ -346,14 +346,18 @@ export function parseOrderNotification(message: string): ParsedNotificationOrder
     const itemsJson = parts.slice(0, parts.length - 2).join('|') || parts[0];
     const rawCart = JSON.parse(itemsJson);
 
-    const items: Array<{ name: string; qty: number; price?: number }> = [];
+    const items: Array<{ name: string; qty: number; price?: number; subtotal?: number }> = [];
     if (Array.isArray(rawCart)) {
       for (const item of rawCart) {
         if (!item) continue;
+        const qty = Number(item.quantity ?? item.qty) || 1;
+        const price = typeof item.price === 'number' && !isNaN(item.price) ? item.price : Number(item.price) || 0;
+        const subtotal = typeof item.subtotal === 'number' && !isNaN(item.subtotal) ? item.subtotal : (price * qty);
         items.push({
           name: item.name || 'Item',
-          qty: Number(item.quantity ?? item.qty) || 1,
-          price: Number(item.price) || 0
+          qty,
+          price,
+          subtotal
         });
       }
     } else if (rawCart && typeof rawCart === 'object') {
@@ -361,10 +365,13 @@ export function parseOrderNotification(message: string): ParsedNotificationOrder
         if (typeof qtyOrObj === 'number') {
           items.push({ name, qty: qtyOrObj });
         } else if (qtyOrObj && typeof qtyOrObj === 'object') {
+          const qty = Number((qtyOrObj as any).qty ?? (qtyOrObj as any).quantity) || 1;
+          const price = typeof (qtyOrObj as any).price === 'number' ? (qtyOrObj as any).price : (Number((qtyOrObj as any).price) || undefined);
           items.push({
             name,
-            qty: Number((qtyOrObj as any).qty ?? (qtyOrObj as any).quantity) || 1,
-            price: Number((qtyOrObj as any).price) || undefined
+            qty,
+            price,
+            subtotal: typeof price === 'number' ? price * qty : undefined
           });
         }
       }

@@ -50,6 +50,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid business' }, { status: 404 });
     }
 
+    // Server-side business approval & feature entitlement validation
+    const { isOperationalStatus, hasFeature } = require('@/lib/entitlements');
+    if (!isOperationalStatus(business.status)) {
+      return NextResponse.json({ error: 'This club is not authorized for session operations.' }, { status: 403 });
+    }
+
+    if (!isOwner) {
+      const qrEnabled = await hasFeature(business_id, 'qr_sessions');
+      if (!qrEnabled) {
+        return NextResponse.json({ error: 'QR Code Sessions are inactive for this venue. Please contact desk staff.' }, { status: 403 });
+      }
+    } else {
+      const manualEnabled = await hasFeature(business_id, 'manual_booking');
+      if (!manualEnabled) {
+        return NextResponse.json({ error: 'Session operations are inactive for this subscription.' }, { status: 403 });
+      }
+    }
+
     const configuredTables = business.tables || [];
     const matchedTable = configuredTables.find((t: any) =>
       String(t.id).trim().toLowerCase() === String(table_id).trim().toLowerCase() ||
@@ -58,6 +76,7 @@ export async function POST(request: Request) {
     if (configuredTables.length > 0 && !matchedTable) {
       return NextResponse.json({ error: `Table '${table_id}' is not configured for this business.` }, { status: 400 });
     }
+
     if (matchedTable) {
       table_id = matchedTable.id; // Canonicalize table_id
       if (!game_type) {

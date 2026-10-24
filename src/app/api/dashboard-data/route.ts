@@ -53,7 +53,7 @@ async function getCachedPreviousRevenue(businessId: string, prevStartDate: strin
   return rev;
 }
 
-import { getBusinessEntitlement } from '@/lib/entitlements';
+import { getBusinessEntitlement, isOperationalStatus } from '@/lib/entitlements';
 import { getMostSellingItems } from '@/lib/services/mostSellingService';
 export async function GET(request: Request) {
   try {
@@ -69,6 +69,13 @@ export async function GET(request: Request) {
     const business = await businessManager.getBusiness(businessId as string);
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    }
+
+    if (!isOperationalStatus(business.status)) {
+      return NextResponse.json({ 
+        error: `Account is ${business.status || 'PENDING_APPROVAL'}. Awaiting platform developer activation.`,
+        status: business.status || 'PENDING_APPROVAL'
+      }, { status: 403 });
     }
 
     const requestedDate = searchParams.get('date');

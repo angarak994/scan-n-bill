@@ -83,14 +83,29 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
   let overrideToken: string | undefined = undefined;
   let overridePhoneId: string | undefined = undefined;
 
+  // Helper to verify business approval and developer-authorized WhatsApp AI entitlement
+  const isClubAuthorizedForWhatsApp = (b: any) => {
+    if (!b) return false;
+    const bStatus = (b.status || '').toUpperCase().trim();
+    if (bStatus !== 'APPROVED' && bStatus !== 'ACTIVE') return false;
+    const ents = b.feature_entitlements || {};
+    const hasConfig = Object.keys(ents).length > 0;
+    if (hasConfig && !ents.whatsapp_ai) return false;
+    if (!hasConfig && bStatus !== 'ACTIVE') return false;
+    return true;
+  };
+
   // Ingress Step A: QR Code / Deep-Link Ingress Detection (Takes highest precedence)
   // Matches QC_<SLUG>, Code: QC_<SLUG>, or "Book at <ClubName>"
   const deepLinkMatch = incomingText.match(/\bQC_([A-Za-z0-9_]+)\b/i) || incomingText.match(/Code:\s*QC_([A-Za-z0-9_]+)/i);
   const bookAtMatch = incomingText.match(/Book at\s+([^(\n\r]+)/i);
 
   if (deepLinkMatch || bookAtMatch || incomingText.startsWith('select_biz_')) {
-    const { data: activeBusinesses } = await supabase.from('businesses').select('*').eq('status', 'ACTIVE');
-    const clubs = activeBusinesses || [];
+    const { data: eligibleBusinesses } = await supabase
+      .from('businesses')
+      .select('*')
+      .or('status.eq.APPROVED,status.eq.ACTIVE');
+    const clubs = (eligibleBusinesses || []).filter(isClubAuthorizedForWhatsApp);
 
     if (deepLinkMatch) {
       const slugOrId = deepLinkMatch[1].toLowerCase().trim();
@@ -126,9 +141,16 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
 
   // Ingress Step B: Dedicated Phone Number ID match (for enterprise clubs with their own Meta WABA)
   if (!detectedBusiness && phoneNumberId) {
-    const { data: businesses } = await supabase.from('businesses').select('*').eq('status', 'ACTIVE');
+    const { data: businesses } = await supabase
+      .from('businesses')
+      .select('*')
+      .or('status.eq.APPROVED,status.eq.ACTIVE');
     if (businesses) {
-      const matched = businesses.find(b => b.whatsapp_config?.enabled && b.whatsapp_config?.phoneId === phoneNumberId);
+      const matched = businesses.find(b => 
+        isClubAuthorizedForWhatsApp(b) &&
+        b.whatsapp_config?.enabled &&
+        b.whatsapp_config?.phoneId === phoneNumberId
+      );
       if (matched) {
         detectedBusiness = matched;
         overrideToken = matched.whatsapp_config.token;
@@ -144,7 +166,7 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
 
     if (activeBizId && state?.conversation_mode === 'CLUB') {
       const b = await businessManager.getBusiness(activeBizId);
-      if (b && b.status === 'ACTIVE') {
+      if (b && isClubAuthorizedForWhatsApp(b)) {
         detectedBusiness = b;
         if (b.whatsapp_config?.enabled) {
           overrideToken = b.whatsapp_config.token;
@@ -153,6 +175,7 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
       }
     }
   }
+
 
   // Ingress Step D: Explicit Switch Club Request
   if (incomingText === 'action_switch_club' || incomingText === 'switch_club' || lower.includes('switch club') || lower.includes('change club')) {
