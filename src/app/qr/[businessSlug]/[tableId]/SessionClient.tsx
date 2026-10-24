@@ -177,10 +177,41 @@ export default function SessionClient({ initialState, business_id, table_id, gam
   const [isStarting, setIsStarting] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [cart, setCart] = useState<{ [key: string]: number }>({});
+  const [orderedItems, setOrderedItems] = useState<{ [key: string]: number }>({});
   const [isOrdering, setIsOrdering] = useState(false);
   const [isFoodMenuOpen, setIsFoodMenuOpen] = useState(true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [billModalData, setBillModalData] = useState<{ duration: string; cost: number; end_time: string } | null>(null);
+
+  // Load persisted unsubmitted cart from sessionStorage
+  useEffect(() => {
+    if (session.status === 'active' && (session as any).id && typeof window !== 'undefined') {
+      try {
+        const key = `qcontrol_cart_${business_id || 'global'}_${(session as any).id}`;
+        const saved = sessionStorage.getItem(key);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            setCart(parsed);
+          }
+        }
+      } catch {}
+    }
+  }, [session.status, (session as any).id, business_id]);
+
+  // Persist cart updates to sessionStorage
+  const updateCart = useCallback((updater: (prev: { [key: string]: number }) => { [key: string]: number }) => {
+    setCart(prev => {
+      const next = updater(prev);
+      if (session.status === 'active' && (session as any).id && typeof window !== 'undefined') {
+        try {
+          const key = `qcontrol_cart_${business_id || 'global'}_${(session as any).id}`;
+          sessionStorage.setItem(key, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, [session.status, (session as any).id, business_id]);
 
   const fetchTableState = useCallback(async () => {
     if (!table_id) return;
@@ -213,6 +244,9 @@ export default function SessionClient({ initialState, business_id, table_id, gam
           };
         });
       } else if (data.status === 'active') {
+        if (data.orderedItems) {
+          setOrderedItems(data.orderedItems);
+        }
         setSession((prev) => {
           // If bill modal is open or session completed, stay there
           if (prev.status === 'completed' || billModalData !== null) return prev;
@@ -482,6 +516,16 @@ export default function SessionClient({ initialState, business_id, table_id, gam
       const data = await res.json();
       if (res.ok) {
         setCart({});
+        if (typeof window !== 'undefined' && session.id) {
+          sessionStorage.removeItem(`qcontrol_cart_${business_id || 'global'}_${session.id}`);
+        }
+        setOrderedItems(prev => {
+          const next = { ...prev };
+          for (const [name, qty] of items) {
+            next[name] = (next[name] || 0) + Number(qty);
+          }
+          return next;
+        });
         setSession({ ...session, food_cost: data.new_food_cost });
         alert('Order placed successfully! It will be added to your final bill.');
       } else {
@@ -705,26 +749,48 @@ export default function SessionClient({ initialState, business_id, table_id, gam
                     .map((item: any) => {
                       const cleanName = String(item.name || '').replace(/🔥/g, '').trim();
                       const isPinned = item.isPinned || item.is_pinned;
+                      const orderedCount = orderedItems[item.name] || orderedItems[cleanName] || 0;
+                      const cartCount = cart[item.name] || 0;
                       return (
                         <div key={item.id || item.name} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 smooth-transition hover:border-gray-300 dark:hover:border-gray-500 hover:shadow-sm">
                           <div>
-                            <p className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
-                              {isPinned && <span className="text-xs">📌</span>}
-                              <span>{cleanName}</span>
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                                {isPinned && <span className="text-xs">📌</span>}
+                                <span>{cleanName}</span>
+                              </p>
+                              {orderedCount > 0 && (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+                                  Ordered: {orderedCount}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-green-600 dark:text-green-400 font-semibold">₹{item.price}</p>
                           </div>
                           <div className="flex items-center gap-3">
                             <button 
-                              onClick={() => setCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }))}
-                              className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 font-bold"
+                              onClick={() => {
+                                if (cartCount > 0) {
+                                  updateCart(prev => ({ ...prev, [item.name]: Math.max(0, (prev[item.name] || 0) - 1) }));
+                                } else if (orderedCount > 0) {
+                                  alert('This item has already been submitted to the counter. Please ask the club staff to adjust active orders.');
+                                }
+                              }}
+                              disabled={cartCount === 0 && orderedCount === 0}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors ${
+                                cartCount > 0 
+                                  ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500' 
+                                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed opacity-60'
+                              }`}
                             >
                               -
                             </button>
-                            <span className="w-4 text-center font-bold">{cart[item.name] || 0}</span>
+                            <span className="w-8 text-center font-bold tabular-nums">
+                              {cartCount > 0 ? (orderedCount > 0 ? `${orderedCount}+${cartCount}` : cartCount) : orderedCount}
+                            </span>
                             <button 
-                              onClick={() => setCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
-                              className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold"
+                              onClick={() => updateCart(prev => ({ ...prev, [item.name]: (prev[item.name] || 0) + 1 }))}
+                              className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800 font-bold transition-colors"
                             >
                               +
                             </button>

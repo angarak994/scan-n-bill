@@ -378,6 +378,13 @@ export async function GET(request: Request) {
 }
 
 const qpulseCache = new Map<string, { data: any; expiresAt: number }>();
+export function invalidateQpulseCache(bizId?: string) {
+  if (bizId) {
+    qpulseCache.delete(bizId);
+  } else {
+    qpulseCache.clear();
+  }
+}
 async function getCachedQpulseInsight(bizId: string) {
   const now = Date.now();
   const cached = qpulseCache.get(bizId);
@@ -944,6 +951,7 @@ Time: ${timeStr}`, mainMenu);
         }
         
         await sendTelegramMessage(chatId, masterMsg, { inline_keyboard: masterButtons });
+        return NextResponse.json({ ok: true });
       }
       else if (
         text === '🛑 Stop Session' || 
@@ -965,6 +973,7 @@ Time: ${timeStr}`, mainMenu);
         const buttons = chunkArray(sessionButtons, 2);
         const promptText = userLang === 'mr' ? `🛑 <b>सत्र थांबवण्यासाठी टेबल निवडा</b>\n\nकोणते सत्र थांबवायचे आहे?` : userLang === 'hi' ? `🛑 <b>सत्र समाप्त करने के लिए टेबल चुनें</b>\n\nआप कौन सा सत्र समाप्त करना चाहते हैं?` : `🛑 <b>Select the table to stop</b>\n\nWhich active session would you like to stop?`;
         await sendTelegramMessage(chatId, promptText, { inline_keyboard: buttons });
+        return NextResponse.json({ ok: true });
       }
       
       else if (
@@ -993,6 +1002,7 @@ Time: ${timeStr}`, mainMenu);
           msg += `<b>${session.table_id}</b>\nPlayer: ${session.customer_name}\nGame: ${session.game_type}\nStarted: ${formatTimeReadable(startFull)}\nPaused At: ${formatTimeReadable(session.paused_at)}\n\n`;
         });
         await sendTelegramMessage(chatId, msg, mainMenu);
+        return NextResponse.json({ ok: true });
       }
       else if (
         text === '💰 Today\'s Summary' || 
@@ -1054,16 +1064,15 @@ Time: ${timeStr}`, mainMenu);
         }
         return NextResponse.json({ ok: true });
       }
-        const dict = translations[userLang] || translations.en;
-        if (
-          text === dict.tg_fb_orders ||
-          text === '🍔 F&B Orders' ||
-          text === '🍔 खाद्य व पेय' ||
-          text === '🍔 खाद्य व पेये' ||
-          text === '/food' ||
-          text === '/fb' ||
-          text === '/orders'
-        ) {
+      else if (
+        text === (translations[userLang] || translations.en).tg_fb_orders ||
+        text === '🍔 F&B Orders' || 
+        text === '🍔 खाद्य व पेय' || 
+        text === '🍔 खाद्य व पेये' || 
+        text === '/food' || 
+        text === '/fb' || 
+        text === '/orders'
+      ) {
         const hub = await renderFbHub(business, chatId);
         await sendTelegramMessage(chatId, hub.text, hub.replyMarkup);
         return NextResponse.json({ ok: true });
@@ -1149,8 +1158,14 @@ Time: ${timeStr}`, mainMenu);
         return NextResponse.json({ ok: true });
       }
       else {
-        // Main Menu
-        await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${business.business_name}\n\nPlease choose an action:`, mainMenu);
+        // Only show dashboard menu if text is an intentional greeting or menu request
+        const isGreetingOrMenu = /^(hi|hello|hey|start|menu|namaste|नमस्ते|नमस्कार|शुरू|सुरू|मेनू|dashboard)\b/i.test((text || '').trim());
+        if (isGreetingOrMenu) {
+          await sendTelegramMessage(chatId, `<b>QControl Dashboard</b>\n${escapeHtml(business.business_name || "")}\n\nPlease choose an action:`, mainMenu);
+        } else {
+          await sendTelegramMessage(chatId, `Please select an option from the menu below or tap /menu to open the QControl Dashboard.`, mainMenu);
+        }
+        return NextResponse.json({ ok: true });
       }
     }
 
@@ -2183,6 +2198,9 @@ You can still access other businesses associated with your Telegram account.`, {
          }
          
          const verb = action === 'pause' ? 'paused' : 'ended';
+         if (successCount > 0) {
+           invalidateQpulseCache(business.id);
+         }
          let msg = `✅ <b>Action Complete</b>\n\nSuccessfully ${verb} ${successCount} active session(s).`;
          
          if (action === 'force_end' && successCount > 0) {
@@ -2237,6 +2255,7 @@ You can still access other businesses associated with your Telegram account.`, {
               business_id: business.id,
               performed_by: 'Qbot'
             });
+            invalidateQpulseCache(business.id);
             
             answerCallbackQuery(callbackQueryId, `Success: ${actionPrefix}`).catch(console.error);
             
@@ -2478,36 +2497,58 @@ You can still access other businesses associated with your Telegram account.`, {
       }
 
       else if (callbackData === 'bk_view_today') {
-        const dateStr = getCurrentISTDateStr();
-        const { data: bookings } = await supabase
+        const { getBusinessTimezone, formatDateInTimezone } = require('@/lib/sheetsTimezone');
+        const timezone = getBusinessTimezone(business);
+        const todayDateStr = formatDateInTimezone(new Date().toISOString(), timezone);
+        
+        // 1. Authoritative query for today's bookings in business local date
+        // Exclude terminal / non-eligible booking statuses at the query level
+        const { data: rawBookings } = await supabase
           .from('bookings')
           .select('*')
           .eq('business_id', business.id)
-          .gte('booking_date', dateStr)
-          .in('status', ['confirmed', 'active'])
+          .eq('booking_date', todayDateStr)
+          .not('status', 'in', '("cancelled","no_show","completed","active")')
           .order('start_time', { ascending: true });
 
-        if (!bookings || bookings.length === 0) {
+        // 2. Authoritative check against sessions table
+        // Exclude bookings linked to sessions that have already started and are active or completed
+        const { data: businessSessions } = await supabase
+          .from('sessions')
+          .select('id, status')
+          .eq('business_id', business.id)
+          .in('status', ['ACTIVE', 'PAUSED', 'COMPLETED']);
+
+        const nonUpcomingSessionIds = new Set((businessSessions || []).map(s => s.id));
+
+        // Deduplicate bookings by ID and filter out any with active/completed sessions
+        const seenBookingIds = new Set<string>();
+        const upcomingBookings = (rawBookings || []).filter(b => {
+          if (!b || !b.id) return false;
+          if (seenBookingIds.has(b.id)) return false;
+          seenBookingIds.add(b.id);
+
+          // If linked to an active or completed session, exclude from upcoming
+          if (b.session_id && nonUpcomingSessionIds.has(b.session_id)) {
+            return false;
+          }
+          return true;
+        });
+
+        if (upcomingBookings.length === 0) {
           if (messageId) {
-             await editTelegramMessageText(chatId, messageId, `No upcoming bookings for today (${dateStr}).`, { inline_keyboard: [[{ text: '➕ Create Booking', callback_data: 'bk_create_new' }]] });
+             await editTelegramMessageText(chatId, messageId, `No upcoming bookings for today (${todayDateStr}).`, { inline_keyboard: [[{ text: '➕ Create Booking', callback_data: 'bk_create_new' }]] });
           } else {
-             await sendTelegramMessage(chatId, `No upcoming bookings for today (${dateStr}).`, mainMenu);
+             await sendTelegramMessage(chatId, `No upcoming bookings for today (${todayDateStr}).`, mainMenu);
           }
         } else {
-          for (const b of bookings) {
-            let msg = `📅 <b>Booking</b>
-
-`;
-            msg += `<b>Table:</b> ${b.table_id}
-`;
-            msg += `<b>Time:</b> ${formatTimeReadable(b.start_time)}
-`;
-            msg += `<b>Name:</b> ${b.customer_name}
-`;
-            msg += `<b>Game:</b> ${b.game_type || 'pool'}
-`;
-            msg += `<b>Players:</b> ${b.num_players || 1}
-`;
+          for (const b of upcomingBookings) {
+            let msg = `📅 <b>Booking</b>\n\n`;
+            msg += `<b>Table:</b> ${escapeHtml(b.table_id)}\n`;
+            msg += `<b>Time:</b> ${formatTimeReadable(b.start_time)}\n`;
+            msg += `<b>Name:</b> ${escapeHtml(b.customer_name)}\n`;
+            msg += `<b>Game:</b> ${escapeHtml(b.game_type || 'pool')}\n`;
+            msg += `<b>Players:</b> ${b.num_players || 1}\n`;
             
             const buttons = [
               [
@@ -2521,8 +2562,9 @@ You can still access other businesses associated with your Telegram account.`, {
             
             await sendTelegramMessage(chatId, msg, { inline_keyboard: buttons });
           }
-          await answerCallbackQuery(callbackQueryId);
         }
+        await answerCallbackQuery(callbackQueryId);
+        return NextResponse.json({ ok: true });
       }
       else if (callbackData.startsWith('bk_start_') || callbackData.startsWith('bk_cancel_') || callbackData.startsWith('bk_noshow_')) {
         const parts = callbackData.split('_');
@@ -2532,21 +2574,18 @@ You can still access other businesses associated with your Telegram account.`, {
         const { data: booking } = await supabase.from('bookings').select('*').eq('id', bookingId).single();
         if (!booking) {
           await sendTelegramMessage(chatId, '❌ Booking not found.');
+          await answerCallbackQuery(callbackQueryId);
           return NextResponse.json({ ok: true });
         }
         
-          if (action === 'start') {
+        if (action === 'start') {
           try {
             const session = await startSession(booking.table_id, booking.game_type as any, booking.customer_name, business.id, booking.num_players || 1, (booking as any).member_id);
             await supabase.from('bookings').update({ status: 'active', session_id: session.id }).eq('id', bookingId);
             const { syncSessionLifecycle, scheduleBackgroundTask, flushSheetsSyncQueue } = require('@/lib/sheetsSyncQueue');
             syncSessionLifecycle(session.id, business.id);
             scheduleBackgroundTask(() => flushSheetsSyncQueue(business.id));
-            const msg = `✅ <b>Booking Started</b>
-
-Player: ${booking.customer_name}
-Table: ${booking.table_id}
-Started At: ${formatTimeReadable(session.start_time)}`;
+            const msg = `✅ <b>Booking Started</b>\n\nPlayer: ${escapeHtml(booking.customer_name)}\nTable: ${escapeHtml(booking.table_id)}\nStarted At: ${formatTimeReadable(session.start_time)}`;
             if (messageId) await editTelegramMessageText(chatId, messageId, msg);
             else await sendTelegramMessage(chatId, msg, mainMenu);
           } catch (error: any) {
@@ -2555,11 +2594,15 @@ Started At: ${formatTimeReadable(session.start_time)}`;
           }
         } else if (action === 'cancel') {
           await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', bookingId);
-          if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Booking for ${booking.customer_name} cancelled.`);
+          if (messageId) await editTelegramMessageText(chatId, messageId, `❌ Booking for ${escapeHtml(booking.customer_name)} cancelled.`);
+          else await sendTelegramMessage(chatId, `❌ Booking for ${escapeHtml(booking.customer_name)} cancelled.`, mainMenu);
         } else if (action === 'noshow') {
           await supabase.from('bookings').update({ status: 'no_show' }).eq('id', bookingId);
-          if (messageId) await editTelegramMessageText(chatId, messageId, `🚫 Booking for ${booking.customer_name} marked as No Show.`);
+          if (messageId) await editTelegramMessageText(chatId, messageId, `🚫 Booking for ${escapeHtml(booking.customer_name)} marked as No Show.`);
+          else await sendTelegramMessage(chatId, `🚫 Booking for ${escapeHtml(booking.customer_name)} marked as No Show.`, mainMenu);
         }
+        await answerCallbackQuery(callbackQueryId);
+        return NextResponse.json({ ok: true });
       }
       else if (callbackData === 'bk_create_new') {
         let gameTypes: string[] = [];

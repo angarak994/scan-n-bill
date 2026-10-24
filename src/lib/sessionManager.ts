@@ -519,6 +519,7 @@ export async function endSession(table_id: string, businessId?: string, source: 
       cost: totalCost,
       base_cost: totalBaseCost,
       discount_amount: totalDiscountAmount,
+      food_cost: rawFoodCost,
       payment_status: payment_status,
       amount_paid: actualAmountPaid,
       payment_method: effectivePaymentMethod,
@@ -745,6 +746,48 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       discount = await resolveSessionDiscount(activeSession, businessId, business);
     }
 
+    // Fetch active session's ordered food items from notifications
+    const orderedItems: Record<string, number> = {};
+    if (businessId && activeSession.id) {
+      try {
+        const { data: orderNotifs } = await supabase
+          .from('notifications')
+          .select('message, type')
+          .eq('business_id', businessId)
+          .in('type', ['order_pending', 'order_accepted', 'order_served'])
+          .like('message', `%|${activeSession.id}`);
+
+        if (orderNotifs) {
+          orderNotifs.forEach(n => {
+            const parts = n.message?.split('|') || [];
+            if (parts.length >= 3 && parts[parts.length - 1] === activeSession.id) {
+              try {
+                const parsed = JSON.parse(parts.slice(0, parts.length - 2).join('|'));
+                if (Array.isArray(parsed)) {
+                  parsed.forEach((item: any) => {
+                    const name = item.name || item.itemName;
+                    const qty = Number(item.quantity || item.qty) || 0;
+                    if (name && qty > 0) {
+                      orderedItems[name] = (orderedItems[name] || 0) + qty;
+                    }
+                  });
+                } else if (typeof parsed === 'object' && parsed !== null) {
+                  for (const [name, q] of Object.entries(parsed)) {
+                    const qty = Number(q) || 0;
+                    if (qty > 0) {
+                      orderedItems[name] = (orderedItems[name] || 0) + qty;
+                    }
+                  }
+                }
+              } catch {}
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('[getTableStatus] Error loading ordered items:', err);
+      }
+    }
+
     return {
       status: 'active',
       id: activeSession.id,
@@ -767,6 +810,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
       qpayConfig,
       paymentQrConfig,
       max_players: maxPlayers,
+      orderedItems,
     };
   }
 
@@ -820,6 +864,7 @@ export async function getTableStatus(table_id: string, businessId?: string) {
     businessName,
     qpayConfig,
     paymentQrConfig,
+    orderedItems: {},
   };
 }
 

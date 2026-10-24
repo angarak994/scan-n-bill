@@ -252,21 +252,79 @@ export async function processWhatsAppMessage(body: any, correlationId?: string) 
     }
   }
 
-  if (currentStep === 'AWAITING_PLAYERS' && incomingText.startsWith('players_')) {
-    context.num_players = parseInt(incomingText.replace('players_', ''), 10) || 1;
-    await whatsappRepository.updateState(phone, businessId, 'AWAITING_DATE', context);
-    await sendWhatsAppButtons(
-      phone,
-      `When would you like to book at *${businessName}*?`,
-      [
-        { id: 'date_today', title: '📅 Today' },
-        { id: 'date_tomorrow', title: '📅 Tomorrow' }
-      ],
-      overrideToken,
-      overridePhoneId,
-      { businessId, recipientName: 'Customer', content: 'Booking date prompt' }
-    );
-    return;
+  if (currentStep === 'AWAITING_PLAYERS') {
+    let requestedPlayers: number | null = null;
+    if (incomingText.startsWith('players_')) {
+      requestedPlayers = parseInt(incomingText.replace('players_', ''), 10) || null;
+    } else {
+      requestedPlayers = qcontrolIntelligence.parsePlayerCount(text || incomingText) || parseInt((text || incomingText).replace(/\D/g, ''), 10) || null;
+    }
+
+    const tables = detectedBusiness?.tables || [];
+    const ps5Tables = tables.filter((t: any) => ((t as any).game_type || (t as any).type || '').toLowerCase() === (context.game_type || 'ps5'));
+    let maxAllowed = 4;
+    if (ps5Tables.length > 0) {
+      const configured = ps5Tables.map((t: any) => t.max_players ? parseInt(t.max_players, 10) : 4).filter((n: number) => !isNaN(n) && n > 0);
+      if (configured.length > 0) maxAllowed = Math.max(...configured);
+    }
+
+    if (requestedPlayers && requestedPlayers > maxAllowed) {
+      await sendWhatsAppButtons(
+        phone,
+        `Sorry, our ${context.game_type ? context.game_type.toUpperCase() : 'PS5'} stations allow a maximum of ${maxAllowed} players at a time. Would you like to continue the booking with ${maxAllowed} players?`,
+        [
+          { id: `players_${maxAllowed}`, title: `✅ Yes, ${maxAllowed} Players` },
+          { id: 'action_book', title: '🔄 Choose Another Game' }
+        ],
+        overrideToken,
+        overridePhoneId,
+        { businessId, recipientName: 'Customer', content: 'Player limit explanation' }
+      );
+      return;
+    }
+
+    if (requestedPlayers && requestedPlayers >= 1 && requestedPlayers <= maxAllowed) {
+      context.num_players = requestedPlayers;
+
+      if (context.start_time && context.booking_date) {
+        const check = await bookingService.checkTableAvailability(
+          businessId,
+          context.table_id || ps5Tables[0]?.id || 'PS1',
+          context.booking_date,
+          context.start_time,
+          context.duration_minutes || 60
+        );
+
+        if (check.available) {
+          await whatsappRepository.updateState(phone, businessId, 'AWAITING_NAME', context);
+          const { formatTimeTo12Hour } = require('@/lib/utils/operatingDayUtils');
+          const formattedDisplay = formatTimeTo12Hour(context.start_time);
+          await sendWhatsAppText(
+            phone,
+            `Great! We have reserved your ${context.game_type ? context.game_type.toUpperCase() : 'PS5'} slot for *${requestedPlayers} player${requestedPlayers > 1 ? 's' : ''}* at *${businessName}* at *${formattedDisplay}*.\n\nPlease type your *Name* to confirm the reservation.`,
+            false,
+            overrideToken,
+            overridePhoneId,
+            { businessId, recipientName: 'Customer', content: 'Prompt for name' }
+          );
+          return;
+        }
+      }
+
+      await whatsappRepository.updateState(phone, businessId, 'AWAITING_DATE', context);
+      await sendWhatsAppButtons(
+        phone,
+        `When would you like to book at *${businessName}*?`,
+        [
+          { id: 'date_today', title: '📅 Today' },
+          { id: 'date_tomorrow', title: '📅 Tomorrow' }
+        ],
+        overrideToken,
+        overridePhoneId,
+        { businessId, recipientName: 'Customer', content: 'Booking date prompt' }
+      );
+      return;
+    }
   }
 
   if (currentStep === 'AWAITING_DATE' && (incomingText.startsWith('date_') || incomingText.includes('today') || incomingText.includes('tomorrow'))) {

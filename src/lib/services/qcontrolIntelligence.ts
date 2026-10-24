@@ -58,6 +58,30 @@ export const qcontrolIntelligence = {
     const business = businessProfile || await businessManager.getBusiness(businessId, true);
     const bName = business?.business_name || businessName || 'QControl';
 
+    // 2.1 Handle in-progress multi-turn steps before broad intent classification
+    if (currentStep === 'AWAITING_PLAYERS' && !rawText.startsWith('action_') && !/^(hi|hello|hey|cancel|exit)\b/i.test(rawText.trim())) {
+      const output = await this.handleAwaitingPlayersStep(rawText, cleanPhone, businessId, bName, context, business);
+      if (output.clearState) {
+        await whatsappRepository.clearState(cleanPhone);
+      } else if (output.nextStep) {
+        await whatsappRepository.updateState(cleanPhone, businessId, output.nextStep, output.updatedContext || context, 'CLUB');
+      }
+      return output;
+    }
+
+    if (currentStep === 'AWAITING_NAME' && !rawText.startsWith('action_') && !/^(hi|hello|hey|cancel|exit)\b/i.test(rawText.trim())) {
+      const customerName = rawText.trim();
+      if (customerName) {
+        const output = await this.finalizeBookingWithName(customerName, cleanPhone, businessId, bName, context);
+        if (output.clearState) {
+          await whatsappRepository.clearState(cleanPhone);
+        } else if (output.nextStep) {
+          await whatsappRepository.updateState(cleanPhone, businessId, output.nextStep, output.updatedContext || context, 'CLUB');
+        }
+        return output;
+      }
+    }
+
     // 3. Handle explicit state-machine button / interactive clicks first
     const interactiveId = buttonReplyId || listReplyId || (rawText.startsWith('action_') || rawText.startsWith('cancel_') || rawText.startsWith('game_') || rawText.startsWith('select_biz_') ? rawText : null);
 
@@ -232,6 +256,14 @@ export const qcontrolIntelligence = {
         return this.handleNearbyPrompt();
       }
 
+      case 'UNSUPPORTED_REQUEST': {
+        return this.handleUnsupportedRequest(business, bName);
+      }
+
+      case 'PLAYER_LIMIT_INQUIRY': {
+        return this.handlePlayerLimitInquiry(business, bName, lower);
+      }
+
       case 'LOCATION_DISCOVERY': {
         const area = this.extractAreaFromText(lower);
         return await this.handleClubDiscovery(area, cleanPhone);
@@ -239,6 +271,9 @@ export const qcontrolIntelligence = {
 
       default: {
         // Fallback: check if we are in an in-progress flow
+        if (currentStep === 'AWAITING_PLAYERS') {
+          return await this.handleAwaitingPlayersStep(rawText, cleanPhone, businessId, bName, context, business);
+        }
         if (currentStep === 'AWAITING_NAME') {
           const customerName = rawText.trim();
           if (customerName) {
@@ -312,7 +347,15 @@ export const qcontrolIntelligence = {
       return 'LIST_BOOKINGS';
     }
 
-    // 6. Pricing / Membership discount
+    // 6. Player limit inquiry (e.g. "PS5 ke liye kitne players allowed hain?", "how many players allowed")
+    if (
+      (text.includes('kitne player') || text.includes('kitne log') || text.includes('how many player') || text.includes('max player') || text.includes('maximum player') || text.includes('player limit') || text.includes('allowed hain') || text.includes('allowed hai') || text.includes('kitne log khel')) &&
+      (text.includes('allowed') || text.includes('khel sakte') || text.includes('limit') || text.includes('ps5') || text.includes('playstation') || text.includes('pool') || text.includes('snooker') || text.includes('table'))
+    ) {
+      return 'PLAYER_LIMIT_INQUIRY';
+    }
+
+    // 7. Pricing / Membership discount
     if (
       text.includes('membership discount') ||
       text.includes('member discount') ||
@@ -326,12 +369,12 @@ export const qcontrolIntelligence = {
       return 'PRICING_INQUIRY';
     }
 
-    // 7. Cheapest table
+    // 8. Cheapest table
     if (text.includes('cheapest') || text.includes('lowest') || text.includes('sasta') || text.includes('budget')) {
       return 'BOOK_CHEAPEST';
     }
 
-    // 8. Address & Location Inquiry for current club
+    // 9. Address & Location Inquiry for current club
     if (
       text.includes('address') ||
       text.includes('location') ||
@@ -348,7 +391,7 @@ export const qcontrolIntelligence = {
       return 'ADDRESS_INQUIRY';
     }
 
-    // 9. Contact / Manager / Staff Inquiry
+    // 10. Contact / Manager / Staff Inquiry
     if (
       text.includes('contact') ||
       text.includes('phone') ||
@@ -365,7 +408,7 @@ export const qcontrolIntelligence = {
       return 'CONTACT_INQUIRY';
     }
 
-    // 10. Club Profile / Info
+    // 11. Club Profile / Info
     if (
       text.includes('about the club') ||
       text.includes('club details') ||
@@ -378,7 +421,7 @@ export const qcontrolIntelligence = {
       return 'CLUB_INFO_INQUIRY';
     }
 
-    // 11. Venue Photos & Ambience Inquiry
+    // 12. Venue Photos & Ambience Inquiry
     if (
       text.includes('photo') ||
       text.includes('photos') ||
@@ -398,7 +441,7 @@ export const qcontrolIntelligence = {
       return 'VENUE_PHOTOS';
     }
 
-    // 12. Google Rating & Reviews Inquiry
+    // 13. Google Rating & Reviews Inquiry
     if (
       text.includes('google rating') ||
       text.includes('rating') ||
@@ -412,7 +455,7 @@ export const qcontrolIntelligence = {
       return 'GOOGLE_RATING';
     }
 
-    // 13. Nearby Clubs Inquiry
+    // 14. Nearby Clubs Inquiry
     if (
       text.includes('near me') ||
       text.includes('nearby') ||
@@ -427,7 +470,7 @@ export const qcontrolIntelligence = {
       return 'NEARBY_CLUBS';
     }
 
-    // 14. Area Location discovery
+    // 15. Area Location discovery
     if (
       text.includes('which club') ||
       text.includes('kothrud') ||
@@ -440,7 +483,23 @@ export const qcontrolIntelligence = {
       return 'LOCATION_DISCOVERY';
     }
 
-    // 9. Natural availability or booking request
+    // 16. Unsupported sports or services (e.g. badminton, cricket, turf, bowling, swimming, etc.)
+    const unsupportedSports = [
+      'badminton', 'cricket', 'box cricket', 'turf', 'bowling', 'table tennis',
+      'tennis', 'swimming', 'swim', 'squash', 'carrom', 'chess', 'gym',
+      'arcade', 'foosball', 'pickleball', 'football', 'basketball', 'padel'
+    ];
+    const isUnsupported = unsupportedSports.some(sport => new RegExp(`\\b${sport}\\b`, 'i').test(text));
+    const isSwimmingPool = /\b(swimming pool|swim pool|swimming)\b/i.test(text);
+    const mentionsSupported = (
+      /\b(snooker|msnooker|mini-snooker|mini snooker|ps5|ps-5|ps 5|playstation|play station|billiards|8-ball|8 ball)\b/i.test(text) ||
+      (/\bpool\b/i.test(text) && !isSwimmingPool)
+    );
+    if (isUnsupported && !mentionsSupported) {
+      return 'UNSUPPORTED_REQUEST';
+    }
+
+    // 17. Natural availability or booking request (Pool, Snooker, Mini-snooker, PS5/PlayStation)
     if (
       text.includes('chahiye') ||
       text.includes('available') ||
@@ -451,7 +510,18 @@ export const qcontrolIntelligence = {
       text.includes('slot') ||
       text.includes('pool') ||
       text.includes('snooker') ||
-      text.includes('ps5')
+      text.includes('ps5') ||
+      text.includes('ps 5') ||
+      text.includes('ps-5') ||
+      text.includes('playstation') ||
+      text.includes('play station') ||
+      text.includes('mini-snooker') ||
+      text.includes('mini snooker') ||
+      text.includes('msnooker') ||
+      text.includes('khelna') ||
+      text.includes('khelne') ||
+      text.includes('gaming') ||
+      text.includes('game')
     ) {
       return 'AVAILABILITY_OR_BOOKING';
     }
@@ -470,15 +540,23 @@ export const qcontrolIntelligence = {
   ): Promise<IntelligenceOutput> {
     // 1. Detect game type
     let gameType = 'pool';
-    if (text.includes('snooker')) gameType = 'snooker';
-    else if (text.includes('ps5') || text.includes('playstation')) gameType = 'ps5';
+    if (/\b(mini-snooker|mini snooker|msnooker)\b/i.test(text)) {
+      gameType = 'msnooker';
+    } else if (/\b(snooker|snuker)\b/i.test(text)) {
+      gameType = 'snooker';
+    } else if (/\b(ps5|ps 5|ps-5|playstation|play station)\b/i.test(text)) {
+      gameType = 'ps5';
+    } else if (/\b(pool|billiards?)\b/i.test(text)) {
+      gameType = 'pool';
+    }
 
-    // 2. Detect duration (supports "for two hours", "2 hrs", "90 mins", etc.)
+    // 2. Detect duration (supports "for two hours", "2 hrs", "90 mins", "2 ghante", "1 ghanta", "aadha ghanta", etc.)
     let durationMins = 60;
-    if (/\b(2|two)\s*(hours?|hrs?)\b/i.test(text)) durationMins = 120;
-    else if (/\b(3|three)\s*(hours?|hrs?)\b/i.test(text)) durationMins = 180;
-    else if (/\b(90|ninety)\s*(mins?|minutes?)\b|\b1\.5\s*hours?\b/i.test(text)) durationMins = 90;
-    else if (/\b(30|thirty)\s*(mins?|minutes?)\b|\bhalf\s*(an\s*)?hour\b/i.test(text)) durationMins = 30;
+    if (/\b(2|two|do)\s*(hours?|hrs?|ghante|ghanta)\b/i.test(text)) durationMins = 120;
+    else if (/\b(3|three|teen)\s*(hours?|hrs?|ghante|ghanta)\b/i.test(text)) durationMins = 180;
+    else if (/\b(90|ninety)\s*(mins?|minutes?)\b|\b1\.5\s*hours?\b|\bdedh\s*ghante?\b/i.test(text)) durationMins = 90;
+    else if (/\b(30|thirty)\s*(mins?|minutes?)\b|\bhalf\s*(an\s*)?hour\b|\b(adha|aadha)\s*ghanta\b/i.test(text)) durationMins = 30;
+    else if (/\b(1|one|ek)\s*(hour|hr|ghanta)\b/i.test(text)) durationMins = 60;
 
     // 3. Resolve business config & operating day
     const business = await businessManager.getBusiness(businessId);
@@ -562,6 +640,7 @@ export const qcontrolIntelligence = {
     const tables = (business.tables || []).filter((t: any) => {
       const type = ((t as any).game_type || (t as any).type || 'pool').toLowerCase();
       if (gameType === 'snooker') return type === 'snooker' || type === 'msnooker';
+      if (gameType === 'msnooker') return type === 'msnooker' || type === 'snooker';
       return type === gameType;
     });
 
@@ -573,7 +652,72 @@ export const qcontrolIntelligence = {
       };
     }
 
-    // Pricing calculation
+    // 5. Player count parsing & validation
+    const parsedPlayers = this.parsePlayerCount(text);
+    let maxAllowed = 4;
+    const configuredMaxes = tables.map((t: any) => t.max_players ? parseInt(t.max_players, 10) : 4).filter((n: number) => !isNaN(n) && n > 0);
+    if (configuredMaxes.length > 0) {
+      maxAllowed = Math.max(...configuredMaxes);
+    }
+
+    // If customer requested PS5 without specifying players, prompt with conversational follow-up
+    if (gameType === 'ps5' && parsedPlayers === null) {
+      const isHindi = /khelna|chahiye|bhai|baje|kitne|hoga|milega/i.test(text);
+      const question = isHindi 
+        ? `PS5 के लिए कितने लोग खेलेंगे? 🎮` 
+        : `How many players will be playing? 🎮`;
+
+      const playerButtons = [
+        { id: 'players_1', title: '👤 1 Player' },
+        { id: 'players_2', title: '👥 2 Players' },
+        { id: 'players_3', title: '🎮 3 Players' },
+        { id: 'players_4', title: '🎮 4 Players' }
+      ].slice(0, maxAllowed);
+
+      const pendingCtx = {
+        game_type: 'ps5',
+        booking_date: dateStr,
+        start_time: reqTime,
+        duration_minutes: durationMins,
+        business_name: businessName
+      };
+      await whatsappRepository.updateState(customerPhone, businessId, 'AWAITING_PLAYERS', pendingCtx, 'CLUB');
+
+      return {
+        replyText: question,
+        replyType: 'buttons',
+        buttons: playerButtons,
+        nextStep: 'AWAITING_PLAYERS',
+        updatedContext: pendingCtx
+      };
+    }
+
+    // If requested player count exceeds maximum configured, explain restriction
+    if (parsedPlayers !== null && parsedPlayers > maxAllowed) {
+      const pendingCtx = {
+        game_type: gameType,
+        booking_date: dateStr,
+        start_time: reqTime,
+        duration_minutes: durationMins,
+        business_name: businessName
+      };
+      await whatsappRepository.updateState(customerPhone, businessId, 'AWAITING_PLAYERS', pendingCtx, 'CLUB');
+
+      return {
+        replyText: `Sorry, our ${gameType.toUpperCase()} stations allow a maximum of ${maxAllowed} players at a time. Would you like to continue the booking with ${maxAllowed} players?`,
+        replyType: 'buttons',
+        buttons: [
+          { id: `players_${maxAllowed}`, title: `✅ Yes, ${maxAllowed} Players` },
+          { id: 'action_book', title: '🔄 Choose Another Game' }
+        ],
+        nextStep: 'AWAITING_PLAYERS',
+        updatedContext: pendingCtx
+      };
+    }
+
+    const effectiveNumPlayers = parsedPlayers || 1;
+
+    // 6. Pricing calculation
     const normGame = gameType.toLowerCase();
     const rules: any = business?.pricing_rules?.rules?.[normGame] || {};
     const ratePerHour = Number(rules.rate || rules.baseRatePerHour || (rules.type === 'time_based' ? rules.evening_rate : 200)) || 200;
@@ -594,13 +738,17 @@ export const qcontrolIntelligence = {
             start_time: reqTime,
             table_id: table.id,
             duration_minutes: durationMins,
-            num_players: 1,
+            num_players: effectiveNumPlayers,
             business_name: businessName
           };
 
           const formattedDisplay = formatTimeTo12Hour(reqTime);
+          const stationLabel = gameType === 'ps5' 
+            ? `*PS5 Station ${table.name || table.id}* (${effectiveNumPlayers} Player${effectiveNumPlayers > 1 ? 's' : ''})`
+            : `*Table ${table.name || table.id}* (${gameType.toUpperCase()})`;
+
           return {
-            replyText: `Great news! *Table ${table.name || table.id}* (${gameType.toUpperCase()}) is available at *${businessName}* on ${dateDisplay} at *${formattedDisplay}* for ${durationLabel} (Rate: ₹${ratePerHour}/hr, Total: ₹${estimatedTotal}).\n\nPlease type your *Name* to confirm the reservation.`,
+            replyText: `Great news! ${stationLabel} is available at *${businessName}* on ${dateDisplay} at *${formattedDisplay}* for ${durationLabel} (Rate: ₹${ratePerHour}/hr, Total: ₹${estimatedTotal}).\n\nPlease type your *Name* to confirm the reservation.`,
             replyType: 'text',
             nextStep: 'AWAITING_NAME',
             updatedContext: context
@@ -625,7 +773,7 @@ export const qcontrolIntelligence = {
             game_type: gameType,
             booking_date: dateStr,
             duration_minutes: durationMins,
-            num_players: 1,
+            num_players: effectiveNumPlayers,
             business_name: businessName
           }
         };
@@ -657,9 +805,194 @@ export const qcontrolIntelligence = {
         game_type: gameType,
         booking_date: dateStr,
         duration_minutes: durationMins,
-        num_players: 1,
+        num_players: effectiveNumPlayers,
         business_name: businessName
       }
+    };
+  },
+
+  /**
+   * Helper to parse requested player counts from digits or colloquial English / Hinglish terms.
+   */
+  parsePlayerCount(text: string): number | null {
+    if (!text) return null;
+    const clean = text.trim().toLowerCase();
+
+    // Direct single digit "1", "2", "3", "4", "5", "6", "7", "8"
+    if (/^[1-8]$/.test(clean)) {
+      return parseInt(clean, 10);
+    }
+
+    // Explicit word mappings
+    const words: Record<string, number> = {
+      'one': 1, 'ek': 1, 'single': 1, 'solo': 1,
+      'two': 2, 'do': 2, 'double': 2,
+      'three': 3, 'teen': 3, 'tin': 3,
+      'four': 4, 'char': 4, 'chaar': 4,
+      'five': 5, 'panch': 5, 'paanch': 5,
+      'six': 6, 'chhe': 6, 'che': 6,
+      'seven': 7, 'saat': 7,
+      'eight': 8, 'aath': 8
+    };
+
+    for (const [w, n] of Object.entries(words)) {
+      if (new RegExp(`\\b${w}\\s*(players?|log|bande|jan|people|person)?\\b`, 'i').test(clean)) {
+        if (!new RegExp(`\\b${w}\\s*(hours?|hrs?|ghante|ghanta)\\b`, 'i').test(clean)) {
+          return n;
+        }
+      }
+    }
+
+    const digitMatch = clean.match(/\b([1-9]|10)\s*(players?|log|bande|jan|people|person|persons)?\b/i);
+    if (digitMatch && digitMatch[1]) {
+      const val = parseInt(digitMatch[1], 10);
+      const isDurationOrHour = new RegExp(`\\b${val}\\s*(hours?|hrs?|ghante|ghanta|pm|am|baje|o'?clock|mins?|minutes?)\\b`, 'i').test(clean);
+      const hasSuffix = Boolean(digitMatch[2]);
+      if (hasSuffix || (!isDurationOrHour && val >= 1 && val <= 10)) {
+        return val;
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * Politely handles requests for unsupported sports (badminton, cricket, turf, bowling, etc.)
+   */
+  handleUnsupportedRequest(business?: any, businessName?: string): IntelligenceOutput {
+    const bName = business?.business_name || businessName || 'our partnered clubs';
+    return {
+      replyText: `Sorry, we currently help with pool, snooker, mini-snooker, and PS5 bookings at our partnered venues.\n\nWould you like help with any of these games at *${bName}*?`,
+      replyType: 'buttons',
+      buttons: [
+        { id: 'game_pool', title: '🎱 Pool' },
+        { id: 'game_snooker', title: '🔴 Snooker' },
+        { id: 'game_ps5', title: '🎮 PS5' }
+      ]
+    };
+  },
+
+  /**
+   * Factual inquiry handler for maximum players allowed on consoles and tables.
+   */
+  handlePlayerLimitInquiry(business: any, businessName: string, text: string): IntelligenceOutput {
+    const isPs5 = /\b(ps5|ps-5|ps 5|playstation|play station|console)\b/i.test(text);
+    const tables = business?.tables || [];
+    const ps5Tables = tables.filter((t: any) => ((t as any).game_type || (t as any).type || '').toLowerCase() === 'ps5');
+    
+    let maxPlayers = 4;
+    if (ps5Tables.length > 0) {
+      const configured = ps5Tables.map((t: any) => t.max_players ? parseInt(t.max_players, 10) : 4).filter((n: number) => !isNaN(n) && n > 0);
+      if (configured.length > 0) maxPlayers = Math.max(...configured);
+    }
+
+    if (isPs5 || !tables.some((t: any) => ((t as any).game_type || (t as any).type || '').toLowerCase() === 'pool')) {
+      return {
+        replyText: `Our PS5 gaming stations at *${businessName}* support up to *${maxPlayers} players* at a time with dedicated wireless controllers. 🎮\n\nWould you like to book a PS5 session?`,
+        replyType: 'buttons',
+        buttons: [
+          { id: 'game_ps5', title: '🎮 Book PS5' },
+          { id: 'action_pricing', title: '💰 View Rates' }
+        ]
+      };
+    }
+
+    return {
+      replyText: `At *${businessName}*, our pool and snooker tables accommodate up to 4 players per game, while our PS5 gaming stations support up to *${maxPlayers} players* simultaneously. 🎱🎮\n\nWhich game would you like to book?`,
+      replyType: 'buttons',
+      buttons: [
+        { id: 'game_pool', title: '🎱 Pool' },
+        { id: 'game_snooker', title: '🔴 Snooker' },
+        { id: 'game_ps5', title: '🎮 PS5' }
+      ]
+    };
+  },
+
+  /**
+   * In-flight conversation handler when bot is awaiting player count.
+   */
+  async handleAwaitingPlayersStep(
+    rawText: string,
+    cleanPhone: string,
+    businessId: string,
+    bName: string,
+    context: Record<string, any>,
+    business?: any
+  ): Promise<IntelligenceOutput> {
+    let requestedPlayers: number | null = null;
+    if (rawText.startsWith('players_')) {
+      requestedPlayers = parseInt(rawText.replace('players_', ''), 10) || null;
+    } else {
+      requestedPlayers = this.parsePlayerCount(rawText) || parseInt(rawText.replace(/\D/g, ''), 10) || null;
+    }
+
+    const tables = business?.tables || [];
+    const ps5Tables = tables.filter((t: any) => ((t as any).game_type || (t as any).type || '').toLowerCase() === (context.game_type || 'ps5'));
+    let maxAllowed = 4;
+    if (ps5Tables.length > 0) {
+      const configured = ps5Tables.map((t: any) => t.max_players ? parseInt(t.max_players, 10) : 4).filter((n: number) => !isNaN(n) && n > 0);
+      if (configured.length > 0) maxAllowed = Math.max(...configured);
+    }
+
+    if (requestedPlayers && requestedPlayers > maxAllowed) {
+      return {
+        replyText: `Sorry, our ${context.game_type ? context.game_type.toUpperCase() : 'PS5'} stations allow a maximum of ${maxAllowed} players at a time. Would you like to continue the booking with ${maxAllowed} players?`,
+        replyType: 'buttons',
+        buttons: [
+          { id: `players_${maxAllowed}`, title: `✅ Yes, ${maxAllowed} Players` },
+          { id: 'action_book', title: '🔄 Choose Another Game' }
+        ],
+        nextStep: 'AWAITING_PLAYERS',
+        updatedContext: context
+      };
+    }
+
+    if (requestedPlayers && requestedPlayers >= 1 && requestedPlayers <= maxAllowed) {
+      context.num_players = requestedPlayers;
+
+      if (context.start_time && context.booking_date) {
+        const check = await bookingService.checkTableAvailability(
+          businessId,
+          context.table_id || ps5Tables[0]?.id || 'PS1',
+          context.booking_date,
+          context.start_time,
+          context.duration_minutes || 60
+        );
+
+        if (check.available) {
+          const formattedDisplay = formatTimeTo12Hour(context.start_time);
+          return {
+            replyText: `Great news! *PS5 Station ${context.table_id || ps5Tables[0]?.name || 'PS1'}* is available for *${requestedPlayers} player${requestedPlayers > 1 ? 's' : ''}* at *${bName}* at *${formattedDisplay}*.\n\nPlease type your *Name* to confirm the reservation.`,
+            replyType: 'text',
+            nextStep: 'AWAITING_NAME',
+            updatedContext: context
+          };
+        }
+      }
+
+      return {
+        replyText: `When would you like to book at *${bName}*?`,
+        replyType: 'buttons',
+        buttons: [
+          { id: 'date_today', title: '📅 Today' },
+          { id: 'date_tomorrow', title: '📅 Tomorrow' }
+        ],
+        nextStep: 'AWAITING_DATE',
+        updatedContext: context
+      };
+    }
+
+    return {
+      replyText: `How many players will be playing? (1 to ${maxAllowed} players allowed) 🎮`,
+      replyType: 'buttons',
+      buttons: [
+        { id: 'players_1', title: '👤 1 Player' },
+        { id: 'players_2', title: '👥 2 Players' },
+        { id: 'players_3', title: '🎮 3 Players' },
+        { id: 'players_4', title: '🎮 4 Players' }
+      ].slice(0, maxAllowed),
+      nextStep: 'AWAITING_PLAYERS',
+      updatedContext: context
     };
   },
 

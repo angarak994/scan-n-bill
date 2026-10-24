@@ -209,15 +209,53 @@ export async function fetchUnifiedSessionData(sessionId: string, explicitBusines
     });
 
     // 6. Authoritative Financial Calculations
-    // All values derive directly from QControl's database fields, never recalculated from assumptions.
-    const grandTotal = typeof session.cost === 'number' ? session.cost : 0;
-    const foodCost = typeof session.food_cost === 'number' ? session.food_cost : 0;
-    const discountAmount = typeof session.discount_amount === 'number' ? session.discount_amount : 0;
-    
-    // Table fee = base_cost if stored, otherwise (grandTotal - foodCost + discount)
-    const tableFee = typeof session.base_cost === 'number' 
-      ? session.base_cost 
-      : Math.max(0, grandTotal - foodCost + discountAmount);
+    // All values derive directly from QControl's database fields and authoritative billing engine.
+    let tableFee = 0;
+    let foodCost = typeof session.food_cost === 'number' ? session.food_cost : 0;
+    let discountAmount = typeof session.discount_amount === 'number' ? session.discount_amount : 0;
+    let grandTotal = typeof session.cost === 'number' ? session.cost : 0;
+
+    const isOngoing = session.status === 'ACTIVE' || session.status === 'PAUSED';
+
+    if (isOngoing && (session.cost === null || session.cost === undefined)) {
+      // For active sessions without finalized stored cost, compute live authoritative figures
+      try {
+        const { calculateServerBillingForSession } = require('./sessionManager');
+        const liveBilling = await calculateServerBillingForSession(session, businessId);
+        if (liveBilling) {
+          tableFee = Math.round(liveBilling.baseTableCost ?? liveBilling.cost ?? 0);
+          foodCost = Math.round(liveBilling.baseFoodCost ?? session.food_cost ?? 0);
+          discountAmount = Math.round(liveBilling.totalDiscountAmount ?? 0);
+          grandTotal = Math.round(liveBilling.cost ?? 0);
+        }
+      } catch {
+        tableFee = 0;
+      }
+    } else {
+      // Completed or finalized session:
+      // Disambiguate tableFee:
+      // In QControl, session.cost is the Grand Total Payable (Table + Food - Discount).
+      // If session.base_cost was stored as totalBaseCost (tableBase + foodBase):
+      // tableFee is (session.base_cost - foodCost).
+      if (typeof session.base_cost === 'number') {
+        if (foodCost > 0 && session.base_cost >= foodCost && (session.base_cost === grandTotal + discountAmount || session.base_cost >= grandTotal)) {
+          tableFee = Math.max(0, session.base_cost - foodCost);
+        } else {
+          tableFee = session.base_cost;
+        }
+      } else {
+        tableFee = Math.max(0, grandTotal - foodCost + discountAmount);
+      }
+
+      // Ensure Total Amount = Table Fee + F&B Total - Discount
+      const calculatedExpected = Math.max(0, tableFee + foodCost - discountAmount);
+      if (grandTotal === 0 && calculatedExpected > 0 && session.status === 'COMPLETED') {
+        grandTotal = calculatedExpected;
+      } else if (grandTotal > 0 && (tableFee + foodCost) > 0 && Math.abs(grandTotal - calculatedExpected) > 2) {
+        // Reconcile: Table Fee is (grandTotal - foodCost + discountAmount)
+        tableFee = Math.max(0, grandTotal - foodCost + discountAmount);
+      }
+    }
 
     const isQKhata = paymentRecord?.payment_method === 'QKhata';
     const paymentMethod = paymentRecord?.payment_method || session.payment_method || 'Cash';
@@ -240,7 +278,6 @@ export async function fetchUnifiedSessionData(sessionId: string, explicitBusines
     // - Show 'Active' ONLY while a session is genuinely ongoing (ACTIVE or PAUSED).
     // - Once stopped, completed, or cancelled, write the actual end timestamp in the business timezone.
     // - Never leave 'Active' or blank for completed sessions.
-    const isOngoing = session.status === 'ACTIVE' || session.status === 'PAUSED';
     let formattedEndTime: string;
 
     if (isOngoing) {
