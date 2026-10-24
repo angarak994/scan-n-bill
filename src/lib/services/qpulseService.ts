@@ -45,11 +45,10 @@ export async function generateQpulseInsight(businessId: string): Promise<QpulseI
     // 1. Authoritative completed sessions query (exclude active, cancelled, no-show)
     const { data: rawSessions } = await supabase
       .from('sessions')
-      .select('id, cost, base_cost, food_cost, discount_amount, game_type, date, start_time, payment_status, amount_paid')
+      .select('id, cost, base_cost, food_cost, discount_amount, game_type, date, start_time, end_time, payment_status, amount_paid')
       .eq('business_id', businessId)
       .eq('status', 'COMPLETED')
-      .gte('date', startDateStr)
-      .lte('date', todayDateStr);
+      .or(`and(date.gte.${startDateStr},date.lte.${todayDateStr}),and(end_time.gte.${startDateStr}T00:00:00,end_time.lte.${todayDateStr}T23:59:59)`);
 
     const sessions = rawSessions || [];
 

@@ -6,6 +6,7 @@ import { calculateBilling, getCurrentISTDateStr } from './billing';
 import { businessManager } from './businessManager';
 import { supabase } from './supabaseClient';
 import { resolveRate } from './pricing';
+import { getBusinessTimezone } from './sheetsTimezone';
 
 // Use ISO strings for robust time storage
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
@@ -511,7 +512,16 @@ export async function endSession(table_id: string, businessId?: string, source: 
       finalSource = 'Manual Booking';
     }
 
+    const businessTimezone = getBusinessTimezone(business);
+    const completionDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: businessTimezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+
     await sessionRepository.update(session.id, {
+      date: completionDate,
       end_time,
       status: 'COMPLETED',
       duration,

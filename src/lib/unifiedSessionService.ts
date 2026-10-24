@@ -266,12 +266,16 @@ export async function fetchUnifiedSessionData(sessionId: string, explicitBusines
     const shortSessionId = session.id ? session.id.split('-')[0].toUpperCase() : 'UNKNOWN';
     const canonicalId = `SES-${shortSessionId}`;
     
-    // Month partitioning based on authoritative session start_time
-    const monthKey = getMonthKey(session.start_time, timezone);
+    // Authoritative completion-date attribution:
+    // If completed, attribute revenue and session date to completion timestamp (end_time) in business timezone.
+    // While ongoing/active, attribute to session start_time.
+    const authoritativeTimeForDate = (!isOngoing && session.end_time) ? session.end_time : session.start_time;
+
+    const monthKey = getMonthKey(authoritativeTimeForDate, timezone);
     const sessionsSheetTitle = getSessionsSheetTitle(monthKey);
     const ordersSheetTitle = getOrdersSheetTitle(monthKey);
 
-    const formattedDate = formatDateInTimezone(session.start_time, timezone);
+    const formattedDate = formatDateInTimezone(authoritativeTimeForDate, timezone);
     const formattedStartTime = formatTimeInTimezone(session.start_time, timezone);
 
     // Authoritative End Time resolution:

@@ -19,6 +19,7 @@ import { renderFbHub, generateEndOfDayDigest, handleFbCallback, getTodayFbStats 
 
 import { TelegramClient } from '@/lib/telegram/telegramClient';
 import { DeliveryManager } from '@/lib/telegram/deliveryManager';
+import { getBusinessTimezone } from '@/lib/sheetsTimezone';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -1012,18 +1013,23 @@ Time: ${timeStr}`, mainMenu);
       ) {
         const dateStr = getCurrentISTDateStr();
         
-        const [sessionsResponse, qpulseInsight, todayFbStats] = await Promise.all([
-          supabase
-            .from('sessions')
-            .select('cost, duration, food_cost')
-            .eq('business_id', business.id)
-            .eq('status', 'COMPLETED')
-            .eq('date', dateStr),
+        const timezone = getBusinessTimezone(business);
+        
+        const [rawSessions, qpulseInsight, todayFbStats] = await Promise.all([
+          sessionRepository.findAllByDateRange(dateStr, dateStr, business.id),
           getCachedQpulseInsight(business.id),
           getTodayFbStats(business.id)
         ]);
         
-        const completedSessions = sessionsResponse.data;
+        // Strictly filter to sessions completed on dateStr in business timezone
+        const completedSessions = (rawSessions || []).filter(s => {
+          if (s.status !== 'COMPLETED') return false;
+          if (s.end_time) {
+            const localEndDateStr = new Date(s.end_time).toLocaleDateString('en-CA', { timeZone: timezone });
+            return localEndDateStr === dateStr;
+          }
+          return s.date === dateStr;
+        });
           
         if (!completedSessions || completedSessions.length === 0) {
           let noRevMsg = userLang === 'mr' ? `आज (${dateStr}) कोणतेही सत्र पूर्ण झालेले नाही.` : userLang === 'hi' ? `आज (${dateStr}) कोई सत्र पूरा नहीं हुआ है।` : `No completed sessions today (${dateStr}).`;

@@ -202,7 +202,10 @@ export const qcontrolIntelligence = {
         };
       }
 
-      case 'ADDRESS_INQUIRY':
+      case 'ADDRESS_INQUIRY': {
+        return await this.handleAddressInquiry(business, bName, cleanPhone);
+      }
+
       case 'CONTACT_INQUIRY':
       case 'CLUB_INFO_INQUIRY': {
         return await this.handleClubProfileInfo(business, bName, cleanPhone);
@@ -379,14 +382,22 @@ export const qcontrolIntelligence = {
       text.includes('address') ||
       text.includes('location') ||
       text.includes('kaha hai') ||
+      text.includes('kahan hai') ||
+      text.includes('kahan par hai') ||
+      text.includes('kahan pe hai') ||
       text.includes('kaha par hai') ||
       text.includes('kaha pe hai') ||
       text.includes('kidhar hai') ||
       text.includes('where is the club') ||
       text.includes('where are you') ||
+      text.includes('where located') ||
+      text.includes('located') ||
       text.includes('directions') ||
       text.includes('rasta') ||
-      text.includes('map link')
+      text.includes('map link') ||
+      text.includes('share your location') ||
+      text.includes('share location') ||
+      text.includes('location bhejo')
     ) {
       return 'ADDRESS_INQUIRY';
     }
@@ -436,7 +447,15 @@ export const qcontrolIntelligence = {
       text.includes('gallery') ||
       text.includes('look like') ||
       text.includes('kaisa dikhta') ||
-      text.includes('club ki photo')
+      text.includes('club ki photo') ||
+      text.includes('show me the venue') ||
+      text.includes('show the venue') ||
+      text.includes('see the venue') ||
+      text.includes('see your pool tables') ||
+      text.includes('see the tables') ||
+      text.includes('pool tables dikhao') ||
+      text.includes('venue dikhao') ||
+      text.includes('club dikhao')
     ) {
       return 'VENUE_PHOTOS';
     }
@@ -1081,6 +1100,54 @@ export const qcontrolIntelligence = {
         { id: `cancel_${booking.id}`, title: '❌ Cancel Booking' }
       ],
       clearState: true
+    };
+  },
+
+  /**
+   * Generates an authoritative address response using live database values.
+   * If no address is configured, never fabricates one.
+   */
+  async handleAddressInquiry(business: any, bName: string, cleanPhone: string): Promise<IntelligenceOutput> {
+    if (!business?.address || !business.address.trim()) {
+      return {
+        replyText: (
+          `📍 *Location — ${bName}*\n\n` +
+          `We do not currently have a confirmed street address on file for *${bName}*.\n\n` +
+          `Please contact the club manager directly at +91 ${business?.contact_number || 'our helpdesk'} for directions and landmark assistance!`
+        ),
+        replyType: 'buttons',
+        buttons: [
+          { id: 'action_book', title: '📅 Book a Table' },
+          { id: 'action_pricing', title: '💰 View Rates' }
+        ]
+      };
+    }
+
+    const directionsUrl = getGoogleMapsDirectionsUrl({
+      address: business.address,
+      businessName: bName,
+      latitude: (business as any)?.latitude,
+      longitude: (business as any)?.longitude
+    });
+
+    let reply = `📍 *Location & Address — ${bName}* 🎱\n\n`;
+    reply += `*Address:*\n${business.address}\n\n`;
+    if (directionsUrl) {
+      reply += `🗺️ *Get Directions (Google Maps):*\n${directionsUrl}\n\n`;
+    }
+    if (business?.contact_number) {
+      reply += `📞 *Club Contact:* +91 ${business.contact_number}\n\n`;
+    }
+    reply += `Everything is synced live from our club profile. What would you like to do next?`;
+
+    return {
+      replyText: reply.trim(),
+      replyType: 'buttons',
+      buttons: [
+        { id: 'action_book', title: '📅 Book a Table' },
+        { id: 'action_venue_photos', title: '📸 View Photos' },
+        { id: 'action_pricing', title: '💰 View Rates' }
+      ]
     };
   },
 

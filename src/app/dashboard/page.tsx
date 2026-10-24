@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { EnhancedTableView } from './EnhancedTableView';
 import { NotificationBell, LiveTotalOpenCounter, LivePromoTimer, LiveSessionRow, PrivacyText, Tooltip, CustomSelect, TimePicker, getGlobalNow, subscribeToTimer } from './components';
 import { toast } from 'react-hot-toast';
-import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles, TrendingUp, Users, DollarSign, Award, Clock, Copy, MessageSquare, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Smartphone, Phone, Globe, Bot, Gift, AlertTriangle, Check, Sparkles, TrendingUp, Users, DollarSign, Award, Clock, Copy, MessageSquare, ExternalLink, MapPin, Camera } from 'lucide-react';
 import { getMemberPlanInfo } from '@/lib/membershipUtils';
 import SessionCompletionModal from './SessionCompletionModal';
 import FeatureLock from '@/components/ui/FeatureLock';
@@ -38,6 +38,7 @@ const MessagingTab = dynamic(() => import('./MessagingTab'), { loading: () => <T
 const SubscriptionTab = dynamic(() => import('./SubscriptionTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
 const ReportsTab = dynamic(() => import('./ReportsTab'), { loading: () => <TabLoadingSkeleton />, ssr: false });
 const WelcomeCelebration = dynamic(() => import('./WelcomeCelebration'), { ssr: false });
+const VenuePhotosSection = dynamic(() => import('@/components/dashboard/VenuePhotosSection'), { loading: () => <TabLoadingSkeleton />, ssr: false });
 
 // Setup Supabase Client for Realtime
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -523,6 +524,56 @@ function DashboardContent() {
   const [orderToDelete, setOrderToDelete] = useState<any | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [selectedGameRule, setSelectedGameRule] = useState('ps5');
+  // Location & Address Geocoding State
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [locationDetected, setLocationDetected] = useState(false);
+  const [addressInput, setAddressInput] = useState('');
+  const [detectedCoords, setDetectedCoords] = useState<{ lat?: number; lng?: number }>({});
+
+  const handleDetectLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch('/api/reverse-geocode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ latitude, longitude })
+          });
+          const geoData = await res.json();
+          if (res.ok && geoData.success && geoData.address) {
+            setAddressInput(geoData.address);
+            setDetectedCoords({ lat: geoData.latitude, lng: geoData.longitude });
+            setLocationDetected(true);
+            toast.success('Location detected! Please review and click Save Profile.');
+          } else {
+            toast.error(geoData.error || 'Could not resolve address from coordinates.');
+          }
+        } catch {
+          toast.error('Error connecting to reverse geocoding service.');
+        } finally {
+          setIsDetectingLocation(false);
+        }
+      },
+      (err) => {
+        setIsDetectingLocation(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          toast.error('Location permission was denied. Please allow location access in your browser or type the address.');
+        } else if (err.code === err.TIMEOUT) {
+          toast.error('Location detection timed out. Please try again or type the address.');
+        } else {
+          toast.error('Location detection failed. Please enter your venue address manually.');
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
   const reportDateRangeRef = useRef(reportDateRange);
   const telegramLoadedRef = useRef(false);
 
@@ -1163,17 +1214,28 @@ function DashboardContent() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        toast.success('Business settings & PS5 config updated successfully.');
+        toast.success(businessProfile ? 'Business profile updated successfully.' : 'Business settings & PS5 config updated successfully.');
         setData(prev => prev ? {
           ...prev,
           pricingRules: newRules !== undefined ? newRules : prev.pricingRules,
-          tables: newTables !== undefined ? newTables : prev.tables
+          tables: newTables !== undefined ? newTables : prev.tables,
+          ...(businessProfile ? {
+            businessName: businessProfile.business_name ?? prev.businessName,
+            ownerName: businessProfile.owner_name ?? prev.ownerName,
+            contact_number: businessProfile.contact_number ?? prev.contact_number,
+            public_contact_number: businessProfile.public_contact_number ?? prev.public_contact_number,
+            address: businessProfile.address ?? prev.address,
+            business_type: businessProfile.business_type ?? (prev as any).business_type,
+            latitude: businessProfile.latitude ?? prev.latitude,
+            longitude: businessProfile.longitude ?? prev.longitude
+          } : {})
         } : prev);
       } else {
-        toast.error('Failed to update configuration.');
+        const errJson = await res.json().catch(() => null);
+        toast.error(errJson?.error || 'Failed to update configuration.');
       }
-    } catch (err) {
-      toast.error('Error connecting to configuration service.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Error connecting to configuration service.');
     } finally {
       setIsUpdatingConfig(false);
     }
@@ -4051,8 +4113,9 @@ function DashboardContent() {
             owner_name: formData.get('owner_name'),
             contact_number: formData.get('contact_number'),
             public_contact_number: formData.get('public_contact_number'),
-            address: formData.get('address'),
-            business_type: formData.get('business_type')
+            address: addressInput !== '' ? addressInput : (formData.get('address') as string),
+            business_type: formData.get('business_type'),
+            ...(detectedCoords.lat !== undefined ? { latitude: detectedCoords.lat, longitude: detectedCoords.lng } : {})
           };
           await handleSaveConfig(undefined, undefined, undefined, profile);
           setData(prev => prev ? { 
@@ -4062,7 +4125,8 @@ function DashboardContent() {
             contact_number: profile.contact_number as string, 
             public_contact_number: profile.public_contact_number as string,
             address: profile.address as string, 
-            business_type: profile.business_type as string 
+            business_type: profile.business_type as string,
+            ...(detectedCoords.lat !== undefined ? { latitude: detectedCoords.lat, longitude: detectedCoords.lng } : {})
           } : prev);
         }} className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
           <div>
@@ -4101,8 +4165,43 @@ function DashboardContent() {
             <input type="text" disabled value={(data as any)?.slug || (data?.businessName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')} className="w-full px-4 py-3 bg-bg-primary/50 border border-border-light/60 rounded-lg text-base sm:text-sm text-text-secondary min-h-[44px] cursor-not-allowed font-mono" />
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Address</label>
-            <textarea name="address" defaultValue={(data as any)?.address || ''} rows={2} className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary"></textarea>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest">Address</label>
+              <button
+                type="button"
+                onClick={handleDetectLocation}
+                disabled={isDetectingLocation}
+                className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 font-bold transition-colors disabled:opacity-50 py-1 px-2.5 rounded-md hover:bg-accent/10"
+              >
+                {isDetectingLocation ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
+                    <span>Detecting Location...</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Use Current Location</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <textarea
+              name="address"
+              value={addressInput !== '' ? addressInput : ((data as any)?.address || '')}
+              onChange={(e) => {
+                setAddressInput(e.target.value);
+                setLocationDetected(false);
+              }}
+              rows={2}
+              className="w-full px-4 py-3 bg-bg-primary border border-border-light rounded-lg focus:border-accent outline-none text-base sm:text-sm text-text-primary"
+            ></textarea>
+            {locationDetected && (
+              <p className="text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1 font-medium">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Location detected from your device. Review the address above and click <b>Save Profile</b> to confirm.</span>
+              </p>
+            )}
           </div>
           <div className="sm:col-span-2">
             <button type="submit" disabled={isUpdatingConfig} className="w-full sm:w-auto px-8 bg-accent text-black font-extrabold py-3.5 rounded-lg hover-lift smooth-transition hover:bg-accent/90 transition-colors disabled:opacity-50 min-h-[44px] touch-target shadow-sm">
@@ -4157,6 +4256,9 @@ function DashboardContent() {
           );
         })()}
       </div>
+
+      {/* Venue Photos & Ambience Section */}
+      <VenuePhotosSection businessId={businessId!} businessData={data} />
 
       {/* Google Sheets Integration */}
       <div className="bg-bg-card border border-border-theme rounded-xl overflow-hidden p-4 sm:p-6 md:p-8 shadow-sm">

@@ -41,24 +41,37 @@ export async function POST(request: Request) {
       updatePayload.tables = body.tables;
     }
 
+    // Fetch current business to get existing whatsapp_config for non-destructive merge
+    const { data: currentBiz } = await supabase
+      .from('businesses')
+      .select('whatsapp_config')
+      .eq('id', business_id)
+      .maybeSingle();
+
+    const currentWaConfig = (currentBiz?.whatsapp_config || {}) as any;
+    const nextWaConfig = { ...currentWaConfig };
+    let hasWaConfigUpdates = false;
+
     if (body.qpulse_config !== undefined) updatePayload.qpulse_config = body.qpulse_config;
     if (body.menu_items !== undefined) updatePayload.menu_items = body.menu_items;
     if (body.google_sheet_id !== undefined) updatePayload.google_sheet_id = body.google_sheet_id;
     if (body.business_name !== undefined) {
       updatePayload.business_name = body.business_name;
       // Auto-generate human-readable deep-link slug if not explicitly provided
-      if (!body.slug) {
-        updatePayload.slug = String(body.business_name)
+      if (!body.slug && !nextWaConfig.slug) {
+        nextWaConfig.slug = String(body.business_name)
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '_')
           .replace(/^_+|_+$/g, '');
+        hasWaConfigUpdates = true;
       }
     }
     if (body.slug !== undefined) {
-      updatePayload.slug = String(body.slug)
+      nextWaConfig.slug = String(body.slug)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '');
+      hasWaConfigUpdates = true;
     }
     if (body.owner_name !== undefined) updatePayload.owner_name = body.owner_name;
 
@@ -91,20 +104,44 @@ export async function POST(request: Request) {
         if (!normalizedPublicPhone) {
           return NextResponse.json({ error: 'Club public contact number must be a valid 10-digit mobile number.' }, { status: 400 });
         }
-        updatePayload.public_contact_number = normalizedPublicPhone;
+        nextWaConfig.public_contact_number = normalizedPublicPhone;
       } else {
-        updatePayload.public_contact_number = null;
+        nextWaConfig.public_contact_number = null;
       }
+      hasWaConfigUpdates = true;
     }
 
     if (body.address !== undefined) updatePayload.address = body.address;
     if (body.business_type !== undefined) updatePayload.business_type = body.business_type;
-    if (body.latitude !== undefined) updatePayload.latitude = body.latitude === null || body.latitude === '' ? null : Number(body.latitude);
-    if (body.longitude !== undefined) updatePayload.longitude = body.longitude === null || body.longitude === '' ? null : Number(body.longitude);
-    if (body.google_place_id !== undefined) updatePayload.google_place_id = body.google_place_id ? String(body.google_place_id).trim() : null;
-    if (body.operating_hours !== undefined) updatePayload.operating_hours = body.operating_hours;
-    if (body.booking_config !== undefined) updatePayload.booking_config = body.booking_config;
-    if (body.timezone !== undefined) updatePayload.timezone = body.timezone ? String(body.timezone).trim() : 'Asia/Kolkata';
+
+    if (body.latitude !== undefined) {
+      nextWaConfig.latitude = body.latitude === null || body.latitude === '' ? null : Number(body.latitude);
+      hasWaConfigUpdates = true;
+    }
+    if (body.longitude !== undefined) {
+      nextWaConfig.longitude = body.longitude === null || body.longitude === '' ? null : Number(body.longitude);
+      hasWaConfigUpdates = true;
+    }
+    if (body.google_place_id !== undefined) {
+      nextWaConfig.google_place_id = body.google_place_id ? String(body.google_place_id).trim() : null;
+      hasWaConfigUpdates = true;
+    }
+    if (body.operating_hours !== undefined) {
+      nextWaConfig.operating_hours = body.operating_hours;
+      hasWaConfigUpdates = true;
+    }
+    if (body.booking_config !== undefined) {
+      nextWaConfig.booking_config = body.booking_config;
+      hasWaConfigUpdates = true;
+    }
+    if (body.timezone !== undefined) {
+      nextWaConfig.timezone = body.timezone ? String(body.timezone).trim() : 'Asia/Kolkata';
+      hasWaConfigUpdates = true;
+    }
+
+    if (hasWaConfigUpdates) {
+      updatePayload.whatsapp_config = nextWaConfig;
+    }
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

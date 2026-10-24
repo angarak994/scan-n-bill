@@ -339,7 +339,14 @@ export async function DELETE(request: Request) {
   try {
     const sessionCookie = await getSession(request);
     if (!sessionCookie || !sessionCookie.businessId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized: No active session' }, { status: 401 });
+    }
+
+    // Role-based access control: Only owners and admins can remove registered members
+    const role = (sessionCookie.role || '').toLowerCase();
+    const isAuthorized = AUTHORIZED_ROLES.some(r => r.toLowerCase() === role);
+    if (!isAuthorized) {
+      return NextResponse.json({ error: 'Forbidden: Insufficient privileges to delete registered members' }, { status: 403 });
     }
 
     const { id } = await request.json();
@@ -347,16 +354,34 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Membership ID is required' }, { status: 400 });
     }
 
-    const { error } = await supabase
+    // Verify member exists and belongs to this business before deleting
+    const { data: member, error: findError } = await supabase
+      .from('memberships')
+      .select('id, name, mobile')
+      .eq('id', id)
+      .eq('business_id', sessionCookie.businessId)
+      .maybeSingle();
+
+    if (findError || !member) {
+      return NextResponse.json({ error: 'Member not found or not owned by business' }, { status: 404 });
+    }
+
+    // Safely delete from memberships table only.
+    // Customers table, ledger dues, past sessions, payments, and WhatsApp message logs are preserved.
+    const { error: deleteError } = await supabase
       .from('memberships')
       .delete()
       .eq('id', id)
       .eq('business_id', sessionCookie.businessId);
 
-    if (error) throw error;
+    if (deleteError) throw deleteError;
 
-    return NextResponse.json({ success: true, message: 'Membership profile deleted.' });
+    return NextResponse.json({ 
+      success: true, 
+      message: `Membership profile for ${member.name} removed successfully. Billing history and ledger records have been safely preserved.` 
+    });
   } catch (error: any) {
+    console.error('Failed to delete membership:', error);
     return NextResponse.json({ error: error.message || 'Failed to delete membership' }, { status: 500 });
   }
 }

@@ -24,6 +24,10 @@ export default function MessagingTab({
     const [isSending, setIsSending] = useState(false);
     const [activeTab, setActiveTab] = useState<'compose' | 'logs'>('compose');
 
+    // Registered Member Profile Deletion State
+    const [memberToDelete, setMemberToDelete] = useState<{ id: string; membership_id: string; name: string; phone: string; tier?: string } | null>(null);
+    const [isDeletingMember, setIsDeletingMember] = useState(false);
+
     // Delivery Logs & Dashboard State
     const [deliveryLogs, setDeliveryLogs] = useState<any[]>([]);
     const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -334,6 +338,28 @@ export default function MessagingTab({
                                                 ₹{Number(customer.outstanding_balance).toFixed(0)} Due
                                             </span>
                                         )}
+                                        {customer.type === 'Member' && customer.membership_id && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMemberToDelete({
+                                                        id: customer.id,
+                                                        membership_id: customer.membership_id,
+                                                        name: customer.name,
+                                                        phone: customer.phone,
+                                                        tier: customer.tier
+                                                    });
+                                                }}
+                                                className="p-1.5 rounded-lg text-text-disabled hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                title="Remove Registered Member Profile"
+                                                aria-label={`Remove member profile for ${customer.name}`}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        )}
                                         <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${selectedCustomers.has(customer.id) ? 'bg-accent border-accent text-bg-primary' : 'border-border-theme'}`}>
                                             {selectedCustomers.has(customer.id) && (
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
@@ -602,6 +628,98 @@ export default function MessagingTab({
                     )}
                 </div>
             </div>
+
+            {/* Member Profile Deletion Confirmation Modal */}
+            {memberToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-bg-surface border border-border-theme rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        
+                        <h3 className="text-lg font-black text-text-primary mb-1">
+                            Remove Member Profile?
+                        </h3>
+                        <p className="text-sm text-text-secondary mb-3">
+                            Are you sure you want to remove the registered membership profile for <strong className="text-text-primary">{memberToDelete.name}</strong> ({memberToDelete.phone})?
+                        </p>
+                        
+                        <div className="bg-bg-primary/80 border border-border-theme rounded-xl p-3.5 mb-5 text-xs text-text-secondary space-y-2">
+                            <div className="flex items-start gap-2 text-red-400">
+                                <span className="shrink-0 font-bold">⚠️</span>
+                                <span>Removes membership tier discount and active membership status.</span>
+                            </div>
+                            <div className="flex items-start gap-2 text-emerald-400">
+                                <span className="shrink-0 font-bold">🛡️</span>
+                                <span>Historical session logs, ledger dues, and transaction records in QKhata are preserved.</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                disabled={isDeletingMember}
+                                onClick={() => setMemberToDelete(null)}
+                                className="px-4 py-2.5 rounded-xl border border-border-theme text-text-secondary hover:text-text-primary text-xs font-bold uppercase transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isDeletingMember}
+                                onClick={async () => {
+                                    try {
+                                        setIsDeletingMember(true);
+                                        const res = await fetch('/api/memberships', {
+                                            method: 'DELETE',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ id: memberToDelete.membership_id })
+                                        });
+                                        const data = await res.json();
+                                        if (!res.ok) {
+                                            throw new Error(data.error || 'Failed to remove member');
+                                        }
+                                        toast.success(data.message || 'Member profile removed successfully.');
+                                        
+                                        // Update local list: demote to Customer if in customers list or remove if member only
+                                        setCustomers(prev => prev.map(c => {
+                                            if (c.membership_id === memberToDelete.membership_id) {
+                                                return {
+                                                    ...c,
+                                                    type: 'Customer',
+                                                    membership_id: undefined,
+                                                    tier: undefined
+                                                };
+                                            }
+                                            return c;
+                                        }));
+                                        setMemberToDelete(null);
+                                    } catch (err: any) {
+                                        toast.error(err.message || 'Failed to remove member');
+                                    } finally {
+                                        setIsDeletingMember(false);
+                                    }
+                                }}
+                                className="px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase shadow-lg shadow-red-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isDeletingMember ? (
+                                    <>
+                                        <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        Removing...
+                                    </>
+                                ) : (
+                                    'Remove Membership'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

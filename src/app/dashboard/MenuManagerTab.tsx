@@ -10,12 +10,34 @@ interface MenuManagerTabProps {
 
 export function MenuManagerTab({ businessId, initialMenuItems, onMenuItemsUpdated }: MenuManagerTabProps) {
   const [menuItems, setMenuItems] = useState<any[]>(initialMenuItems || []);
+  const [isLoading, setIsLoading] = useState(!initialMenuItems || initialMenuItems.length === 0);
 
   useEffect(() => {
-    if (initialMenuItems) {
+    if (initialMenuItems && initialMenuItems.length > 0) {
       setMenuItems(initialMenuItems);
+      setIsLoading(false);
     }
   }, [initialMenuItems]);
+
+  // Self-healing fallback hydration if initialMenuItems were empty on direct refresh / fast navigation
+  useEffect(() => {
+    if (!initialMenuItems || initialMenuItems.length === 0) {
+      let isMounted = true;
+      fetch(`/api/dashboard-data?scope=menu&_t=${Date.now()}`)
+        .then(res => res.json())
+        .then(json => {
+          if (isMounted && Array.isArray(json.menu_items)) {
+            setMenuItems(json.menu_items);
+            onMenuItemsUpdated?.(json.menu_items);
+          }
+        })
+        .catch(err => console.error('Failed to self-heal menu items:', err))
+        .finally(() => {
+          if (isMounted) setIsLoading(false);
+        });
+      return () => { isMounted = false; };
+    }
+  }, [businessId, initialMenuItems]);
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -278,7 +300,15 @@ export function MenuManagerTab({ businessId, initialMenuItems, onMenuItemsUpdate
         );
       })}
 
-      {menuItems.length === 0 && (
+      {isLoading && (
+        <div className="bg-bg-surface border border-border-theme rounded-2xl sm:rounded-3xl p-8 sm:p-12 text-center shadow-sm animate-pulse">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto bg-bg-primary rounded-full mb-6"></div>
+          <div className="h-6 w-48 bg-bg-primary rounded-lg mx-auto mb-3"></div>
+          <div className="h-4 w-72 bg-bg-primary rounded-lg mx-auto"></div>
+        </div>
+      )}
+
+      {!isLoading && menuItems.length === 0 && (
         <div className="bg-bg-surface border border-border-theme rounded-2xl sm:rounded-3xl p-8 sm:p-12 text-center shadow-sm">
           <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto bg-bg-primary border border-border-theme rounded-full flex items-center justify-center mb-6">
             <svg className="w-8 h-8 sm:w-10 sm:h-10 text-text-secondary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>

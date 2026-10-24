@@ -30,15 +30,15 @@ async function getCachedPreviousRevenue(businessId: string, prevStartDate: strin
     return cached.revenue;
   }
 
-  const { data: prevCompletedSessionsData } = await supabase
-    .from('sessions')
-    .select('cost')
-    .eq('business_id', businessId)
-    .eq('status', 'COMPLETED')
-    .gte('date', prevStartDate)
-    .lte('date', prevEndDate);
-
-  const rev = (prevCompletedSessionsData || []).reduce((acc: number, s: any) => {
+  const prevSessions = await sessionRepository.findAllByDateRange(prevStartDate, prevEndDate, businessId);
+  const rev = (prevSessions || []).filter(s => {
+    if (s.status !== 'COMPLETED') return false;
+    if (s.end_time) {
+      const localEndDateStr = new Date(s.end_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      return localEndDateStr >= prevStartDate && localEndDateStr <= prevEndDate;
+    }
+    return s.date >= prevStartDate && s.date <= prevEndDate;
+  }).reduce((acc: number, s: any) => {
     return acc + (Number(s.cost) || 0);
   }, 0);
 
@@ -243,6 +243,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ tables: business.tables || [] });
     }
 
+    if (scope === 'menu') {
+      return NextResponse.json({ menu_items: business.menu_items || [] });
+    }
+
     const [
       sessions,
       { data: interventions },
@@ -373,6 +377,7 @@ export async function GET(request: Request) {
       todayStr,
       pricingRules,
       tables: business.tables || [],
+      menu_items: business.menu_items || [],
       activeDiscounts: business.active_discounts || {},
       manualClosuresToday,
       revenueSavedToday,

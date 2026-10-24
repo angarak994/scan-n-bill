@@ -65,12 +65,18 @@ export const sessionRepository = {
   findAllToday: async (dateStr: string, businessId?: string): Promise<Session[]> => {
     if (!businessId) return [];
     
-    // Fetch all active sessions (could cross over midnight) OR sessions completed today
+    // Convert Indian midnight-to-midnight boundary to UTC ISO strings
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const startIso = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) - IST_OFFSET_MS).toISOString();
+    const endIso = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999) - IST_OFFSET_MS).toISOString();
+
+    // Fetch all active sessions (could cross over midnight) OR sessions completed today in IST
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
       .eq('business_id', businessId)
-      .or(`date.eq.${dateStr},status.eq.ACTIVE`);
+      .or(`date.eq.${dateStr},and(end_time.gte.${startIso},end_time.lte.${endIso}),status.eq.ACTIVE`);
 
     if (error || !data) return [];
     return data as Session[];
@@ -79,12 +85,19 @@ export const sessionRepository = {
   findAllByDateRange: async (startDate: string, endDate: string, businessId?: string): Promise<Session[]> => {
     if (!businessId) return [];
     
-    // Fetch sessions between startDate and endDate based on date (start) OR end_time, PLUS any currently active sessions
+    // Convert Indian midnight-to-midnight boundary to UTC ISO strings
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const startIso = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0, 0) - IST_OFFSET_MS).toISOString();
+    const endIso = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999) - IST_OFFSET_MS).toISOString();
+
+    // Fetch sessions between startDate and endDate based on date (start) OR end_time (in UTC), PLUS any currently active sessions
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
       .eq('business_id', businessId)
-      .or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startDate}T00:00:00,end_time.lte.${endDate}T23:59:59),status.eq.ACTIVE`);
+      .or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startIso},end_time.lte.${endIso}),status.eq.ACTIVE`);
 
     if (error || !data) return [];
     return data as Session[];
@@ -156,6 +169,7 @@ export const sessionRepository = {
 
   update: async (id: string, updates: Partial<Session>, businessId?: string, requireActive?: boolean, skipSheetsSync?: boolean): Promise<void> => {
     const updatePayload: Record<string, any> = {};
+    if (updates.date !== undefined) updatePayload.date = updates.date;
     if (updates.end_time !== undefined) updatePayload.end_time = updates.end_time;
     if (updates.duration !== undefined) updatePayload.duration = updates.duration;
     if (updates.applied_pricing !== undefined) updatePayload.applied_pricing = updates.applied_pricing;

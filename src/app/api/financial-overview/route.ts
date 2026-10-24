@@ -94,12 +94,20 @@ export async function GET(request: Request) {
       .eq('status', 'COMPLETED')
       .order('created_at', { ascending: false });
 
-    if (startDate) {
+    if (startDate && endDate) {
+      const sDate = startDate.split('T')[0];
+      const eDate = endDate.split('T')[0];
+      const [sY, sM, sD] = sDate.split('-').map(Number);
+      const [eY, eM, eD] = eDate.split('-').map(Number);
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const startIso = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0, 0) - IST_OFFSET_MS).toISOString();
+      const endIso = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999) - IST_OFFSET_MS).toISOString();
+      sessionsQuery = sessionsQuery.or(`and(date.gte.${sDate},date.lte.${eDate}),and(end_time.gte.${startIso},end_time.lte.${endIso})`);
+    } else if (startDate) {
       sessionsQuery = sessionsQuery.gte('date', startDate.split('T')[0]);
-    }
-    if (endDate) {
+    } else if (endDate) {
       sessionsQuery = sessionsQuery.lte('date', endDate.split('T')[0]);
-    } else if (!startDate) {
+    } else {
       sessionsQuery = sessionsQuery.limit(limit);
     }
 

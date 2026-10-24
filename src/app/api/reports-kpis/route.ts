@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { sessionRepository } from '@/lib/repositories/sessionRepository';
+import { businessManager } from '@/lib/businessManager';
+import { getBusinessTimezone } from '@/lib/sheetsTimezone';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    const session = await getSession();
+    const session = await getSession(request);
     if (!session || !session.businessId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -20,34 +22,39 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing dates' }, { status: 400 });
     }
 
-    let kpis = { totalRevenue: 0, totalSessions: 0, avgMinutes: 0 };
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_dashboard_kpis', { 
-        p_business_id: businessId, 
-        p_start_date: startDate, 
-        p_end_date: endDate 
+    const [business, sessions] = await Promise.all([
+      businessManager.getBusiness(businessId),
+      sessionRepository.findAllByDateRange(startDate, endDate, businessId)
+    ]);
+
+    const timezone = getBusinessTimezone(business);
+
+    // Keep active sessions strictly excluded from completed revenue until they end.
+    // Attribute completed sessions authoritatively to their completion date in the business timezone.
+    const completedSessions = (sessions || []).filter(s => {
+      if (s.status !== 'COMPLETED') return false;
+      if (s.end_time) {
+        const localEndDateStr = new Date(s.end_time).toLocaleDateString('en-CA', { timeZone: timezone });
+        return localEndDateStr >= startDate && localEndDateStr <= endDate;
+      }
+      return s.date >= startDate && s.date <= endDate;
     });
 
-    if (!rpcError && rpcData && rpcData.length > 0) {
-        kpis.totalRevenue = Number(rpcData[0].total_revenue) || 0;
-        kpis.totalSessions = Number(rpcData[0].total_sessions) || 0;
-        kpis.avgMinutes = Number(rpcData[0].avg_duration_minutes) || 0;
-    } else {
-        const { data: allCompleted } = await supabase.from('sessions')
-             .select('payment_status, amount_paid, cost, date, start_time, end_time')
-             .eq('business_id', businessId)
-             .eq('status', 'COMPLETED')
-             .gte('date', startDate)
-             .lte('date', endDate);
-        
-        const completedSessions = allCompleted || [];
-        kpis.totalSessions = completedSessions.length;
-        kpis.totalRevenue = completedSessions.reduce((acc, s) => {
-             const paid = s.payment_status === 'Paid' ? ((s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : (s.cost || 0)) : ((s.amount_paid && s.amount_paid > 0) ? Number(s.amount_paid) : 0);
-             return acc + paid;
-        }, 0);
-    }
-    
-    return NextResponse.json({ kpis });
+    const totalRevenue = completedSessions.reduce((acc, s) => acc + (Number(s.cost) || 0), 0);
+    const totalSessions = completedSessions.length;
+
+    let totalMinutes = 0;
+    completedSessions.forEach(s => {
+      if (s.duration) {
+        const mMatch = s.duration.match(/(\d+)m/);
+        const hMatch = s.duration.match(/(\d+)h/);
+        const mins = (hMatch ? parseInt(hMatch[1], 10) * 60 : 0) + (mMatch ? parseInt(mMatch[1], 10) : 0);
+        totalMinutes += mins;
+      }
+    });
+    const avgMinutes = totalSessions > 0 ? Math.round(totalMinutes / totalSessions) : 0;
+
+    return NextResponse.json({ kpis: { totalRevenue, totalSessions, avgMinutes } });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

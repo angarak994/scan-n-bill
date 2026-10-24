@@ -32,8 +32,18 @@ export async function GET(request: Request) {
       .order('date', { ascending: false })
       .order('end_time', { ascending: false });
 
-    if (startDate) query = query.gte('date', startDate);
-    if (endDate) query = query.lte('date', endDate);
+    if (startDate && endDate) {
+      const [sY, sM, sD] = startDate.split('-').map(Number);
+      const [eY, eM, eD] = endDate.split('-').map(Number);
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const startIso = new Date(Date.UTC(sY, sM - 1, sD, 0, 0, 0, 0) - IST_OFFSET_MS).toISOString();
+      const endIso = new Date(Date.UTC(eY, eM - 1, eD, 23, 59, 59, 999) - IST_OFFSET_MS).toISOString();
+      query = query.or(`and(date.gte.${startDate},date.lte.${endDate}),and(end_time.gte.${startIso},end_time.lte.${endIso})`);
+    } else if (startDate) {
+      query = query.gte('date', startDate);
+    } else if (endDate) {
+      query = query.lte('date', endDate);
+    }
     if (tableId) query = query.eq('table_id', tableId);
     if (paymentStatus) query = query.eq('payment_status', paymentStatus);
 

@@ -122,11 +122,16 @@ export const businessManager = {
         // Semi-legacy format
         const { _global, ...rules } = parsedPricing;
         data.pricing_rules = { rules, globalSettings: _global };
-      } else {
-        // Full legacy format (just rules)
-        data.pricing_rules = { rules: parsedPricing, globalSettings: { rounding_mode: 'nearest_5' } };
       }
     }
+
+    // Seamlessly populate extended metadata from whatsapp_config if not present as top-level columns
+    const waConfig = (data.whatsapp_config || {}) as any;
+    if (!data.slug && waConfig.slug) data.slug = waConfig.slug;
+    if (!data.public_contact_number && waConfig.public_contact_number) data.public_contact_number = waConfig.public_contact_number;
+    if (data.latitude === undefined && waConfig.latitude !== undefined) data.latitude = waConfig.latitude;
+    if (data.longitude === undefined && waConfig.longitude !== undefined) data.longitude = waConfig.longitude;
+    if (data.google_place_id === undefined && waConfig.google_place_id !== undefined) data.google_place_id = waConfig.google_place_id;
 
     businessCache.set(id, { data, expiresAt: now + CACHE_TTL_MS });
     return data;
