@@ -35,7 +35,7 @@ export interface BusinessData {
   slug?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-  created_at: string;
+  created_at?: string;
 }
 
 interface CacheEntry {

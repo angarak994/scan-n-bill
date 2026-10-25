@@ -81,7 +81,6 @@ export interface DeveloperSessionPayload {
 export async function signDeveloperToken(payload: { email: string; [key: string]: any }) {
   const token = await new SignJWT({
     role: 'developer',
-    email: payload.email,
     sub: 'developer_platform_owner',
     ...payload,
   })

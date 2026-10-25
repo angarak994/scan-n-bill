@@ -145,8 +145,8 @@ async function runSuite() {
     google_sheet_id: `pending_sheet_${Date.now()}`,
     status: 'PENDING_APPROVAL',
     feature_entitlements: DEFAULT_LOCKED_FEATURES,
-    tables: [{ id: 'T1', name: 'Table 1', type: 'pool', hourly_rate: 200 }],
-    pricing_rules: { default_rate: 200 },
+    tables: [{ id: 'T1', name: 'Table 1', type: 'pool' }],
+    pricing_rules: { rules: { pool: { type: 'fixed', rate: 200 } } },
   });
   assert(Boolean(pendingBizId), '2.8 New business registration successfully created');
 

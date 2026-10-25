@@ -73,21 +73,21 @@ export async function POST(request: Request) {
 
     const orderOptions = {
         amount: chargeAmountPaisa,
-        currency: sub?.billing_currency || "INR",
+        currency: billingCurrency || "INR",
         receipt: `receipt_order_${Date.now()}`,
         notes: {
             business_id: session.businessId,
             plan_id: planId,
-            is_negotiated: Boolean(sub && sub.agreed_price_paisa && sub.agreed_price_paisa > 0),
+            is_negotiated: Boolean(agreedPricePaisa && agreedPricePaisa > 0),
         }
     };
 
     let orderId = `order_sim_${Date.now()}`;
     let orderAmount = chargeAmountPaisa;
-    let orderCurrency = sub?.billing_currency || "INR";
+    let orderCurrency = billingCurrency || "INR";
 
     try {
-      const order = await razorpay.orders.create(orderOptions);
+      const order = await (razorpay.orders.create as any)(orderOptions);
       orderId = order.id;
       orderAmount = order.amount;
       orderCurrency = order.currency;
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
         amount: orderAmount,
         currency: orderCurrency,
         planName: plan.name,
-        isNegotiated: Boolean(sub && sub.agreed_price_paisa && sub.agreed_price_paisa > 0),
+        isNegotiated: Boolean(agreedPricePaisa && agreedPricePaisa > 0),
     });
 
 
