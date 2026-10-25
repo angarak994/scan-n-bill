@@ -32,6 +32,16 @@ export async function GET(request: Request) {
     if (overdueSessions && overdueSessions.length > 0) {
       for (const s of overdueSessions) {
         try {
+          if (!s.business_id) {
+            await supabase.from('sessions').update({
+              status: 'COMPLETED',
+              end_time: new Date().toISOString(),
+              closure_type: 'auto_cutoff',
+              completed_by: 'Auto-Cutoff Cron'
+            }).eq('id', s.id);
+            cutoffCount++;
+            continue;
+          }
           await endSession(s.table_id, s.business_id, 'Auto-Cutoff');
           cutoffCount++;
         } catch (e) {

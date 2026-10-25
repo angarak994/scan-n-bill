@@ -25,7 +25,8 @@ export async function GET(request: Request) {
     const { count: activeSessionsCount } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
-      .eq('status', 'ACTIVE');
+      .eq('status', 'ACTIVE')
+      .not('business_id', 'is', null);
 
     const integrations = {
       whatsapp: {
